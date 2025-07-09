@@ -83,8 +83,8 @@ class BaseMultiTaskDataset(Dataset):
         self.input_mode = input_mode
         self.fewshot_mode = fewshot_mode
         self.num_examples = num_examples
-        # self.random_examples = random_examples
         self.random_examples = False
+        self.fixed_random_count = True
         self.split = split
         self.model_type = model_type.lower()
         self.run_name = run_name
@@ -105,19 +105,7 @@ class BaseMultiTaskDataset(Dataset):
         audio_lookup_path = self.config.get_audio_lookup_path(self.split)
         if audio_lookup_path:
             load_time = time.time()
-            if  self.dataset_type in [
-                DatasetType.SQA, 
-                DatasetType.VOXPOPULI_NEL,
-                DatasetType.MELD,
-                # DatasetType.HVB,
-                # DatasetType.MELD_EMOTION,
-                DatasetType.MELD_GREEK,
-                # DatasetType.MELD_EMOTION_GREEK,
-                # DatasetType.VOXPOPULI,
-                # DatasetType.VOXPOPULI_GREEK,
-                # DatasetType.VOXPOPULI_SWAP,
-                # DatasetType.MELD_EMOTION_SWAP
-            ]:
+            if False:
                 # For SQA and VP-NEL, just load the dataset
                 self.audio_lookup = load_from_disk(audio_lookup_path)
                 logger.info(f"self.audio_lookup keys: {self.audio_lookup[0].keys()}")
@@ -158,19 +146,23 @@ class BaseMultiTaskDataset(Dataset):
             return None
 
     def _select_examples(self, few_shot_examples):
-        """Helper method to select a random number of examples between 0 and num_examples"""
+        """Helper method to select examples based on configuration"""
         if self.random_examples:
-            # First select a random number between 0 and num_examples
-            random_count = random.randint(0, self.num_examples)
-            if random_count > 0:
-                # If random count is greater than 0, select that many examples (or all available)
-                num_to_select = min(random_count, len(few_shot_examples))
-                return random.sample(few_shot_examples, num_to_select) if num_to_select > 0 else []
+            if self.fixed_random_count:
+                # Deterministically select the top-N examples
+                num_to_select = min(self.num_examples, len(few_shot_examples))
+                return few_shot_examples[:num_to_select]
             else:
-                # If random count is 0, return empty list
-                return []
+                # Randomly select a number between 0 and num_examples
+                random_count = random.randint(0, self.num_examples)
+                if random_count > 0:
+                    num_to_select = min(random_count, len(few_shot_examples))
+                    return random.sample(few_shot_examples, num_to_select) if num_to_select > 0 else []
+                else:
+                    return []
         # Original behavior for non-random mode
         return few_shot_examples[:self.num_examples]
+
 
     def _format_label(self, example_or_label, is_example=True, current_mapping=None, text=None):
         """Format label based on dataset type and configuration."""
@@ -350,46 +342,42 @@ class BaseMultiTaskDataset(Dataset):
         formatted_examples = []
         examples_audio = []
         
-        if (self.dataset_type == DatasetType.VOXPOPULI_NEL or 
-        self.dataset_type == DatasetType.MELD or 
-        # self.DatasetType.HVB or
-        # self.dataset_type == DatasetType.MELD_EMOTION or
-        self.dataset_type == DatasetType.MELD_GREEK 
-        # self.dataset_type == DatasetType.MELD_EMOTION_GREEK or 
-        # self.dataset_type == DatasetType.VOXPOPULI or
-        # self.dataset_type == DatasetType.VOXPOPULI_GREEK or
-        # self.dataset_type == DatasetType.VOXPOPULI_SWAP or
-        # self.dataset_type == DatasetType.MELD_EMOTION_SWAP
-        ) and self.audio_lookup is not None and self.num_examples > 0:
-            
-            # Random sampling from audio_lookup
+        # if self.audio_lookup is not None and self.num_examples > 0:
+        if False:
             total_examples = len(self.audio_lookup)
+            
+            logger.info(f"Total examples in audio lookup: {total_examples}")
+            logger.info(f"Using Audio Lookup")
+
+            # Randomly sample indices from audio lookup
             if self.random_examples:
-                # First select a random number between 0 and num_examples
-                random_count = random.randint(0, self.num_examples)
-                if random_count > 0:
-                    # If random count is greater than 0, select that many examples
+                if self.fixed_random_count:
+                    # Select the top self.num_examples examples deterministically
+                    num_to_select = min(self.num_examples, total_examples)
+                    sampled_indices = list(range(num_to_select))
+                else:
+                    # Select a random number between 0 and self.num_examples
+                    random_count = random.randint(0, self.num_examples)
                     num_to_select = min(random_count, total_examples)
                     sampled_indices = random.sample(range(total_examples), num_to_select)
-                else:
-                    # If random count is 0, select no examples
-                    sampled_indices = []
             else:
                 # Original behavior - select exactly num_examples or all available
                 sampled_indices = random.sample(range(total_examples), min(self.num_examples, total_examples))
+
+            logger.info(f"Current Config Keys : {current_config}")
             
             for sample_idx in sampled_indices:
                 example = self.audio_lookup[sample_idx]
-                # if self.dataset_type == DatasetType.VOXPOPULI_SWAP:
-                    # logger.info(f"Sample {sample_idx} example: {example.keys()}")
+                logger.info(f"Processing example {sample_idx} with keys: {example.keys()}")
                 formatted_example = {
-                    "text": example[current_config.text_key],
-                    "label": self._format_label( example[current_config.completion_key],
+                    "text": example["text"],
+                    "label": self._format_label(example[current_config.completion_key],
                         is_example=False,
                         current_mapping=current_config.label_mapping,
-                        text=example[current_config.text_key]
+                        text=example["text"]
                     )
                 }
+
                 formatted_examples.append(formatted_example)
                 
                 if self.fewshot_mode == 'speech':
@@ -410,6 +398,8 @@ class BaseMultiTaskDataset(Dataset):
             
             # Get examples audio using existing method
             examples_audio = self._get_examples_audio(selected_examples)
+        
+        logger.info(f"Length of formatted examples: {len(formatted_examples)}")
         
         # Create prompt
         prompt = self.processor.format_prompt(

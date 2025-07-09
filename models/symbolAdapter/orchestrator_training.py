@@ -20,6 +20,7 @@ sys.path.insert(0, ICL_ROOT)
 from models.symbolAdapter.training.symbol_training import SymbolTrainingOrchestrator
 from models.symbolAdapter.configs.training_configs import TrainingConfig, parse_training_args, TrainingMode
 from models.mlp_salmonn import MLPSalmonn
+# from models.mlp_qwen import MLPQwen
 from models.symbolAdapter.symbol_manager import SymbolManager
 
 # Import data utilities
@@ -28,16 +29,46 @@ from data.dataset_factory import DatasetFactory
 from data.master_config import DatasetType, get_dataset_config
 from data.model_processors import get_processor
 from torch.utils.data import DataLoader
-from transformers import LlamaTokenizer
+from transformers import LlamaTokenizer, AutoProcessor
 
 
+# def setup_tokenizer(model_type: str = "salmonn"):
+    # """Setup tokenizer"""
+    # llama_tokenizer = LlamaTokenizer.from_pretrained("lmsys/vicuna-13b-v1.1", use_fast=False)
+    # llama_tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+    # llama_tokenizer.padding_side = "right"
+    # return llama_tokenizer
 
-def setup_tokenizer():
-    """Setup tokenizer"""
-    llama_tokenizer = LlamaTokenizer.from_pretrained("lmsys/vicuna-13b-v1.1", use_fast=False)
-    llama_tokenizer.add_special_tokens({'pad_token': '[PAD]'})
-    llama_tokenizer.padding_side = "right"
-    return llama_tokenizer
+def setup_tokenizer_and_processor(config):
+    """
+    Returns:
+        tokenizer: Tokenizer to be used for SymbolManager
+        processor: Processor to be used for DatasetFactory
+    """
+    model_type = config.model_type.value
+    logging.info(f"Setting up tokenizer and processor for model type: {model_type}")
+
+    if model_type == "salmonn":
+        tokenizer = LlamaTokenizer.from_pretrained("lmsys/vicuna-13b-v1.1", use_fast=False)
+        tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+        tokenizer.padding_side = "right"
+        
+        processor = get_processor(config.model_type.value, tokenizer=tokenizer)
+        return tokenizer, processor
+
+    elif model_type == "qwen":
+        input_processor = AutoProcessor.from_pretrained("Qwen/Qwen2-Audio-7B-Instruct", trust_remote_code=True)
+        processor = get_processor(config.model_type.value, processor=input_processor)
+        
+        # For Qwen, tokenizer comes from processor
+        tokenizer = processor.tokenizer
+        tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+        tokenizer.padding_side = "right"
+        return tokenizer, processor
+
+    else:
+        raise ValueError(f"Unsupported model type: {model_type}")
+
 
 
 def load_datasets_for_config(config: TrainingConfig, inference_mode: bool = False):
@@ -166,7 +197,7 @@ def extract_dataset_labels(config: TrainingConfig) -> List[str]:
 
 
 def initialize_model(config: TrainingConfig, tokenizer, symbol_manager) -> MLPSalmonn:
-    """Initialize the MLPSalmonn model using SymbolManager"""
+    """Initialize the model based on model_type using SymbolManager"""
     
     # Get initial symbol mappings from SymbolManager
     initial_symbol_mappings = symbol_manager.get_symbols_for_epoch(0)  # Get epoch 0 symbols
@@ -177,21 +208,37 @@ def initialize_model(config: TrainingConfig, tokenizer, symbol_manager) -> MLPSa
     
     # logging.info(f"Training mode: {config.mode.value}, bypass_mlp: {bypass_mlp}")
     
-    # Initialize model
-    model = MLPSalmonn(
-        device=config.device,
-        lora=True,
-        lora_rank=config.lora_config.rank,
-        lora_alpha=config.lora_config.alpha,
-        lora_dropout=config.lora_config.dropout,
-        low_resource=False,
-    )
     
+   # CA edit 6/7/2025
+    model_type = config.model_type.value
 
-    # model.update_label_tokens(initial_symbol_mappings)
-    
-    return model
+    if model_type == "salmonn":
+        model = MLPSalmonn(
+            device=config.device,
+            lora=True,
+            lora_rank=config.lora_config.rank,
+            lora_alpha=config.lora_config.alpha,
+            lora_dropout=config.lora_config.dropout,
+            low_resource=False,
+        )
+        # model.update_label_tokens(initial_symbol_mappings)
+        return model
 
+    elif model_type == "qwen":
+         # import custom_qwen to avoid dependency conflicts
+        from models.custom_qwen import CustomQwen
+        model = CustomQwen(
+            device=config.device,
+            lora=True,
+            lora_rank=config.lora_config.rank,
+            lora_alpha=config.lora_config.alpha,
+            lora_dropout=config.lora_config.dropout,
+            low_resource=False,
+        )
+        return model
+
+    else:
+        raise ValueError(f"Unknown model_type: {args.model_type}. Supported types are 'salmonn' and 'qwen'")
 
 def setup_logging() -> str:
     """Setup logging with run_name based paths"""
@@ -221,21 +268,22 @@ def main():
         config = TrainingConfig.from_args(args)
         logging.info(f"Training configuration: {config.to_dict()}")
 
-        # Setup tokenizer
-        tokenizer = setup_tokenizer()
-        logging.info("✓ Tokenizer initialized")
-        
+        tokenizer, processor = setup_tokenizer_and_processor(config)
+        logging.info("✓ Tokenizer and Processor initialized")
+
+
         # Extract dataset labels ONCE
         dataset_labels = extract_dataset_labels(config)
         logging.info(f"✓ Dataset labels extracted: {dataset_labels}")
         
         # Create SymbolManager ONCE
-        
+        logging.info(f"Creating SymbolManager with only_original={config.symbol_config.only_original}, dynamic_per_epoch={config.symbol_config.mode.value == 'dynamic_per_epoch'}, symbol_type={config.symbol_config.symbol_type}")
         symbol_manager = SymbolManager(
             original_labels=dataset_labels,
             tokenizer=tokenizer,
             dynamic_per_epoch=(config.symbol_config.mode.value == "dynamic_per_epoch"),
-            symbol_type=config.symbol_config.symbol_type
+            symbol_type=config.symbol_config.symbol_type,
+            only_original=config.symbol_config.only_original
         )
         logging.info("✓ SymbolManager initialized")
         
@@ -243,8 +291,17 @@ def main():
         train_datasets, val_datasets = load_datasets_for_config(config)
         logging.info(f"✓ Loaded datasets: {list(train_datasets.keys())}")
         
-        # Create processor and dataloaders
-        processor = get_processor(config.model_type.value, tokenizer=tokenizer)
+     
+        ## Create processor and dataloaders
+        # processor = get_processor(config.model_type.value, tokenizer=tokenizer)  
+        # if args.model_type == "salmonn":    
+        #         processor = get_processor(config.model_type.value, tokenizer=tokenizer)
+        # elif args.model_type == "qwen":
+        #         input_processor = AutoProcessor.from_pretrained("Qwen/Qwen2-Audio-7B-Instruct", trust_remote_code=True)
+        #         processor = get_processor(config.model_type.value, processor=input_processor)
+        #         tokenizer = processor.tokenizer  # For SymbolManager
+        # else:
+        #     raise ValueError(f"Unknown model_type: {args.model_type}")
         
         train_dataloader = create_combined_dataloader(train_datasets, processor, config, shuffle=True)
         val_dataloader = create_combined_dataloader(val_datasets, processor, config, shuffle=False)
@@ -288,7 +345,7 @@ def main():
             
         except Exception as e:
             logging.error(f"❌ Training failed: {str(e)}")
-            import traceback
+            # import traceback
             logging.error(traceback.format_exc())
             return None
             

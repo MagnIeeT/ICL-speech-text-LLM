@@ -52,6 +52,6 @@ def compare_checkpoints(original_path, finetuned_path):
     logging.info(f"Size difference: {abs(original_size - finetuned_size):.2f} MB")
 
 compare_checkpoints(
-    "/data2/neeraja/neeraja/salmonn_v1.pth",
+    "/home/sriramg/aneeraj/storage/salmonn_v1.pth",
     "./results/trained_models/finetune_llama2_salmon_speech_15e1b/checkpoints/epoch_9_loss_0.1911/model.pt"
 )

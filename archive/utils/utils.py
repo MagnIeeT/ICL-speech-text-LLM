@@ -1,7 +1,7 @@
 def convert_checkpoint_format(checkpoint_path, model, save_path=None):
     """Convert partial checkpoint to full state dict format"""
     logging.info(f"Loading partial checkpoint from {checkpoint_path}...")
-    checkpoint = torch.load(checkpoint_path, map_location='cpu')
+    checkpoint = torch.load(checkpoint_path, map_location='cuda')
     
     # Get full model state dict
     full_state_dict = model.state_dict()

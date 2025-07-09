@@ -1,9 +1,10 @@
 import logging
 import os
 import torch
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import itertools
 
 from ..configs.training_configs import TrainingConfig
 from ..symbol_manager import SymbolManager
@@ -11,7 +12,6 @@ from .validation import ValidationManager
 from .schedulers import TrainingStep
 
 from transformers import get_scheduler
-
 
 class UnifiedTrainer:
     """
@@ -47,6 +47,9 @@ class UnifiedTrainer:
             max_val_samples=getattr(config.data_config, 'val_max_samples', 200)
         )
         
+        self._label_permutations = None
+        self._permutation_index = 0
+
         logging.info("UnifiedTrainer initialized")
     
     def train_step(self, step: TrainingStep) -> dict:
@@ -61,6 +64,11 @@ class UnifiedTrainer:
         for epoch in range(step.epochs):
             self.current_epoch = epoch
             logging.info(f"--- {step.phase.upper()} Epoch {epoch+1}/{step.epochs} ---")
+            
+            # # Get Every symbol mappings from SymbolManager
+            # initial_symbol_mappings = self.symbol_manager.get_symbols_for_epoch(epoch)  # Get epoch 0 symbols
+    
+            # logging.info(f"Initial symbol mappings from SymbolManager: {initial_symbol_mappings}")
             
             # Training epoch
             epoch_loss = self._train_epoch(step, epoch)
@@ -180,8 +188,6 @@ class UnifiedTrainer:
         logging.info(f"Created AdamW optimizer with {len(param_groups)} parameter groups:")
         for group in param_groups:
             logging.info(f"  {group['name']}: {len(group['params'])} layers, LR={group['lr']}")
- 
-        
 
         self.optimizer = torch.optim.AdamW(
             self.model.parameters(),
@@ -205,8 +211,57 @@ class UnifiedTrainer:
         )
         
 
+    def generate_all_permutations(self, labels: List[str], k: int = 5000) -> None:
+        """
+        Generate and cache up to `k` unique random permutations of the given labels.
+        Shows a progress bar and logs progress.
+        """
+        import random
 
- 
+        logging.info("🔁 Generating random label permutations...")
+
+        label_count = len(labels)
+        max_possible = 1
+        for i in range(1, label_count + 1):
+            max_possible *= i
+
+        k = min(k, max_possible)  # Limit to max possible permutations
+        logging.info(f"🧠 Attempting to generate {k:,} unique permutations (max possible: {max_possible:,})")
+
+        perms = []
+        seen = set()
+        attempts = 0
+        max_attempts = k * 10
+
+        from tqdm import tqdm
+        for _ in tqdm(range(max_attempts), desc="🔄 Permuting labels"):
+            perm = tuple(random.sample(labels, len(labels)))
+            if perm not in seen:
+                seen.add(perm)
+                perms.append(list(perm))
+            if len(perms) >= k:
+                break
+
+        if len(perms) < k:
+            logging.warning(f"⚠️ Only generated {len(perms)} unique permutations out of {k} requested.")
+
+        random.shuffle(perms)
+        self._label_permutations = perms
+        self._permutation_index = 0
+
+        logging.info(f"✅ Cached {len(perms):,} random label permutations for training.")
+    
+    def get_next_label_permutation(self) -> List[str]:
+        """
+        Get the next permutation from the cached list.
+        """
+        if self._label_permutations is None:
+            raise ValueError("Permutations not initialized")
+
+        permutation = self._label_permutations[self._permutation_index]
+        self._permutation_index = (self._permutation_index + 1) % len(self._label_permutations)
+        return permutation
+
     def _train_epoch(self, step: TrainingStep, epoch: int) -> float:
         """Train for one epoch with scheduler and gradient accumulation"""
         self.model.train()
@@ -225,20 +280,23 @@ class UnifiedTrainer:
         
         # ✅ KEEP: Gradient accumulation steps (NOT REMOVED)
         accumulation_steps = step.gradient_accumulation_steps or self.config.lora_config.gradient_accumulation_steps
+        # Initialize permutations only once per train_step
+        if self.config.symbol_config.swap_symbols:
+            if self._label_permutations is None:
+                self.generate_all_permutations(self.symbol_manager.original_labels)
 
-        
+
         try:
             for batch_idx, batch in enumerate(progress_bar):
                 try:
                     # DETAILED BATCH LOGGING FOR FIRST BATCH
 
                     if batch_idx > 0 and batch_idx % 50 == 0:
-                        logger.info(f"Clearing memory at step {batch_idx}")
+                        logging.info(f"Clearing memory at step {batch_idx}")
                         gc.collect()
                         torch.cuda.empty_cache()
 
-
-                    if batch_idx == 0:
+                    if batch_idx == 0 or (batch_idx % 2000 == 0):
                         logging.info(f"=== {step.phase.upper()} EPOCH BATCH 1 CONTENT ===")
                         if "prompt" in batch:
                             logging.info("ORIGINAL PROMPTS:")
@@ -254,15 +312,43 @@ class UnifiedTrainer:
                             logging.info(f"EPOCH {epoch} SYMBOL MAPPINGS: {current_symbols}")
                         else:
                             logging.info("NO SYMBOL REPLACEMENT")
-                    
+# chandni edit, --------------------------------------
+                    # permutation = self.get_next_label_permutation()
+
+                    # # Apply symbol replacement
+                    # if getattr(step, 'use_symbols', True):
+                    #     updated_batch = self.symbol_manager.replace_symbols_in_batch(
+                    #                         batch=batch,
+                    #                         epoch=epoch,
+                    #                         swap_symbols=self.config.symbol_config.swap_symbols,
+                    #                         label_permutations=[permutation],  # List of one permutation
+                    #                         original_labels=self.symbol_manager.original_labels,
+                    #                     )
+                    #     # logging.info(f"use_symbols is TRUE")
+                    # else:
+                    #     updated_batch = batch
+                    #     # logging.info(f"use_symbols is FALSE")
+                   
+                # Only get permutation if swap_symbols is True
+                    permutation = None
+                    if self.config.symbol_config.swap_symbols:
+                        permutation = self.get_next_label_permutation()
+
                     # Apply symbol replacement
                     if getattr(step, 'use_symbols', True):
-                        updated_batch = self.symbol_manager.replace_symbols_in_batch(batch, epoch=epoch)
+                        updated_batch = self.symbol_manager.replace_symbols_in_batch(
+                            batch=batch,
+                            epoch=epoch,
+                            swap_symbols=self.config.symbol_config.swap_symbols,
+                            label_permutations=[permutation],
+                            original_labels=self.symbol_manager.original_labels,
+                        )
                     else:
                         updated_batch = batch
-                    
+# chandni edit,  -------------------------------------- 8/7/2025
+
                     # DETAILED BATCH LOGGING AFTER REPLACEMENT
-                    if batch_idx == 0:
+                    if batch_idx == 0 or (batch_idx % 2000 == 0):
                         if getattr(step, 'use_symbols', True):
                             logging.info("UPDATED AFTER SYMBOL REPLACEMENT:")
                             if "prompt" in updated_batch:

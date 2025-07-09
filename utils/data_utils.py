@@ -68,6 +68,8 @@ def load_dataset(dataset_type: DatasetType, split: str = "train", use_cache: boo
         # Get dataset path
         dataset_path = config.get_path(split)
         
+        logger.info(f"Loading dataset {dataset_type} {split} from {dataset_path}")
+
         if not os.path.exists(dataset_path):
             raise FileNotFoundError(f"Dataset file not found: {dataset_path}")
         

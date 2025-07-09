@@ -44,7 +44,7 @@ class CustomSALMONN(BaseModel):
                  lora_rank: int = 8,
                  lora_alpha: int = 16,
                  lora_dropout: float = 0.05,
-                 ckpt_path: str = "/data2/neeraja/neeraja/salmonn_v1.pth",  # Default checkpoint path
+                 ckpt_path: str = "/home/sriramg/aneeraj/storage/salmonn_v1.pth",  # Default checkpoint path
                  device=None, 
                  low_resource: bool = False,
                  use_fp16: bool = False,

@@ -65,7 +65,7 @@ class MLPSalmonn(nn.Module):
             "second_stride": 0.333333,
             "speech_llama_proj_model": "",
             "freeze_speech_llama_proj": False,
-            "ckpt": "/data2/neeraja/neeraja/salmonn_v1.pth"
+            "ckpt": "/home/sriramg/aneeraj/storage/salmonn_v1.pth"
         }
         logging.info("=" * 80)
         logging.info("🔧 INITIALIZING MLP-SALMONN MODEL")

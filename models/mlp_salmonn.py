@@ -26,7 +26,7 @@ class MLPSalmonn(nn.Module):
         self,
         llama_path="lmsys/vicuna-13b-v1.1",
         whisper_path="openai/whisper-large-v2",
-        beats_path="/data2/neeraja/neeraja/BEATs_iter3_plus_AS2M_finetuned_on_AS2M_cpt2.pt",
+        beats_path="/home/sriramg/aneeraj/storage/BEATs_iter3_plus_AS2M_finetuned_on_AS2M_cpt2.pt",
         lora=True,
         lora_rank=8,
         lora_alpha=32,
@@ -59,7 +59,7 @@ class MLPSalmonn(nn.Module):
             "second_stride": 0.333333,
             "speech_llama_proj_model": "",
             "freeze_speech_llama_proj": False,
-            "ckpt": "/data2/neeraja/neeraja/salmonn_v1.pth"
+            "ckpt": "/home/sriramg/aneeraj/storage/salmonn_v1.pth"
         }
         logging.info("=" * 80)
         logging.info("🔧 INITIALIZING MLP-SALMONN MODEL")

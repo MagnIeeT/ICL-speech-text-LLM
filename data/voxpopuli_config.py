@@ -4,42 +4,35 @@ import random
 VOXPOPULI_CONFIG = DatasetConfig(
     name=DatasetType.VOXPOPULI,
     paths={
-        # DatasetSplit.TRAIN: "/data2/neeraja/neeraja/data/asapp/slue_voxpopuli_train_1fewshots",
-        # DatasetSplit.VAL: "/data2/neeraja/neeraja/data/asapp/slue_voxpopuli_test_20fewshots",
-        # DatasetSplit.TEST: "/data2/neeraja/neeraja/data/asapp/slue_voxpopuli_test_20fewshots",
-        DatasetSplit.TRAIN: "/data1/harshanj/data/Embedding/voxpopuli/asapp-slue_voxpopuli_train_embedding_topk5",
-        DatasetSplit.TEST: "/data1/harshanj/data/Embedding/voxpopuli/asapp-slue_voxpopuli_test_embedding_topk5",
-        DatasetSplit.VAL: "/data1/harshanj/data/Embedding/voxpopuli/asapp-slue_voxpopuli_test_embedding_topk5",
+        # DatasetSplit.TRAIN: "/home/sriramg/aneeraj/storage/data/Random/voxpopuli/asapp-slue_voxpopuli_train_random_topk10",
+        # DatasetSplit.TEST: "/home/sriramg/aneeraj/storage/data/Random/voxpopuli/asapp-slue_voxpopuli_test_random_topk10",
+        # DatasetSplit.VAL: "/home/sriramg/aneeraj/storage/data/Random/voxpopuli/asapp-slue_voxpopuli_validation_random_topk10",
+        DatasetSplit.TRAIN: "/home/sriramg/aneeraj/storage/data/Embedding/voxpopuli/asapp-slue_voxpopuli_train_embedding_topk10",
+        DatasetSplit.TEST: "/home/sriramg/aneeraj/storage/data/Embedding/voxpopuli/asapp-slue_voxpopuli_test_embedding_topk10",
+        DatasetSplit.VAL: "/home/sriramg/aneeraj/storage/data/Embedding/voxpopuli/asapp-slue_voxpopuli_validation_embedding_topk10",
     },
     prompt_template="""You are an Entity Type Classification system. For the given input, identify which of the following entity types are present:
 
-- law: Laws, regulations, directives, and legal frameworks
-- norp: Nationalities, religious, or political groups
-- org: Companies, agencies, institutions
-- person: People, including fictional characters
-- place: Countries, cities, locations
-- quant: Numbers, quantities, percentages
-- when: Dates, times, durations, periods
+    - law: Laws, regulations, directives, and legal frameworks
+    - norp: Nationalities, religious, or political groups
+    - org: Companies, agencies, institutions
+    - person: People, including fictional characters
+    - place: Countries, cities, locations
+    - quant: Numbers, quantities, percentages
+    - when: Dates, times, durations, periods
 
-Guidelines:
-1. Return ONLY the entity type if present (e.g., 'place', 'person')
-2. Return 'none' if no entity types are found
-3. Be precise in identifying entity types""",
+    Guidelines:
+    1. Return ONLY the entity type if present (e.g., 'place', 'person')
+    2. Return 'none' if no entity types are found
+    3. Be precise in identifying entity types""",
     valid_labels=["law", "norp", "org", "person", "place", "quant", "when"],
     completion_key="normalized_combined_ner",
     text_key="normalized_text",
     audio_lookup_paths={
-        # DatasetSplit.TRAIN: "/data2/neeraja/neeraja/data/asapp/slue_voxpopuli_train_audio_lookup",
-        # DatasetSplit.TEST: "/data2/neeraja/neeraja/data/asapp/slue_voxpopuli_train_audio_lookup",
-        DatasetSplit.TRAIN: "/data1/harshanj/data/Embedding/voxpopuli/asapp-slue_voxpopuli_train_audio_lookup",
-        DatasetSplit.TEST: "/data1/harshanj/data/Embedding/voxpopuli/asapp-slue_voxpopuli_test_audio_lookup",
-        DatasetSplit.VAL: "/data1/harshanj/data/Embedding/voxpopuli/asapp-slue_voxpopuli_test_audio_lookup",
+        DatasetSplit.TRAIN: "/home/sriramg/aneeraj/storage/data/Audio/voxceleb/asapp-slue_voxceleb_train_audio_lookup",
+        DatasetSplit.TEST: "/home/sriramg/aneeraj/storage/data/Audio/voxceleb/asapp-slue_voxceleb_test_audio_lookup",
+        DatasetSplit.VAL: "/home/sriramg/aneeraj/storage/data/Audio/voxceleb/asapp-slue_voxceleb_validation_audio_lookup",
     }
-    # audio_lookup_paths={
-    #     DatasetSplit.TRAIN: "/data2/neeraja/neeraja/data/asapp/slue_voxpopuli_train_1fewshots",
-    #     DatasetSplit.VAL: "/data2/neeraja/neeraja/data/asapp/slue_voxpopuli_train_1fewshots",
-    #     DatasetSplit.TEST: "/data2/neeraja/neeraja/data/asapp/slue_voxpopuli_train_1fewshots",
-    # }
 )
 
 VOXPOPULI_GREEK_CONFIG = DatasetConfig(
@@ -73,39 +66,6 @@ Guidelines:
         "when": "zeta7"
     }
 )
-
-# VOXPOPULI_GREEK_CONFIG = DatasetConfig(
-#     name=DatasetType.VOXPOPULI_GREEK,
-#     paths=VOXPOPULI_CONFIG.paths,
-#     prompt_template="""You are an Entity Type Classification system. For the given input, identify which of the following entity types are present:
-
-# - Jukbam: Laws, regulations, directives, and legal frameworks
-# - Nexpil: Nationalities, religious, or political groups
-# - Vorzat: Companies, agencies, institutions
-# - Fimtug: People, including fictional characters
-# - Qelzod: Countries, cities, locations
-# - Wacryl: Numbers, quantities, percentages
-# - Xespuj: Dates, times, durations, periods
-
-# Guidelines:
-# 1. Return ONLY the entity type if present (e.g., 'Qelzod', 'Fimtug')
-# 2. Return 'None' if no entity types are found
-# 3. Be precise in identifying entity types""",
-#     valid_labels=["jukbam", "nexpil", "vorzat", "fimtug", "qelzod", "wacryl", "xespuj"],
-#     completion_key="normalized_combined_ner",
-#     text_key="normalized_text",
-#     audio_lookup_paths=VOXPOPULI_CONFIG.audio_lookup_paths,
-#     label_mapping={
-#         "law": "jukbam",
-#         "norp": "nexpil",
-#         "org": "vorzat",
-#         "person": "fimtug",
-#         "place": "qelzod",
-#         "quant": "wacryl",
-#         "when": "xespuj"
-#     }
-# )
-
 
 # Define descriptions for VoxPopuli entity types
 VOXPOPULI_DESCRIPTIONS = [

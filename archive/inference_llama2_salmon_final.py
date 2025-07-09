@@ -190,7 +190,7 @@ def main():
         model = CustomSALMONN.from_config(config)
         
 
-        model = load_model_weights(model, "/data2/neeraja/neeraja/salmonn_v1.pth", args.peft_model_path, device)
+        model = load_model_weights(model, "/home/sriramg/aneeraj/storage/salmonn_v1.pth", args.peft_model_path, device)
         model.eval()
         wav_processor = WhisperFeatureExtractor.from_pretrained(args.whisper_path)
         

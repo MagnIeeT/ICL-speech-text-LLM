@@ -262,7 +262,7 @@ def main():
     # Load weights using existing peft_model_path argument
     model = load_model_weights(
         model=model,
-        base_checkpoint_path="/data2/neeraja/neeraja/salmonn_v1.pth",
+        base_checkpoint_path="/home/sriramg/aneeraj/storage/salmonn_v1.pth",
         finetuned_checkpoint_path=args.peft_model_path,  # If empty string, only base weights will be used
         device=device
     )

@@ -76,7 +76,7 @@ class LoRAConfig:
     initial_epochs: int = 1
     gradient_accumulation_steps: int = 8
     max_grad_norm: float = 1.0
-    scheduler: str = "linear"  # ✅ ADD THIS
+    scheduler: str = "cosine"  # ✅ ADD THIS
     warmup_steps: float = 100  # ✅ ADD THIS
 
 @dataclass
@@ -85,6 +85,11 @@ class SymbolConfig:
     mode: SymbolMode = SymbolMode.FIXED
     symbol_type: str = "two_token"
     
+    # NEW: Only Original configuration
+    only_original: bool = False    # If True, use only original labels without symbols
+
+    swap_symbols: bool = False  # If True, swap symbols during training
+
     # Dynamic symbol parameters
     regenerate_frequency: int = 1  # How often to regenerate (epochs or cycles)
     seed: Optional[int] = None     # For reproducible symbol generation
@@ -92,7 +97,7 @@ class SymbolConfig:
 @dataclass
 class DataConfig:
     """Data-specific configuration"""
-    dataset_type: str = 'voceleb'  # Default dataset type
+    dataset_type: str = 'voxceleb'  # Default dataset type
     batch_size: int = 1
     max_samples: int = 10
     split: str = "test"
@@ -139,8 +144,6 @@ class TrainingConfig:
     # NEW: Inference configuration
     inference_mode: bool = False
     
-    only_original: bool = False  # Only use original labels without symbols
-
     scheduler: str = "cosine"  # ✅ ADD GLOBAL SCHEDULER
     warmup_steps: float = 100  # ✅ ADD GLOBAL WARMUP
 
@@ -249,6 +252,7 @@ class TrainingConfig:
             "symbol_config": {
                 "mode": self.symbol_config.mode.value,
                 "symbol_type": self.symbol_config.symbol_type,
+                "swap_symbols": self.symbol_config.swap_symbols,
             },
             "data_config": {
                 "dataset_type": self.data_config.dataset_type,
@@ -264,8 +268,6 @@ class TrainingConfig:
     def get_training_output_dir(self) -> str:
         """Get training output directory with run_name structure"""
         return os.path.join(self.output_dir, "checkpoints", self.run_name)
-    
-    
     
     @classmethod
     def from_args(cls, args: argparse.Namespace) -> 'TrainingConfig':
@@ -290,14 +292,16 @@ class TrainingConfig:
         )
         
         # Determine symbol mode
-
-
-        
         if getattr(args, 'dynamic_symbols_per_epoch', False):
             symbol_mode = SymbolMode.DYNAMIC_PER_EPOCH
         else:
             symbol_mode = SymbolMode.FIXED
         
+        logging.info(f"Using symbol mode: {symbol_mode.value}")
+
+        if getattr(args, 'only_original', False):
+            logging.info("Using only original labels without symbols")
+
         symbol_config = SymbolConfig(
             mode=symbol_mode,
             symbol_type="two_token",
@@ -337,8 +341,6 @@ class TrainingConfig:
             output_dir=args.output_dir,
             run_name=args.run_name,
             device=args.device,
-            scheduler=args.scheduler,  # ✅ ADD: Global scheduler
-            warmup_steps=args.warmup_steps,  # ✅ ADD: Global warmup
         )
 
 
@@ -442,16 +444,11 @@ def parse_training_args() -> argparse.Namespace:
                        help="Generate new symbols each epoch")
     parser.add_argument("--schedule_type", type=str, default="lora_first",
                        choices=["lora_first", "mlp_first", "joint_training","bypass_mlp_sym", "bypass_mlp_org","lora_mlp_joint",""])
-    
+    parser.add_argument("--only_original", action="store_true",
+                       help="Use only original labels without symbols")
+
     # I/O arguments
     parser.add_argument("--output_dir", type=str, required=True)
     parser.add_argument("--run_name", type=str, required=True)
-    
-    # ✅ ADD: Scheduler arguments
-    parser.add_argument("--scheduler", type=str, default="cosine",
-                       choices=["linear", "cosine", "cosine_with_restarts", "polynomial", "constant"],
-                       help="Learning rate scheduler type")
-    parser.add_argument("--warmup_steps", type=float, default=0.1,
-                       help="warmup_steps")
     
     return parser.parse_args()

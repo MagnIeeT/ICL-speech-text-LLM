@@ -117,7 +117,7 @@ class ValidationManager:
         use_dynamic_symbols: bool = False
     ) -> Dict[str, float]:
         """Run validation using utils.evaluation_utils functions"""
-        
+        use_original_labels = True
         all_results = {}
         processed_samples = 0
 
@@ -125,6 +125,7 @@ class ValidationManager:
         dataset_type_str = self.config.data_config.dataset_type
         dataset_names_train = set(dataset_type_str.split('-') if '-' in dataset_type_str else [dataset_type_str])
         
+        logging.info(f"Inference Mode : {self.is_inference_mode}")
         # ✅ Get validation datasets
         if not self.is_inference_mode:
             val_dataset_type_str = self.config.data_config.val_dataset_type
@@ -169,7 +170,7 @@ class ValidationManager:
                     #     # For fixed symbols, replace using SymbolManager's method with the epoch
                     #     updated_batch = self.symbol_manager.replace_symbols_in_batch(batch, mappings=symbol_mappings)
                     else:
-                        updated_batch = self.symbol_manager.replace_symbols_in_batch(batch, mappings=symbol_mappings)
+                        updated_batch = self.symbol_manager.replace_symbols_in_batch(batch,swap_symbols=False,mappings=symbol_mappings)
 
                     # ✅ Log first validation prompt
                     if log_first_prompt:
@@ -355,7 +356,7 @@ class ValidationManager:
         validation_results = {}
         
         # Check model state
-        bypass_mlp = getattr(model, 'bypass_mlp', False)
+        bypass_mlp = getattr(model, 'bypass_mlp', True)
         use_symbols = step.use_symbols if step else True  # Default to True if no step provided
 
         dynamic_symbols_enabled = (self.config.symbol_config.mode == SymbolMode.DYNAMIC_PER_EPOCH)
@@ -457,7 +458,6 @@ class ValidationManager:
         
         logging.info(f"Validation modes for {phase.upper()} (bypass_mlp={bypass_mlp}, use_symbols={use_symbols}):")
 
-    
         # Run each validation mode
         for mode_key, bypass_mlp_val, use_original, use_dynamic in modes:
 

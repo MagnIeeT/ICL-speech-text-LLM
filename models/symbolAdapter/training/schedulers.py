@@ -295,7 +295,7 @@ class TrainingScheduler:
                 max_grad_norm=self.config.lora_config.max_grad_norm,
                 freeze_mlp=True,  # MLPs don't exist anyway
                 freeze_lora=False,
-                use_symbols=False,
+                use_symbols=True,
                 dynamic_symbols=False,
                 bypass_mlp=True,
             ))
