@@ -92,6 +92,36 @@ class SymbolManager:
         else:
             return self.epoch_mappings_history.get(self.current_epoch, {})
     
+    def get_reverse_mappings_dict(
+        self,
+        epoch: Optional[int] = None,
+        mappings: Optional[Dict[str, Dict[str, str]]] = None
+    ) -> Dict[str, str]:
+        """
+        Get reverse mappings (symbol → original label) across all datasets.
+
+        Args:
+            epoch: Epoch to retrieve symbols from (if not provided, use current).
+            mappings: Optional dataset-wise mapping: {dataset: {label: symbol}}
+
+        Returns:
+            Flattened dictionary mapping symbols to original labels (symbol → label).
+        """
+        if mappings:
+            label_to_symbol_by_dataset = mappings
+        elif epoch is not None:
+            label_to_symbol_by_dataset = self.get_symbols_for_epoch(epoch)
+        else:
+            label_to_symbol_by_dataset = self.get_current_symbols()
+
+        reverse_mappings = {}
+        for dataset, label_to_symbol in label_to_symbol_by_dataset.items():
+            for label, symbol in label_to_symbol.items():
+                reverse_mappings[symbol] = label
+                reverse_mappings[symbol.lower()] = label  # for case-insensitive matching
+
+        return reverse_mappings
+
     def get_reverse_mappings(self, epoch: Optional[int] = None,mappings: Optional[Dict[str, str]] = None) -> Dict[str, str]:
         """
         Get reverse mappings (symbol -> original label) for symbol conversion
@@ -192,12 +222,6 @@ class SymbolManager:
         """
         Replace symbols in a batch, optionally swapping symbols using dataset-specific permutations.
         """
-        logging.info(f"\n🧩 === Starting Symbol Replacement ===")
-        logging.info(f"Epoch: {epoch}")
-        logging.info(f"Swap Symbols: {swap_symbols}")
-        logging.info(f"Mappings provided: {mappings is not None}")
-        logging.info(f"Label permutations provided: {label_permutations is not None}")
-        logging.info(f"Original labels provided: {original_labels is not None}")
 
         # Get dataset-level label-to-symbol mapping
         if mappings is not None:
@@ -214,25 +238,25 @@ class SymbolManager:
         symbol_mappings = {}
 
         for dataset, label_to_symbol in label_to_symbol_by_dataset.items():
-            logging.info(f"\n📦 Dataset: {dataset}")
-            logging.info(f"  Label → Symbol: {label_to_symbol}")
+            # logging.info(f"\n📦 Dataset: {dataset}")
+            # logging.info(f"  Label → Symbol: {label_to_symbol}")
 
             if swap_symbols and label_permutations and dataset in label_permutations:
                 perm_map = label_permutations[dataset]  # {original_label: permuted_label}
-                logging.info(f"  🔁 Permutation Map: {perm_map}")
+                # logging.info(f"  🔁 Permutation Map: {perm_map}")
                 try:
                     for orig_label, permuted_label in perm_map.items():
                         from_symbol = label_to_symbol[orig_label]
                         to_symbol = label_to_symbol[permuted_label]
                         symbol_mappings[from_symbol] = to_symbol
-                        logging.info(f"    🔄 {from_symbol} → {to_symbol}")
+                        # logging.info(f"    🔄 {from_symbol} → {to_symbol}")
                 except KeyError as e:
                     raise KeyError(f"❌ Missing label in label_to_symbol for dataset '{dataset}': {e}")
             else:
-                logging.info(f"  ⏩ No permutation applied.")
+                # logging.info(f"  ⏩ No permutation applied.")
                 for label, symbol in label_to_symbol.items():
                     symbol_mappings[label] = symbol
-                    logging.info(f"    ➕ {label} → {symbol}")
+                    # logging.info(f"    ➕ {label} → {symbol}")
 
         updated_batch = batch.copy()
 
@@ -259,22 +283,21 @@ class SymbolManager:
             updated_batch["prompt"] = [
                 non_destructive_replace(p, symbol_mappings) for p in batch["prompt"]
             ]
-            logging.info("✅ Updated Prompts (First 2):")
-            for i, p in enumerate(updated_batch["prompt"][:2]):
-                logging.info(f"  [{i}] {p}")
+            # logging.info("✅ Updated Prompts (First 2):")
+            # for i, p in enumerate(updated_batch["prompt"][:2]):
+            #     logging.info(f"  [{i}] {p}")
 
         if "completion" in batch:
             updated_batch["completion"] = [
                 non_destructive_replace(c, symbol_mappings) for c in batch["completion"]
             ]
-            logging.info("✅ Updated Completions (First 2):")
-            for i, c in enumerate(updated_batch["completion"][:2]):
-                logging.info(f"  [{i}] {c}")
+            # logging.info("✅ Updated Completions (First 2):")
+            # for i, c in enumerate(updated_batch["completion"][:2]):
+            #     logging.info(f"  [{i}] {c}")
 
-        logging.info("🎉 Symbol replacement completed.\n")
+        logging.info("Symbol replacement completed.\n")
         return updated_batch
 
-    
     def convert_symbols_back(self, text: str, epoch: Optional[int] = None, mappings: Optional[Dict[str, str]] = None) -> str:
         """
         Convert symbols back to original labels in text
@@ -290,11 +313,11 @@ class SymbolManager:
         # Use custom mappings if provided, otherwise get epoch-based mappings
         if mappings is not None:
             # Create reverse mappings from custom mappings
-            reverse_mappings = self.get_reverse_mappings(mappings=mappings)
+            reverse_mappings = self.get_reverse_mappings_dict(mappings=mappings)
         elif epoch is not None:
-            reverse_mappings = self.get_reverse_mappings(epoch)
+            reverse_mappings = self.get_reverse_mappings_dict(epoch)
         else:
-            reverse_mappings = self.get_reverse_mappings()
+            reverse_mappings = self.get_reverse_mappings_dict()
         
         if not reverse_mappings:
             return text

@@ -1,10 +1,10 @@
 #!/bin/bash -l
 #SBATCH --job-name=inference_orchestrator
-#SBATCH --partition=short
+#SBATCH --partition=long
 #SBATCH --time=1-00:00:00
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=22G
-#SBATCH --gres=gpu:A5000:1
+#SBATCH --gres=gpu:A6000:1
 #SBATCH --output=/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_inference/logs/slurm_logs/%x_%j.out
 #SBATCH --error=/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_inference/logs/slurm_logs/%x_%j.err
 #SBATCH --export=ALL
@@ -32,8 +32,8 @@ checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_tr
 # Symbol FT 
 # checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/1007_0234_orchestrator_bypass_mlp_sym_1c_5le_1me_bypass_mlp_org_salmonn_voxceleb-voxpopuli/lora_step0_cycle0_epoch2_periodic.pt"
 
-dataset_type="voxceleb-hvb-voxpopuli-meld-emotion"  # Comma-separated list of dataset types
-max_val_samples=0
+dataset_type="voxceleb-hvb-voxpopuli-meld_emotion"  # Comma-separated list of dataset types
+max_val_samples=10
 device="cuda:0"
 output_dir="/home/sriramg/aneeraj/storage/results/model_ICL"
 num_examples=3

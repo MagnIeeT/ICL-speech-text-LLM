@@ -10,8 +10,9 @@ from typing import Dict, List, Optional, Any, Tuple, Union
 from tqdm import tqdm
 import numpy as np
 import re
+import traceback
 
-from ..symbol_manager import SymbolManager
+from ..symbol_manager_inference import SymbolManager
 from ..configs.training_configs import TrainingConfig, SymbolMode
 from ..training.schedulers import TrainingStep
 
@@ -101,6 +102,7 @@ class ValidationManager:
         except Exception as e:
             logging.error(f"❌ Validation failed for {full_mode_name}: {str(e)}")
             return {"accuracy": 0.0, "loss": float('inf'), "total_samples": 0}
+            traceback.print_exc()
         
         finally:
             model.train()  # Reset to training mode
@@ -216,6 +218,7 @@ class ValidationManager:
                             cleaned_pred = clean_prediction(converted_pred, dataset_type)
                         except:
                             cleaned_pred = converted_pred.strip()
+                            traceback.print_exc()
                         
                         result = {
                             "text": batch["text"][i] if isinstance(batch["text"], list) else batch["text"],
@@ -248,10 +251,12 @@ class ValidationManager:
                         
                 except Exception as e:
                     logging.error(f"Error during validation batch {batch_idx}: {str(e)}")
+                    traceback.print_exc()
                     continue
                     
         except KeyboardInterrupt:
             logging.info(f"Validation interrupted at {processed_samples} samples")
+            traceback.print_exc()
         
         finally:
             progress_bar.close()
@@ -292,6 +297,7 @@ class ValidationManager:
                         
                 except Exception as e:
                     logging.error(f"Error evaluating predictions for {dataset_name}: {str(e)}")
+                    traceback.print_exc()
                     dataset_metric_values[dataset_name] = 0.0
             else:
                 # ✅ Handle empty results properly
@@ -420,6 +426,7 @@ class ValidationManager:
                 
             except Exception as e:
                 logging.error(f"Validation mode {mode_key} failed: {str(e)}")
+                traceback.print_exc()
                 validation_results[mode_key] = 0.0
                 # validation_results[f"{mode_key}_composite"] = "error:0.000000"
                 validation_results[f"{mode_key}_loss"] = float('inf')
@@ -547,6 +554,7 @@ def parse_composite_metric(composite_str: str) -> Dict[str, float]:
                 result[dataset] = float(score)
             except ValueError:
                 result[dataset] = 0.0
+                traceback.print_exc()
     return result
 
 def create_composite_metric(dataset_metrics: Dict[str, float]) -> str:

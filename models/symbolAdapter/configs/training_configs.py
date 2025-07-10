@@ -88,7 +88,7 @@ class SymbolConfig:
     # NEW: Only Original configuration
     only_original: bool = True    # If True, use only original labels without symbols
 
-    swap_symbols: bool = True  # If True, swap symbols during training
+    swap_symbols: bool = False  # If True, swap symbols during training
 
     # Dynamic symbol parameters
     regenerate_frequency: int = 1  # How often to regenerate (epochs or cycles)

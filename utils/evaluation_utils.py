@@ -212,7 +212,7 @@ def evaluate_voxceleb(df: pd.DataFrame, valid_classes: List[str]) -> Dict:
 def evaluate_hvb(df: pd.DataFrame, valid_classes: List[str]) -> Dict:
     """Evaluate HVB predictions (multi-label classification)"""
     total_samples = len(df)
-    
+
     # Convert string labels to lists if needed
     df['gt'] = df['gt'].apply(lambda x: x.split(',') if isinstance(x, str) else x)
     df['pd'] = df['pd'].apply(lambda x: x.split(',') if isinstance(x, str) else x)
@@ -278,7 +278,7 @@ def evaluate_voxpopuli(df: pd.DataFrame, valid_classes: List[str]) -> Dict:
     
     # Add 'none' to valid classes if not already present
     all_valid_classes = valid_classes + ['none'] if 'none' not in valid_classes else valid_classes
-    
+
     # Convert string labels to lists if needed and clean them
     df['gt'] = df['gt'].apply(lambda x: [label.strip().lower() for label in x.split(',')] if isinstance(x, str) else x)
     df['pd'] = df['pd'].apply(lambda x: [label.strip().lower() for label in x.split(',')] if isinstance(x, str) else x)
@@ -355,7 +355,8 @@ def parse_entities(entity_string):
 def evaluate_vp_nel(df: pd.DataFrame, valid_classes: List[str]) -> Dict:
     """Evaluate VoxPopuli Named Entity Linking predictions with time alignments"""
     total_samples = len(df)
-    
+
+
     # Convert predictions and ground truth to lowercase
     df['gt'] = df['gt'].str.lower()
     df['pd'] = df['pd'].str.lower()
@@ -521,6 +522,7 @@ def clean_prediction(prediction: str, dataset_type: DatasetType = None) -> str:
         DatasetType.HVB, 
         DatasetType.HVB_GREEK
     ]:
+
         # Multi-label classification: keep all valid labels
         labels = [l.strip().lower() for l in cleaned.split(',')]
         # Filter out empty strings and partial/incomplete labels
@@ -571,6 +573,8 @@ def clean_prediction(prediction: str, dataset_type: DatasetType = None) -> str:
             
     elif dataset_type == DatasetType.VOXPOPULI_NEL:
         # For VP_NEL, expect "TYPE: start end" format
+
+
         if cleaned.lower() == 'none':
             return 'none'
         
@@ -589,7 +593,6 @@ def clean_prediction(prediction: str, dataset_type: DatasetType = None) -> str:
             return '; '.join(cleaned_spans)
         except:
             return cleaned
-    
     # Default cleaning for unknown dataset types
     return cleaned.lower().strip()
 
@@ -855,6 +858,7 @@ def evaluate_sqa(df: pd.DataFrame, valid_classes: List[str] = None) -> Dict:
         """Normalize answer by lowercasing, removing punctuation and extra spaces"""
         if text is None:
             return ""
+            
         text = str(text).lower()
         text = re.sub(r'[^\w\s]', ' ', text)  # Replace punctuation with space
         text = re.sub(r'\s+', ' ', text).strip()  # Normalize whitespace

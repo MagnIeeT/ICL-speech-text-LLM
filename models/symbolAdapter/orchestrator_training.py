@@ -31,13 +31,12 @@ from data.model_processors import get_processor
 from torch.utils.data import DataLoader
 from transformers import LlamaTokenizer, AutoProcessor
 
-
-# def setup_tokenizer(model_type: str = "salmonn"):
-    # """Setup tokenizer"""
-    # llama_tokenizer = LlamaTokenizer.from_pretrained("lmsys/vicuna-13b-v1.1", use_fast=False)
-    # llama_tokenizer.add_special_tokens({'pad_token': '[PAD]'})
-    # llama_tokenizer.padding_side = "right"
-    # return llama_tokenizer
+def setup_tokenizer(model_type: str = "salmonn"):
+    """Setup tokenizer"""
+    llama_tokenizer = LlamaTokenizer.from_pretrained("lmsys/vicuna-13b-v1.1", use_fast=False)
+    llama_tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+    llama_tokenizer.padding_side = "right"
+    return llama_tokenizer
 
 def setup_tokenizer_and_processor(config):
     """
@@ -140,7 +139,7 @@ def load_datasets_for_config(config: TrainingConfig, inference_mode: bool = Fals
     return train_datasets, val_datasets
 
 
-def create_combined_dataloader(datasets, processor, config: TrainingConfig, shuffle=False):
+def create_combined_dataloader(datasets, processor, config: TrainingConfig, num_examples=5, shuffle=False):
     """Create combined dataloader from datasets"""
     dataset_types = list(datasets.keys())
     
@@ -151,7 +150,7 @@ def create_combined_dataloader(datasets, processor, config: TrainingConfig, shuf
         is_training=shuffle,
         input_mode="speech_only",
         fewshot_mode="text",
-        num_examples=config.data_config.num_examples,
+        num_examples=num_examples if num_examples is not None else config.data_config.num_examples,
         random_examples=False,
         model_type=config.model_type.value,
         run_name=config.run_name,
@@ -224,7 +223,7 @@ def initialize_model(config: TrainingConfig, tokenizer, symbol_manager) -> MLPSa
     
     # logging.info(f"Training mode: {config.mode.value}, bypass_mlp: {bypass_mlp}")
 
-   # CA edit 6/7/2025
+    # CA edit 6/7/2025
     model_type = config.model_type.value
 
     if model_type == "salmonn":
@@ -236,7 +235,6 @@ def initialize_model(config: TrainingConfig, tokenizer, symbol_manager) -> MLPSa
             lora_dropout=config.lora_config.dropout,
             low_resource=False,
         )
-        # model.update_label_tokens(initial_symbol_mappings)
         return model
 
     elif model_type == "qwen":
