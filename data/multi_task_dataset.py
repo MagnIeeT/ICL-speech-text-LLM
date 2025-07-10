@@ -83,8 +83,7 @@ class BaseMultiTaskDataset(Dataset):
         self.input_mode = input_mode
         self.fewshot_mode = fewshot_mode
         self.num_examples = num_examples
-        self.random_examples = False
-        self.fixed_random_count = True
+        self.random_examples = random_examples
         self.split = split
         self.model_type = model_type.lower()
         self.run_name = run_name
@@ -148,11 +147,6 @@ class BaseMultiTaskDataset(Dataset):
     def _select_examples(self, few_shot_examples):
         """Helper method to select examples based on configuration"""
         if self.random_examples:
-            if self.fixed_random_count:
-                # Deterministically select the top-N examples
-                num_to_select = min(self.num_examples, len(few_shot_examples))
-                return few_shot_examples[:num_to_select]
-            else:
                 # Randomly select a number between 0 and num_examples
                 random_count = random.randint(0, self.num_examples)
                 if random_count > 0:
@@ -351,11 +345,6 @@ class BaseMultiTaskDataset(Dataset):
 
             # Randomly sample indices from audio lookup
             if self.random_examples:
-                if self.fixed_random_count:
-                    # Select the top self.num_examples examples deterministically
-                    num_to_select = min(self.num_examples, total_examples)
-                    sampled_indices = list(range(num_to_select))
-                else:
                     # Select a random number between 0 and self.num_examples
                     random_count = random.randint(0, self.num_examples)
                     num_to_select = min(random_count, total_examples)

@@ -21,7 +21,7 @@ Guidelines:
 - Choose disgust if there is repulsion, distaste, revulsion, or strong dislike
 - Choose surprise if there is astonishment, shock, amazement, or unexpected reaction
 - Choose neutral ONLY IF the statement expresses no distinct emotional state""",
-    valid_labels=["noemotion", "joy", "sadness", "anger", "fear", "disgust", "surprise"],
+    valid_labels=["neutral", "joy", "sadness", "anger", "fear", "disgust", "surprise"],
     completion_key="emotion_label",
     text_key="text",
     audio_lookup_paths={

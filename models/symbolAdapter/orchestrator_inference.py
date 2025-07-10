@@ -26,7 +26,7 @@ sys.path.append(os.path.join(project_root, "models"))
 # Import required modules
 from models.mlp_salmonn import MLPSalmonn
 from models.symbolAdapter.configs.training_configs import TrainingConfig,SymbolMode
-from models.symbolAdapter.symbol_manager import SymbolManager
+from models.symbolAdapter.symbol_manager_inference import SymbolManager
 from models.symbolAdapter.training.validation import ValidationManager
 from models.symbolAdapter.orchestrator_training import load_datasets_for_config, create_combined_dataloader
 from utils.evaluation_utils import evaluate_predictions
@@ -170,39 +170,6 @@ class InferenceOrchestrator:
                 current_mappings = symbol_data['current_epoch_mappings']
                 logging.info(f"✅ Restored symbol mappings: {current_mappings}")
             else:
-                # logging.warning("⚠️ No symbol mappings found in checkpoint, using default setup")
-                # # current_mappings = {
-                # #         'acknowledge': 'augc', 'anger': 'zugi', 'answer_agree': 'acke',
-                # #         'answer_dis': 'annj', 'answer_general': 'sbia', 'apology': 'pukh',
-                # #         'backchannel': 'jsfd', 'disfluency': 'nrzy', 'disgust': 'cuurs',
-                # #         'fear': 'phin', 'joy': 'pgky', 'law': 'dxzk',
-                # #         'negative': 'mmoo', 'neutral': 'njtf', 'noemotion': 'wyzte',
-                # #         'norp': 'vact', 'org': 'sejb', 'other': 'ouat',
-                # #         'person': 'whij', 'place': 'bctx', 'positive': 'guzo',
-                # #         'quant': 'zmzd', 'question_check': 'banx', 'question_general': 'ngtd',
-                # #         'question_repeat': 'nrnb', 'sadness': 'sfwe', 'self': 'afux',
-                # #         'statement_close': 'xlig', 'statement_general': 'ukng', 
-                # #         'statement_instruct': 'israi', 'statement_open': 'dtwo',
-                # #         'statement_problem': 'mvfw', 'surprise': 'fago', 'thanks': 'puhe',
-                # #         'when': 'secd'
-                # #     }
-
-                # current_mappings = {
-                #     'acknowledge': 'azqq', 'anger': 'qloy', 'answer_agree': 'xsno',
-                #     'answer_dis': 'uibr', 'answer_general': 'runfn', 'apology': 'eesz',
-                #     'backchannel': 'onbr', 'disfluency': 'busox', 'disgust': 'zwpy',
-                #     'fear': 'skwt', 'joy': 'ptma', 'law': 'rcov',
-                #     'negative': 'ajsp', 'neutral': 'vbkt', 'noemotion': 'ifig',
-                #     'norp': 'punxf', 'org': 'elazu', 'other': 'edfs',
-                #     'person': 'flnt', 'place': 'imamd', 'positive': 'xzem',
-                #     'quant': 'dosh', 'question_check': 'brua', 'question_general': 'pkin',
-                #     'question_repeat': 'zuka', 'sadness': 'oftam', 'self': 'tkfw',
-                #     'statement_close': 'ngkm', 'statement_general': 'pezy', 
-                #     'statement_instruct': 'oamt', 'statement_open': 'hayc',
-                #     'statement_problem': 'bedr', 'surprise': 'jkil', 'thanks': 'odih',
-                #     'when': 'exuj'
-                # }
-
                 logging.info(f"symbol mappings: {current_mappings}")
                 
             
@@ -212,6 +179,7 @@ class InferenceOrchestrator:
                     dynamic_per_epoch=False,
                     symbol_type=self.config.symbol_config.symbol_type
                 )
+
             self.current_mappings = current_mappings
             # ✅ FIX: Update config for TEST split inference
             self.config.data_config.split = 'test'  # Force test split for inference
@@ -397,7 +365,8 @@ def main():
                        help="Maximum validation samples (0 = all)")
     parser.add_argument("--output_dir", type=str, default=None,
                        help="Output directory for results")
-    
+    parser.add_argument("--num_examples", type=int, default=3,
+                       help="Number of few-shot examples to use for inference")
     args = parser.parse_args()
     
     # Validate checkpoint path

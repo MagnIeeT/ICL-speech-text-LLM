@@ -3,7 +3,7 @@
 #SBATCH --partition=short
 #SBATCH --time=1-00:00:00
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=48G
+#SBATCH --mem=22G
 #SBATCH --gres=gpu:A5000:1
 #SBATCH --output=/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_inference/logs/slurm_logs/%x_%j.out
 #SBATCH --error=/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_inference/logs/slurm_logs/%x_%j.err
@@ -32,11 +32,11 @@ checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_tr
 # Symbol FT 
 # checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/1007_0234_orchestrator_bypass_mlp_sym_1c_5le_1me_bypass_mlp_org_salmonn_voxceleb-voxpopuli/lora_step0_cycle0_epoch2_periodic.pt"
 
-dataset_type="hvb"
+dataset_type="voxceleb-hvb-voxpopuli-meld-emotion"  # Comma-separated list of dataset types
 max_val_samples=0
 device="cuda:0"
 output_dir="/home/sriramg/aneeraj/storage/results/model_ICL"
-
+num_examples=3
 # ========================== Conda Setup ==========================
 export CONDA_ENV="salmon"
 echo "Set conda environment to: $CONDA_ENV"
@@ -111,6 +111,7 @@ python "${SCRIPT_PATH}" \
     --dataset_type "${dataset_type}" \
     --device "${device}" \
     --max_val_samples ${max_val_samples} \
+    --num_examples ${num_examples} \
     --output_dir "${output_dir}" > "${LOG_PATH}" 2>&1
 
 EXIT_CODE=$?

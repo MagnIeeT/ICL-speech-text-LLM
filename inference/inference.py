@@ -152,7 +152,6 @@ def run_inference(args):
             **config.get("model_args", {})
         )
         
-
         # Only load checkpoint if peft_model_path is provided and not empty
         if args.peft_model_path and args.peft_model_path.strip():
             logger.info(f"Loading checkpoint from {args.peft_model_path}")

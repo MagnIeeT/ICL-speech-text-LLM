@@ -157,7 +157,7 @@ class ValidationManager:
         
         try:
             for batch_idx, batch in enumerate(progress_bar):
-                # try:
+                try:
                     # Apply symbol replacement using SymbolManager methods
                     if use_original_labels:
                         updated_batch = batch
@@ -209,11 +209,7 @@ class ValidationManager:
                         converted_pred = pred
                         if not use_original_labels and symbol_mappings:
                             converted_pred = self.symbol_manager.convert_symbols_back(pred, mappings=symbol_mappings)
-                            # if use_dynamic_symbols:
-                            #     converted_pred = self.symbol_manager.convert_symbols_back(pred, mappings=symbol_mappings)
-                            # else:
-                            #     converted_pred = self.symbol_manager.convert_symbols_back(pred, mappings=symbol_mappings)
-                        
+
                         # Clean the prediction using utils.evaluation_utils
                         try:
                             dataset_type = DatasetType(dt_key)
@@ -250,9 +246,9 @@ class ValidationManager:
                         'samples': processed_samples
                     })
                         
-                # except Exception as e:
-                #     logging.error(f"Error during validation batch {batch_idx}: {str(e)}")
-                #     continue
+                except Exception as e:
+                    logging.error(f"Error during validation batch {batch_idx}: {str(e)}")
+                    continue
                     
         except KeyboardInterrupt:
             logging.info(f"Validation interrupted at {processed_samples} samples")
@@ -280,7 +276,10 @@ class ValidationManager:
                             logging.info(f"  {metric}: {value:.4f}")
                         else:
                             logging.info(f"  {metric}: {value}")
-                    
+                    logging.info("=" * 60)
+                    # Log detailed metrics
+                    logging.info(f"Detailed metrics for {dataset_name}: {dt_metrics}")
+                    # ✅ Handle missing metrics gracefully
                     # Extract metric for each dataset
                     if dataset_name.lower() == 'voxceleb':
                         dataset_metric_values[dataset_name] = dt_metrics.get('macro_f1_with_invalid', 0.0)

@@ -14,22 +14,21 @@ mkdir -p "$SLURM_LOG_DIR"
 
 # ==== Configuration - Edit these values as needed ====
 model_type="salmonn"    # Options: "salmonn" or "qwen"
-dataset_type="hvb-meld_emotion"   # Dataset type(s) to use
+dataset_type="voxceleb-meld_emotion"   # Dataset type(s) to use
 
 # Training parameters
 mlp_lr=1e-5
 lora_lr=1e-5
 mlp_epochs=1
-lora_epochs=5
+lora_epochs=2 # change to 5 
 lora_final_epochs=1 
 total_cycles=1
 dynamic_symbols_per_epoch=False  # Generate new symbols each epoch
 batch_size=1
 gradient_accumulation_steps=8
 max_grad_norm=1.0
-max_samples=50    # Set reasonable default
-only_original=False  # If True, use only original labels as symbols without generation
-
+max_samples=0  # Set reasonable default
+num_examples=5
 # Orchestrator-specific parameters (get_default_config() method in traning_configs.py)
 schedule_type="bypass_mlp_sym"    # Options: "lora_first", "mlp_first", "joint_training","lora_mlp_joint"
 
@@ -148,6 +147,7 @@ CMD="python \"$SCRIPT_PATH\" \
     --gradient_accumulation_steps $gradient_accumulation_steps \
     --max_grad_norm $max_grad_norm \
     --max_samples $max_samples \
+    --num_examples $num_examples \
     --schedule_type \"$schedule_type\""
 
 

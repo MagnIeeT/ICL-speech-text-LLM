@@ -100,6 +100,7 @@ class DataConfig:
     dataset_type: str = 'voxceleb'  # Default dataset type
     batch_size: int = 1
     max_samples: int = 10
+    num_examples: int = 5  # Number of few-shot examples per batch
     split: str = "test"
     
     # Validation parameters
@@ -258,6 +259,7 @@ class TrainingConfig:
                 "dataset_type": self.data_config.dataset_type,
                 "batch_size": self.data_config.batch_size,
                 "max_samples": self.data_config.max_samples,
+                "num_examples": self.data_config.num_examples,
             },
             "total_cycles": self.total_cycles,
             "output_dir": self.output_dir,
@@ -311,6 +313,7 @@ class TrainingConfig:
             dataset_type=args.dataset_type,
             batch_size=args.batch_size,
             max_samples=args.max_samples,
+            num_examples=args.num_examples,
             val_max_samples = 200 if args.max_samples ==0 else min(200, args.max_samples),
             split=getattr(args, 'split', 'test'),
         )
@@ -418,7 +421,8 @@ def parse_training_args() -> argparse.Namespace:
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--max_samples", type=int, default=100)
-    
+    parser.add_argument("--num_examples", type=int, default=5, help="Number of few-shot examples per batch")
+
     # MLP arguments
     parser.add_argument("--use_output_mlp", action="store_true", help="Use output MLP")
     parser.add_argument("--bypass_mlp", action="store_true", help="Bypass MLP training")

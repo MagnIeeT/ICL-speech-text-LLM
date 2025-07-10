@@ -151,7 +151,7 @@ def create_combined_dataloader(datasets, processor, config: TrainingConfig, shuf
         is_training=shuffle,
         input_mode="speech_only",
         fewshot_mode="text",
-        num_examples=5,
+        num_examples=config.data_config.num_examples,
         random_examples=False,
         model_type=config.model_type.value,
         run_name=config.run_name,
