@@ -376,7 +376,14 @@ class InferenceOrchestrator:
             logging.info("=" * 60)
             for mode, score in validation_scores.items():
                 if not mode.endswith('_loss'):
-                    logging.info(f"{mode:<20}: {float(score):.4f}")
+                    if isinstance(score, str) and '|' in score and ':' in score:
+                        logging.info(f"{mode:<20}:")
+                        parts = score.split('|')
+                        for p in parts:
+                            key, val = p.split(':')
+                            logging.info(f"{'':<20}  {key.strip():<15}: {float(val):.4f}")
+                    else:
+                        logging.info(f"{mode:<20}: {float(score):.4f}")
             logging.info("=" * 60)
             
             logging.info("✅ Orchestrator Inference Pipeline completed successfully!")
