@@ -109,7 +109,7 @@ class ValidationManager:
         self,
         model,
         val_dataloader,
-        symbol_mappings: Dict[str, str],
+        symbol_mappings: Dict[str, Dict[str, str]],
         mode_name: str,
         epoch: int,
         phase: str,
@@ -157,17 +157,10 @@ class ValidationManager:
         
         try:
             for batch_idx, batch in enumerate(progress_bar):
-                try:
+                # try:
                     # Apply symbol replacement using SymbolManager methods
                     if use_original_labels:
-                        # Use original batch without symbol replacement
                         updated_batch = batch
-                    # elif use_dynamic_symbols:
-                    #     # For dynamic symbols, use the fresh mappings directly
-                    #     updated_batch = self.symbol_manager.replace_symbols_in_batch(batch, mappings=symbol_mappings)
-                    # else:
-                    #     # For fixed symbols, replace using SymbolManager's method with the epoch
-                    #     updated_batch = self.symbol_manager.replace_symbols_in_batch(batch, mappings=symbol_mappings)
                     else:
                         updated_batch = self.symbol_manager.replace_symbols_in_batch(batch, mappings=symbol_mappings)
 
@@ -257,9 +250,9 @@ class ValidationManager:
                         'samples': processed_samples
                     })
                         
-                except Exception as e:
-                    logging.error(f"Error during validation batch {batch_idx}: {str(e)}")
-                    continue
+                # except Exception as e:
+                #     logging.error(f"Error during validation batch {batch_idx}: {str(e)}")
+                #     continue
                     
         except KeyboardInterrupt:
             logging.info(f"Validation interrupted at {processed_samples} samples")
@@ -375,17 +368,6 @@ class ValidationManager:
         if self.is_inference_mode:
             accumulated_detailed_metrics = {}
             accumulated_predictions = []
-
-        # Determine validation modes based on phase + model state + step config
-        # if phase == "lora":
-            # if bypass_mlp and use_symbols:
-                # LoRA training with bypass_mlp=True and symbols
-        
-        # modes = [
-        #     ("no_mlp_symbols", True, False, False),   # NoMLP + Fixed Symbols (from training)
-        #     ("no_mlp_fresh", True, False, True),      # NoMLP + Fresh Symbols
-        #     ("no_mlp_original", True, True, False),   # NoMLP + Original Labels
-        # ]
    
         modes = [
             ("no_mlp_symbols", True, False, False),   # NoMLP + Fixed Symbols (from training)
@@ -394,15 +376,8 @@ class ValidationManager:
 
         logging.info(f"Validation modes for {phase.upper()} (bypass_mlp={bypass_mlp}, use_symbols={use_symbols}):")
 
-    
         # Run each validation mode
         for mode_key, bypass_mlp_val, use_original, use_dynamic in modes:
-
-            # if self.is_inference_mode:
-            #     # Skip fixed symbol modes (use_dynamic=False) when dynamic symbols are enabled
-            #     if  use_dynamic:
-            #         logging.info(f"⏭️ Skipping {mode_key} (fixed symbols) - dynamic symbols enabled in inference")
-            #         continue
 
             if self.config.symbol_config.only_original:
                 # If only original labels are used, skip all symbol modes

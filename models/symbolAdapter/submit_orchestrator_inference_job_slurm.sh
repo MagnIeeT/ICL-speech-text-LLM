@@ -15,20 +15,22 @@
 
 # HVB - VoxCeleb 
 # checkpoint_path="/home/sriramg/aneeraj/storage/salmonn_v1.pth"
-# Regular FT Similarity
-checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/0407_0329_orchestrator_bypass_mlp_org_1c_10le_1me_bypass_mlp_org_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch2_periodic.pt"
-# Regular FT Random
-# checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/0407_0341_orchestrator_bypass_mlp_org_1c_10le_1me_bypass_mlp_org_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch2_periodic.pt"
-# Symbol FT Similarity
-# checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/0407_2300_orchestrator_bypass_mlp_sym_1c_10le_1me_bypass_mlp_org_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch2_periodic.pt"
-# Symbol FT Random
-# checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/0607_2216_orchestrator_bypass_mlp_org_1c_10le_1me_bypass_mlp_org_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch2_periodic.pt"
+# Regular FT
+checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/0907_1208_orchestrator_bypass_mlp_sym_1c_5le_1me_bypass_mlp_org_salmonn_hvb-voxceleb/lora_step0_cycle0_epoch2_periodic.pt"
+# Symbol FT
+# checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/0907_1215_orchestrator_bypass_mlp_sym_1c_5le_1me_bypass_mlp_org_salmonn_hvb-voxceleb/lora_step0_cycle0_epoch2_periodic.pt"
 
 # HVB - Meld-Emotion
-# Regular FT Random
+# Regular FT 
 # checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/0607_2157_orchestrator_bypass_mlp_org_1c_10le_1me_bypass_mlp_org_salmonn_hvb_meld_emotion/lora_step0_cycle0_epoch2_periodic.pt"
-# Regular FT Similarity
-# checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/0507_2024_orchestrator_bypass_mlp_org_1c_10le_1me_bypass_mlp_org_salmonn_hvb_meld_emotion/lora_step0_cycle0_epoch2_periodic.pt"
+# Symbol FT
+# checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/1007_0908_orchestrator_bypass_mlp_sym_1c_5le_1me_bypass_mlp_org_salmonn_hvb-meld_emotion/lora_step0_cycle0_epoch2_periodic.pt"
+
+# Voxpopuli - Voxceleb
+# Regular FT
+# checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/0907_1125_orchestrator_bypass_mlp_sym_1c_5le_1me_bypass_mlp_org_salmonn_voxpopuli-voxceleb/lora_step0_cycle0_epoch2_periodic.pt"
+# Symbol FT 
+# checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/1007_0234_orchestrator_bypass_mlp_sym_1c_5le_1me_bypass_mlp_org_salmonn_voxceleb-voxpopuli/lora_step0_cycle0_epoch2_periodic.pt"
 
 dataset_type="hvb"
 max_val_samples=0

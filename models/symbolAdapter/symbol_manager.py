@@ -116,28 +116,41 @@ class SymbolManager:
         
         return reverse_mappings
     
-    def _generate_symbol_mappings(self) -> Dict[str, str]:
+    def _generate_symbol_mappings(self) -> Dict[str, Dict[str, str]]:
         """Generate symbol mappings based on symbol_type"""
+
+        logging.info(f"original_labels_dict keys: {self.original_labels_dict.keys()}")
 
         mapped_dict = {}
 
-        if self.only_original: 
-            for data in original_labels_dict:
-                mapped_dict[data] = dict(zip(self.original_labels_dict[data], self.original_labels_dict[data]))
+        if self.only_original:
+            for dataset in self.original_labels_dict:
+                mapped_dict[dataset] = dict(zip(self.original_labels_dict[dataset], self.original_labels_dict[dataset]))
             return mapped_dict
-        
-        self.all_original_labels = [label for labels in self.original_labels.values() for label in labels]  # Flatten labels
+
+        # Flatten all labels from all datasets
+        self.all_original_labels = [label for labels in self.original_labels_dict.values() for label in labels]
+
+        logging.info(f"Generating symbols for {len(self.all_original_labels)} original labels: {self.all_original_labels}")
 
         if self.symbol_type == "two_token":
             symbols = self._generate_two_token_symbols(len(self.all_original_labels))
         else:
             raise ValueError(f"Unsupported symbol type: {self.symbol_type}")
-        
-        symbol_mapped_dict =  dict(zip(self.original_labels, symbols))
 
-        for data in original_labels_dict.keys():
-            for label in data.keys():
-                mapped_dict[data][label]
+        # Create a global flat mapping from label to symbol
+        symbol_mapped_dict = dict(zip(self.all_original_labels, symbols))
+
+        logging.info(f"Generated symbol mappings: {symbol_mapped_dict}")
+
+        # Build per-dataset mappings
+        for dataset in self.original_labels_dict.keys():
+            mapped_dict[dataset] = {}  # ✅ Initialize the nested dictionary
+            for label in self.original_labels_dict[dataset]:
+                if label not in symbol_mapped_dict:
+                    raise KeyError(f"Label '{label}' from dataset '{dataset}' not found in symbol_mapped_dict.")
+                mapped_dict[dataset][label] = symbol_mapped_dict[label]
+
         return mapped_dict
         
     def _generate_two_token_symbols(self, num_symbols: int) -> List[str]:
@@ -186,20 +199,15 @@ class SymbolManager:
     ) -> Dict[str, Any]:
         """
         Replace symbols in a batch, optionally swapping symbols using dataset-specific permutations.
-
-        Args:
-            batch: Input batch with 'prompt' and/or 'completion'.
-            epoch: Current epoch (only used for fallback mapping).
-            mappings: Optional full mapping per dataset: {dataset: {label: symbol}}.
-            swap_symbols: Whether to apply permutation-based swapping.
-            label_permutations: Optional permutation dict: {dataset: {original_label: permuted_label}}.
-            original_labels: Original labels for each dataset: {dataset: [label1, label2, ...]}.
-
-        Returns:
-            Updated batch with replaced (and optionally permuted) symbols.
         """
+        logging.info(f"\n🧩 === Starting Symbol Replacement ===")
+        logging.info(f"Epoch: {epoch}")
+        logging.info(f"Swap Symbols: {swap_symbols}")
+        logging.info(f"Mappings provided: {mappings is not None}")
+        logging.info(f"Label permutations provided: {label_permutations is not None}")
+        logging.info(f"Original labels provided: {original_labels is not None}")
 
-        # Fallback to current mapping if not provided
+        # Get dataset-level label-to-symbol mapping
         if mappings is not None:
             label_to_symbol_by_dataset = mappings
         elif epoch is not None:
@@ -211,37 +219,69 @@ class SymbolManager:
             logging.warning("✘ No symbol mappings found. Returning original batch.")
             return batch
 
-        # Compose final symbol mappings
         symbol_mappings = {}
 
         for dataset, label_to_symbol in label_to_symbol_by_dataset.items():
+            logging.info(f"\n📦 Dataset: {dataset}")
+            logging.info(f"  Label → Symbol: {label_to_symbol}")
+
             if swap_symbols and label_permutations and dataset in label_permutations:
                 perm_map = label_permutations[dataset]  # {original_label: permuted_label}
+                logging.info(f"  🔁 Permutation Map: {perm_map}")
                 try:
-                    symbol_mappings.update({
-                        label_to_symbol[orig]: label_to_symbol[perm_map[orig]]
-                        for orig in perm_map
-                    })
+                    for orig_label, permuted_label in perm_map.items():
+                        from_symbol = label_to_symbol[orig_label]
+                        to_symbol = label_to_symbol[permuted_label]
+                        symbol_mappings[from_symbol] = to_symbol
+                        logging.info(f"    🔄 {from_symbol} → {to_symbol}")
                 except KeyError as e:
-                    raise KeyError(f"Missing label in label_to_symbol for dataset '{dataset}': {e}")
+                    raise KeyError(f"❌ Missing label in label_to_symbol for dataset '{dataset}': {e}")
             else:
-                # No permutation
-                symbol_mappings.update(label_to_symbol)
+                logging.info(f"  ⏩ No permutation applied.")
+                for label, symbol in label_to_symbol.items():
+                    symbol_mappings[label] = symbol
+                    logging.info(f"    ➕ {label} → {symbol}")
 
         updated_batch = batch.copy()
 
-        def replace_in_text(text: str) -> str:
-            for original, symbol in symbol_mappings.items():
-                text = text.replace(original, symbol)
-            return text
+        logging.info("\n🔄 Replacing symbols in batch...")
+
+        # --- 🛠️ Two-pass non-destructive replacement ---
+        def non_destructive_replace(text: str, mapping: Dict[str, str]) -> str:
+            placeholder_map = {}
+            temp_text = text
+
+            # First pass: Replace with placeholders
+            for i, (original, _) in enumerate(mapping.items()):
+                placeholder = f"<<SYM{i}>>"
+                placeholder_map[placeholder] = original
+                temp_text = temp_text.replace(original, placeholder)
+
+            # Second pass: Replace placeholders with final symbols
+            for placeholder, original in placeholder_map.items():
+                temp_text = temp_text.replace(placeholder, mapping[original])
+
+            return temp_text
 
         if "prompt" in batch:
-            updated_batch["prompt"] = [replace_in_text(p) for p in batch["prompt"]]
+            updated_batch["prompt"] = [
+                non_destructive_replace(p, symbol_mappings) for p in batch["prompt"]
+            ]
+            logging.info("✅ Updated Prompts (First 2):")
+            for i, p in enumerate(updated_batch["prompt"][:2]):
+                logging.info(f"  [{i}] {p}")
 
         if "completion" in batch:
-            updated_batch["completion"] = [replace_in_text(c) for c in batch["completion"]]
+            updated_batch["completion"] = [
+                non_destructive_replace(c, symbol_mappings) for c in batch["completion"]
+            ]
+            logging.info("✅ Updated Completions (First 2):")
+            for i, c in enumerate(updated_batch["completion"][:2]):
+                logging.info(f"  [{i}] {c}")
 
+        logging.info("🎉 Symbol replacement completed.\n")
         return updated_batch
+
     
     def convert_symbols_back(self, text: str, epoch: Optional[int] = None, mappings: Optional[Dict[str, str]] = None) -> str:
         """

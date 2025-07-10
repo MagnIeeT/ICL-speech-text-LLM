@@ -5,7 +5,7 @@ from typing import Dict, Any, Optional, List
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import itertools
-
+import random
 from ..configs.training_configs import TrainingConfig
 from ..symbol_manager import SymbolManager
 from .validation import ValidationManager
@@ -326,13 +326,27 @@ class UnifiedTrainer:
                         else:
                             logging.info("NO SYMBOL REPLACEMENT")
 
+                    # get symbol swap map for this epoch
+                    symbol_swap_map = None
+
+                    if self.config.symbol_config.swap_symbols:
+                        # Get the next label permutation
+                        symbol_swap_map = self.get_next_label_permutation()
+                        logging.info(f"Using symbol swap map: {symbol_swap_map}")
+                    else:
+                        logging.info("Symbol swapping is disabled, using original labels.")
+
+                    # If no symbol swap map, use original labels
+                    if not symbol_swap_map:
+                        symbol_swap_map = self.symbol_manager.original_labels_dict
+
                     # Apply symbol replacement
                     if getattr(step, 'use_symbols', True):
                         updated_batch = self.symbol_manager.replace_symbols_in_batch(
                         batch=batch,
                         epoch=epoch,
                         swap_symbols=self.config.symbol_config.swap_symbols,
-                        label_permutations=symbol_swap_map if symbol_swap_map else None,
+                        label_permutations=symbol_swap_map,
                         original_labels=self.symbol_manager.original_labels_dict,
                     )
                     else:
@@ -433,6 +447,7 @@ class UnifiedTrainer:
     
     def _validate_epoch(self, step: TrainingStep, epoch: int, is_final: bool = False) -> dict:
         """Universal validation - Simplified, no mapping"""
+        
         logging.info(f"Validating {step.phase.upper()} (Epoch {epoch+1})")
 
         # ✅ Direct return - no mapping needed

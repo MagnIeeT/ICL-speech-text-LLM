@@ -28,7 +28,6 @@ def evaluate_predictions(predictions: List[Dict[str, Any]], dataset_type: Datase
         logger.warning("Empty predictions list provided for evaluation")
         return {"error": "Empty predictions list", "accuracy": 0.0}
     
-
     try:
         # Get the appropriate config based on dataset type
         if dataset_type in [DatasetType.VOXCELEB_SWAP, DatasetType.HVB_SWAP, DatasetType.VOXPOPULI_SWAP]:
