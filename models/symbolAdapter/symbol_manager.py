@@ -311,7 +311,7 @@ class SymbolManager:
                 symbol_to_swapped_symbol = label_to_symbol
                 logging.info("⏩ No permutation applied. Using direct label-to-symbol mapping.")
             
-            symbol_mappings = label_to_symbol
+            symbol_mappings = symbol_to_swapped_symbol
 
             updated_batch = batch.copy()
             

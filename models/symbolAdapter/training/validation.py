@@ -117,7 +117,7 @@ class ValidationManager:
         use_dynamic_symbols: bool = False
     ) -> Dict[str, float]:
         """Run validation using utils.evaluation_utils functions"""
-        use_original_labels = True
+        
         all_results = {}
         processed_samples = 0
 
@@ -125,7 +125,6 @@ class ValidationManager:
         dataset_type_str = self.config.data_config.dataset_type
         dataset_names_train = set(dataset_type_str.split('-') if '-' in dataset_type_str else [dataset_type_str])
         
-        logging.info(f"Inference Mode : {self.is_inference_mode}")
         # ✅ Get validation datasets
         if not self.is_inference_mode:
             val_dataset_type_str = self.config.data_config.val_dataset_type
@@ -170,7 +169,7 @@ class ValidationManager:
                     #     # For fixed symbols, replace using SymbolManager's method with the epoch
                     #     updated_batch = self.symbol_manager.replace_symbols_in_batch(batch, mappings=symbol_mappings)
                     else:
-                        updated_batch = self.symbol_manager.replace_symbols_in_batch(batch,swap_symbols=False,mappings=symbol_mappings)
+                        updated_batch = self.symbol_manager.replace_symbols_in_batch(batch, mappings=symbol_mappings)
 
                     # ✅ Log first validation prompt
                     if log_first_prompt:
@@ -343,6 +342,7 @@ class ValidationManager:
     def run_comprehensive_validation(
         self,
         model,
+        config,
         val_dataloader,
         epoch: int,
         phase: str,  # This comes from TrainingStep.phase: "lora", "mlp", "joint"
@@ -354,17 +354,24 @@ class ValidationManager:
         Run comprehensive validation with all modes (MLP+Symbols, NoMLP+Symbols, etc.)
         """
         validation_results = {}
-        
+
+        self.config = config
+
+        logging.info(f"config from validation: {self.config}")
+
         # Check model state
-        bypass_mlp = getattr(model, 'bypass_mlp', True)
+        bypass_mlp = getattr(model, 'bypass_mlp', False)
         use_symbols = step.use_symbols if step else True  # Default to True if no step provided
 
         dynamic_symbols_enabled = (self.config.symbol_config.mode == SymbolMode.DYNAMIC_PER_EPOCH)
         is_inference_mode = getattr(self.config, 'inference_mode', False)
+
         self.is_inference_mode = is_inference_mode  # Store for later use
 
         self.only_original = getattr(self.config, 'only_original', False)
         
+        logging.info(f"only original : {self.only_original}")
+
         if self.is_inference_mode:
             accumulated_detailed_metrics = {}
             accumulated_predictions = []
@@ -373,101 +380,31 @@ class ValidationManager:
         # if phase == "lora":
             # if bypass_mlp and use_symbols:
                 # LoRA training with bypass_mlp=True and symbols
+        
+        # modes = [
+        #     ("no_mlp_symbols", True, False, False),   # NoMLP + Fixed Symbols (from training)
+        #     ("no_mlp_fresh", True, False, True),      # NoMLP + Fresh Symbols
+        #     ("no_mlp_original", True, True, False),   # NoMLP + Original Labels
+        # ]
+   
         modes = [
             ("no_mlp_symbols", True, False, False),   # NoMLP + Fixed Symbols (from training)
-            ("no_mlp_fresh", True, False, True),      # NoMLP + Fresh Symbols
             ("no_mlp_original", True, True, False),   # NoMLP + Original Labels
         ]
-        #     elif bypass_mlp and not use_symbols:
-        #         # LoRA training with bypass_mlp=True and no symbols
-        #         modes = [
-        #             ("no_mlp_original", True, True, False),   # NoMLP + Original Labels
-        #         ]
-        #     elif not bypass_mlp and use_symbols:
-        #         # LoRA training with MLP enabled and symbols
-        #         modes = [
-        #             ("mlp_symbols", False, False, False),     # MLP + Fixed Symbols
-        #             ("no_mlp_symbols", True, False, False),   # NoMLP + Fixed Symbols
-        #             ("mlp_original", False, True, False),     # MLP + Original Labels
-        #             ("no_mlp_original", True, True, False),   # NoMLP + Original Labels
-        #             ("mlp_fresh", False, False, True),     # MLP + Fresh Labels
-        #             ("no_mlp_fresh", True, False, True),   # NoMLP + Fresh Labels
 
-        #         ]
-        #     else:
-        #         # LoRA training with MLP enabled and no symbols
-        #         modes = [
-        #             ("mlp_original", False, True, False),     # MLP + Original Labels
-        #             ("no_mlp_original", True, True, False),   # NoMLP + Original Labels
-        #         ]
-        
-        # elif phase == "mlp":
-        #     if bypass_mlp:
-        #         # This should not happen - MLP training with bypass_mlp=True
-        #         logging.error("Cannot run MLP validation when bypass_mlp=True")
-        #         return {"error": 0.0}
-        #     else:
-        #         # Normal MLP training - always uses symbols
-        #         modes = [
-        #             ("mlp_symbols", False, False, False),     # MLP + Fixed Symbols (main focus)
-        #             ("no_mlp_symbols", True, False, False),   # NoMLP + Fixed Symbols (comparison)
-        #             ("mlp_original", False, True, False),     # MLP + Original Labels (baseline)
-        #             ("no_mlp_original", True, True, False),   # NoMLP + Original Labels (baseline)
-        #             ("mlp_fresh", False, False, True),     # MLP + Fresh Labels
-        #             ("no_mlp_fresh", True, False, True),   # NoMLP + Fresh Labels
-        #         ]
-        
-        # elif phase == "joint":
-        #     if bypass_mlp and use_symbols:
-        #         # Joint training with bypass_mlp=True (effectively LoRA-only)
-        #         modes = [
-        #             ("no_mlp_symbols", True, False, False),   # NoMLP + Fixed Symbols
-        #             ("no_mlp_fresh", True, False, True),      # NoMLP + Fresh Symbols
-        #             ("no_mlp_original", True, True, False),   # NoMLP + Original Labels
-        #         ]
-        #     elif bypass_mlp and not use_symbols:
-        #         # Joint training with bypass_mlp=True and no symbols
-        #         modes = [
-        #             ("no_mlp_original", True, True, False),   # NoMLP + Original Labels
-        #         ]
-        #     elif not bypass_mlp and use_symbols:
-        #         # Normal joint training with symbols
-        #         modes = [
-        #             ("mlp_symbols", False, False, False),     # MLP + Fixed Symbols
-        #             ("no_mlp_symbols", True, False, False),   # NoMLP + Fixed Symbols
-        #             ("mlp_original", False, True, False),     # MLP + Original Labels
-        #             ("no_mlp_original", True, True, False),   # NoMLP + Original Labels
-        #             ("mlp_fresh", False, False, True),     # MLP + Fresh Labels
-        #             ("no_mlp_fresh", True, False, True),   # NoMLP + Fresh Labels
-        #         ]
-        #     else:
-        #         # Joint training without symbols
-        #         modes = [
-        #             ("mlp_original", False, True, False),     # MLP + Original Labels
-        #             ("no_mlp_original", True, True, False),   # NoMLP + Original Labels
-        #         ]
-        
-        # else:
-        #     # Default fallback
-        #     modes = [
-        #         ("mlp_symbols", False, False, False),
-        #         ("no_mlp_symbols", True, False, False),
-        #         ("mlp_original", False, True, False),
-        #         ("no_mlp_original", True, True, False),
-        #     ]
-        
         logging.info(f"Validation modes for {phase.upper()} (bypass_mlp={bypass_mlp}, use_symbols={use_symbols}):")
 
+    
         # Run each validation mode
         for mode_key, bypass_mlp_val, use_original, use_dynamic in modes:
 
-            if self.is_inference_mode:
-                # Skip fixed symbol modes (use_dynamic=False) when dynamic symbols are enabled
-                if  use_dynamic or use_original:
-                    logging.info(f"⏭️ Skipping {mode_key} (fixed symbols) - dynamic symbols enabled in inference")
-                    continue
+            # if self.is_inference_mode:
+            #     # Skip fixed symbol modes (use_dynamic=False) when dynamic symbols are enabled
+            #     if  use_dynamic:
+            #         logging.info(f"⏭️ Skipping {mode_key} (fixed symbols) - dynamic symbols enabled in inference")
+            #         continue
 
-            if self.only_original:
+            if self.config.symbol_config.only_original:
                 # If only original labels are used, skip all symbol modes
                 if not use_original:
                     logging.info(f"⏭️ Skipping {mode_key} - only original labels are used")

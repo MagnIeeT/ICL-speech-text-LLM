@@ -1,13 +1,15 @@
 #!/bin/bash -l
+
 #SBATCH --job-name=train_orchestrator
 #SBATCH --output=/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/logs/slurm_logs/%x_%j.out
 #SBATCH --error=/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/logs/slurm_logs/%x_%j.err
-#SBATCH --time=2-00:00:00
+#SBATCH --time=1-00:00:00
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=48G
-#SBATCH --partition=long
-#SBATCH --gres=gpu:A6000:1
+#SBATCH --mem=32G
+#SBATCH --partition=h200
+#SBATCH --gres=gpu:1
 #SBATCH --export=ALL
+
 
 SLURM_LOG_DIR="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/logs/${TODAY}"
 mkdir -p "$SLURM_LOG_DIR"
@@ -27,7 +29,7 @@ dynamic_symbols_per_epoch=False  # Generate new symbols each epoch
 batch_size=1
 gradient_accumulation_steps=8
 max_grad_norm=1.0
-max_samples=0    # Set reasonable default
+max_samples=50     # Set reasonable default
 only_original=False  # If True, use only original labels as symbols without generation
 
 # Orchestrator-specific parameters (get_default_config() method in traning_configs.py)
@@ -50,7 +52,7 @@ else
 fi
 
 # ========================== Conda Setup ==========================
-export CONDA_ENV="salmon"
+export CONDA_ENV="salmon-12.4"
 echo "Set conda environment to: $CONDA_ENV"
 source /home/sriramg/aneeraj/miniconda3/etc/profile.d/conda.sh
 conda deactivate
@@ -58,7 +60,7 @@ conda activate "$CONDA_ENV"
 echo "Activated conda environment: $CONDA_ENV"
 
 # ===== CUDA Info (Optional Debug) =====
-export CUDA_HOME=$HOME/cuda-11.7
+export CUDA_HOME=$HOME/cuda-12.4
 export PATH=$CUDA_HOME/bin:$PATH
 export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
 echo "Checking CUDA and NVIDIA driver versions..."

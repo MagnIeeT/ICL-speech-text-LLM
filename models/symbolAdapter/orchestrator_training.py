@@ -127,7 +127,6 @@ def load_datasets_for_config(config: TrainingConfig, inference_mode: bool = Fals
         if not inference_mode:
             try:
                 full_val_dataset = load_dataset(dataset_type, split="validation")
-                # full_val_dataset = load_dataset(dataset_type, split="train")
                 if config.data_config.val_max_samples > 0:
                     val_samples = min(config.data_config.val_max_samples, len(full_val_dataset))
                     val_datasets[dataset_type] = full_val_dataset.select(range(val_samples))
@@ -137,7 +136,7 @@ def load_datasets_for_config(config: TrainingConfig, inference_mode: bool = Fals
                 logging.error(f"✗ Failed to load dataset {dataset_name}: {e}")
                 continue
 
-        logging.info(f"✓ Loaded {dataset_name} Val: {len(val_datasets[dataset_type])} samples")
+        # logging.info(f"✓ Loaded {dataset_name} Val: {len(val_datasets[dataset_type])} samples")
     return train_datasets, val_datasets
 
 
@@ -195,6 +194,23 @@ def extract_dataset_labels(config: TrainingConfig) -> List[str]:
     logging.info(f"Extracted dataset labels: {dataset_labels}")
     return dataset_labels
 
+def extract_dataset_labels_dict(config: TrainingConfig) -> Dict[str, List[str]]:
+    """Extract dataset labels once - centralized function"""
+    dataset_type_str = config.data_config.val_dataset_type
+    dataset_names = dataset_type_str.split('-') if '-' in dataset_type_str else [dataset_type_str]
+    
+    dataset_labels_dict = {}
+    for dataset_name in dataset_names:
+        try:
+            dataset_type = DatasetType(dataset_name)
+            dataset_config = get_dataset_config(dataset_type)
+            dataset_labels_dict[dataset_name] = sorted(list(dataset_config.valid_labels))
+        except Exception as e:
+            logging.warning(f"Could not get labels for {dataset_name}: {e}")
+            dataset_labels_dict[dataset_name] = []  # Add an empty list if labels cannot be retrieved
+    
+    logging.info(f"Extracted dataset labels: {dataset_labels_dict}")
+    return dataset_labels_dict
 
 def initialize_model(config: TrainingConfig, tokenizer, symbol_manager) -> MLPSalmonn:
     """Initialize the model based on model_type using SymbolManager"""
@@ -207,8 +223,7 @@ def initialize_model(config: TrainingConfig, tokenizer, symbol_manager) -> MLPSa
     # bypass_mlp = config.mode in [TrainingMode.BYPASS_MLP_SYM, TrainingMode.BYPASS_MLP_ORG]
     
     # logging.info(f"Training mode: {config.mode.value}, bypass_mlp: {bypass_mlp}")
-    
-    
+
    # CA edit 6/7/2025
     model_type = config.model_type.value
 

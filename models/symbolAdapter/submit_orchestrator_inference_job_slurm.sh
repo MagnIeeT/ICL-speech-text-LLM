@@ -1,12 +1,12 @@
 #!/bin/bash -l
 #SBATCH --job-name=inference_orchestrator
-#SBATCH --partition=long
-#SBATCH --time=2-00:00:00
+#SBATCH --partition=short
+#SBATCH --time=1-00:00:00
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=48G
-#SBATCH --gres=gpu:A6000:1
-#SBATCH --output=/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_inference/logs/%x_%j.out
-#SBATCH --error=/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_inference/logs/%x_%j.err
+#SBATCH --gres=gpu:A5000:1
+#SBATCH --output=/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_inference/logs/slurm_logs/%x_%j.out
+#SBATCH --error=/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_inference/logs/slurm_logs/%x_%j.err
 #SBATCH --export=ALL
 
 # ========================================
@@ -14,11 +14,11 @@
 # ========================================
 
 # HVB - VoxCeleb 
-
+# checkpoint_path="/home/sriramg/aneeraj/storage/salmonn_v1.pth"
 # Regular FT Similarity
-# checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/0407_0329_orchestrator_bypass_mlp_org_1c_10le_1me_bypass_mlp_org_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch2_periodic.pt"
+checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/0407_0329_orchestrator_bypass_mlp_org_1c_10le_1me_bypass_mlp_org_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch2_periodic.pt"
 # Regular FT Random
-checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/0407_0341_orchestrator_bypass_mlp_org_1c_10le_1me_bypass_mlp_org_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch2_periodic.pt"
+# checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/0407_0341_orchestrator_bypass_mlp_org_1c_10le_1me_bypass_mlp_org_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch2_periodic.pt"
 # Symbol FT Similarity
 # checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/0407_2300_orchestrator_bypass_mlp_sym_1c_10le_1me_bypass_mlp_org_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch2_periodic.pt"
 # Symbol FT Random
@@ -56,7 +56,6 @@ nvidia-smi
 # ========================================
 if [ ! -f "$checkpoint_path" ]; then
     echo "❌ ERROR: Checkpoint not found at $checkpoint_path"
-    exit 1
 fi
 
 SCRIPT_PATH="/home/sriramg/aneeraj/code/ICL-speech-text-LLM/models/symbolAdapter/orchestrator_inference.py"

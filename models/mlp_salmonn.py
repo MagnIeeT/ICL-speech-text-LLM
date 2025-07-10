@@ -36,7 +36,7 @@ class MLPSalmonn(nn.Module):
     ):
         super().__init__()
         
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device or ("cuda:0" if torch.cuda.is_available() else "cpu")
         self.use_fp16 = torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7.0
         
         # SALMONN config
@@ -61,6 +61,7 @@ class MLPSalmonn(nn.Module):
             "freeze_speech_llama_proj": False,
             "ckpt": "/home/sriramg/aneeraj/storage/salmonn_v1.pth"
         }
+        
         logging.info("=" * 80)
         logging.info("🔧 INITIALIZING MLP-SALMONN MODEL")
         logging.info("=" * 80)
@@ -75,7 +76,13 @@ class MLPSalmonn(nn.Module):
         logging.info("Loading base SALMONN model...")
         self.salmonn = SALMONN.from_config(salmonn_config)
         logging.info("Base SALMONN model loaded successfully")
-        self.salmonn.to(self.device)
+
+        # Check for meta tensors
+        for name, param in self.salmonn.named_parameters():
+            if param.is_meta:
+                logging.error(f"Parameter {name} is still a meta tensor!")
+                
+        self.salmonn = self.salmonn.to(self.device)
         sys.stdout.flush() 
 
         self.batch_counter = 0

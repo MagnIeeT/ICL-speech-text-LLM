@@ -152,17 +152,17 @@ class InferenceOrchestrator:
         try:
             # Setup tokenizer and other components
             from models.symbolAdapter.orchestrator_training import (
-                setup_tokenizer,
+                setup_tokenizer_and_processor,
                 extract_dataset_labels
             )
             
             # Setup tokenizer (same as training)
-            tokenizer = setup_tokenizer()
+            tokenizer, processor = setup_tokenizer_and_processor(self.config)
             logging.info("✅ Tokenizer setup complete")
             
             # Extract dataset labels (same as training)
             dataset_labels = extract_dataset_labels(self.config)
-            
+                
             # Setup symbol manager (same as training)
             if 'symbol_mappings' in checkpoint:
                 symbol_data = checkpoint['symbol_mappings']
@@ -244,17 +244,12 @@ class InferenceOrchestrator:
             # ✅ FIX: Initialize model with correct config attributes
             logging.info("🤖 Initializing model...")
             self.model = MLPSalmonn(
-                device=self.device,
-                # label_tokens=list(initial_symbol_mappings.values()),
-                # hidden_dim=self.config.mlp_config.hidden_dim,  # ✅ mlp_config.hidden_dim
-                # dropout=self.config.mlp_config.dropout,        # ✅ mlp_config.dropout
+                device=self.config.device,
                 lora=True,
-                lora_rank=self.config.lora_config.rank,        # ✅ lora_config.rank
-                lora_alpha=self.config.lora_config.alpha,      # ✅ lora_config.alpha
-                lora_dropout=self.config.lora_config.dropout,  # ✅ lora_config.dropout
+                lora_rank=self.config.lora_config.rank,
+                lora_alpha=self.config.lora_config.alpha,
+                lora_dropout=self.config.lora_config.dropout,
                 low_resource=False,
-                # use_output_mlp=self.config.mlp_config.use_output_mlp,  # ✅ mlp_config.use_output_mlp
-                # bypass_mlp=not self.config.mlp_config.use_input_mlp    # ✅ NOT use_input_mlp = bypass_mlp
             )
             logging.info(f"✅ Model initialized: {self.model.__class__.__name__}")
             # Load model state from checkpoint
@@ -309,11 +304,13 @@ class InferenceOrchestrator:
         
         # Run validation
         results = self.validator.run_comprehensive_validation(
+            config=self.config,
             model=self.model,
             val_dataloader=self.val_dataloader,
             epoch=0,
             phase='lora',  # Use 'joint' for comprehensive inference
             symbol_mappings = self.current_mappings,
+            only_original = self.config.only_original
         )
         
         # Extract and return (ValidationManager did all the work)

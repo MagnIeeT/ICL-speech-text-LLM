@@ -290,7 +290,7 @@ class TrainingConfig:
             gradient_accumulation_steps=args.gradient_accumulation_steps,
             max_grad_norm=args.max_grad_norm,
         )
-        
+            
         # Determine symbol mode
         if getattr(args, 'dynamic_symbols_per_epoch', False):
             symbol_mode = SymbolMode.DYNAMIC_PER_EPOCH

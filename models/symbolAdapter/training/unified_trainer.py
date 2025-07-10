@@ -345,6 +345,7 @@ class UnifiedTrainer:
                         )
                     else:
                         updated_batch = batch
+                        
 # chandni edit,  -------------------------------------- 8/7/2025
 
                     # DETAILED BATCH LOGGING AFTER REPLACEMENT
@@ -442,9 +443,10 @@ class UnifiedTrainer:
     def _validate_epoch(self, step: TrainingStep, epoch: int, is_final: bool = False) -> dict:
         """Universal validation - Simplified, no mapping"""
         logging.info(f"Validating {step.phase.upper()} (Epoch {epoch+1})")
-        
+
         # ✅ Direct return - no mapping needed
         return self.validator.run_comprehensive_validation(
+            config=self.config,
             model=self.model,
             val_dataloader=self.val_dataloader,
             epoch=epoch,
