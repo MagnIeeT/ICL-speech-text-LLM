@@ -10,7 +10,7 @@ import traceback
 import logging
 import torch
 from datetime import datetime
-from typing import List
+from typing import List, Dict
 
 # Add parent directory to path for imports
 ICL_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -291,10 +291,16 @@ def main():
         dataset_labels = extract_dataset_labels(config)
         logging.info(f"✓ Dataset labels extracted: {dataset_labels}")
         
+        # Extract dataset labels as a dict
+        dataset_labels_dict = extract_dataset_labels_dict(config)
+        logging.info(f"✓ Dataset labels extracted: {dataset_labels_dict}")
+
         # Create SymbolManager ONCE
         logging.info(f"Creating SymbolManager with only_original={config.symbol_config.only_original}, dynamic_per_epoch={config.symbol_config.mode.value == 'dynamic_per_epoch'}, symbol_type={config.symbol_config.symbol_type}")
+       
         symbol_manager = SymbolManager(
             original_labels=dataset_labels,
+            original_labels_dict=dataset_labels_dict,
             tokenizer=tokenizer,
             dynamic_per_epoch=(config.symbol_config.mode.value == "dynamic_per_epoch"),
             symbol_type=config.symbol_config.symbol_type,
@@ -305,18 +311,6 @@ def main():
         # Load datasets
         train_datasets, val_datasets = load_datasets_for_config(config)
         logging.info(f"✓ Loaded datasets: {list(train_datasets.keys())}")
-        
-     
-        ## Create processor and dataloaders
-        # processor = get_processor(config.model_type.value, tokenizer=tokenizer)  
-        # if args.model_type == "salmonn":    
-        #         processor = get_processor(config.model_type.value, tokenizer=tokenizer)
-        # elif args.model_type == "qwen":
-        #         input_processor = AutoProcessor.from_pretrained("Qwen/Qwen2-Audio-7B-Instruct", trust_remote_code=True)
-        #         processor = get_processor(config.model_type.value, processor=input_processor)
-        #         tokenizer = processor.tokenizer  # For SymbolManager
-        # else:
-        #     raise ValueError(f"Unknown model_type: {args.model_type}")
         
         train_dataloader = create_combined_dataloader(train_datasets, processor, config, shuffle=True)
         val_dataloader = create_combined_dataloader(val_datasets, processor, config, shuffle=False)

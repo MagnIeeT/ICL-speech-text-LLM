@@ -86,7 +86,7 @@ class SymbolConfig:
     symbol_type: str = "two_token"
     
     # NEW: Only Original configuration
-    only_original: bool = False    # If True, use only original labels without symbols
+    only_original: bool = True    # If True, use only original labels without symbols
 
     swap_symbols: bool = False  # If True, swap symbols during training
 

@@ -19,6 +19,7 @@ class SymbolManager:
     def __init__(
         self, 
         original_labels: List[str],
+        original_labels_dict: Dict[str,List[str]],
         tokenizer: PreTrainedTokenizer,
         dynamic_per_epoch: bool = False,
         symbol_type: str = "two_token",
@@ -34,6 +35,7 @@ class SymbolManager:
             symbol_type: Type of symbols to generate ("two_token", "random_words", etc.)
         """
         self.original_labels = original_labels
+        self.original_labels_dict = original_labels_dict
         self.tokenizer = tokenizer
         self.dynamic_per_epoch = dynamic_per_epoch
         self.symbol_type = symbol_type
@@ -117,17 +119,27 @@ class SymbolManager:
     def _generate_symbol_mappings(self) -> Dict[str, str]:
         """Generate symbol mappings based on symbol_type"""
 
+        mapped_dict = {}
+
         if self.only_original: 
-            return dict(zip(self.original_labels, self.original_labels))
+            for data in original_labels_dict:
+                mapped_dict[data] = dict(zip(self.original_labels_dict[data], self.original_labels_dict[data]))
+            return mapped_dict
+        
+        self.all_original_labels = [label for labels in self.original_labels.values() for label in labels]  # Flatten labels
 
         if self.symbol_type == "two_token":
-            symbols = self._generate_two_token_symbols(len(self.original_labels))
+            symbols = self._generate_two_token_symbols(len(self.all_original_labels))
         else:
             raise ValueError(f"Unsupported symbol type: {self.symbol_type}")
         
-        return dict(zip(self.original_labels, symbols))
+        symbol_mapped_dict =  dict(zip(self.original_labels, symbols))
+
+        for data in original_labels_dict.keys():
+            for label in data.keys():
+                mapped_dict[data][label]
+        return mapped_dict
         
-    
     def _generate_two_token_symbols(self, num_symbols: int) -> List[str]:
         """
         Generate 2-token symbols (extracted from existing code)
@@ -163,182 +175,73 @@ class SymbolManager:
         
         return two_token_words[:num_symbols]
 
-    # def replace_symbols_in_batch(
-    #     self,
-    #     batch: Dict[str, Any],
-    #     epoch: Optional[int] = None,
-    #     mappings: Optional[Dict[str, str]] = None,
-    #     swap_symbols: bool = True,
-    #     label_permutations: Optional[List[List[str]]] = None,
-    #     original_labels: Optional[List[str]] = None,
-    # ) -> Dict[str, Any]:
-    #     """
-    #     Replace symbols in a batch, optionally swapping symbols according to a label permutation.
-
-    #     Args:
-    #         batch: The input batch containing 'prompt' and/or 'completion'.
-    #         epoch: Current training epoch (used to determine symbol mappings or permutation).
-    #         mappings: Optional custom label → symbol mapping.
-    #         swap_symbols: Whether to apply label permutation swapping.
-    #         label_permutations: A list of label permutations, used if swap_symbols=True.
-    #         original_labels: The original label ordering to match against permutation.
-
-    #     Returns:
-    #         A batch with replaced (and optionally permuted) symbols.
-    #     """
-
-    #     logging.info(f"\n--- Symbol Replacement for Epoch {epoch} | Swap Symbols: {swap_symbols} ---")
-
-    #     # Step 1: Get the label → symbol mapping
-    #     if mappings is not None:
-    #         label_to_symbol = mappings
-    #         logging.info("✔ Using custom label-to-symbol mapping.")
-    #     elif epoch is not None:
-    #         label_to_symbol = self.get_symbols_for_epoch(epoch)
-    #         logging.info(f"✔ Using epoch-based label-to-symbol mapping for epoch {epoch}.")
-    #     else:
-    #         label_to_symbol = self.get_current_symbols()
-    #         logging.info("✔ Using current label-to-symbol mapping.")
-
-    #     if not label_to_symbol:
-    #         logging.warning("✘ No symbol mappings found. Returning original batch.")
-    #         return batch
-
-    #     logging.info(f"🔍 Label → Symbol mapping:\n{dict(sorted(label_to_symbol.items()))}")
-
-    #     # Step 2: Apply permutation if enabled
-    #     if swap_symbols:
-    #         if not label_permutations or not original_labels:
-    #             raise ValueError("swap_symbols=True requires label_permutations and original_labels to be provided.")
-
-    #         permutation = label_permutations[epoch % len(label_permutations)]
-    #         logging.info(f"🔁 Label Permutation:\nOriginal:    {original_labels}\nPermutation: {permutation}")
-
-    #         # Build symbol → permuted_symbol mapping
-    #         try:
-    #             symbol_to_swapped_symbol = {
-    #                 label_to_symbol[orig]: label_to_symbol[perm]
-    #                 for orig, perm in zip(original_labels, permutation)
-    #             }
-    #         except KeyError as e:
-    #             raise KeyError(f"Missing label in label_to_symbol mapping: {e}")
-
-    #         logging.info(f"🔄 Symbol → Swapped Symbol mapping:\n{dict(sorted(symbol_to_swapped_symbol.items()))}")
-    #     else:
-    #         symbol_to_swapped_symbol = label_to_symbol
-    #         logging.info("⏩ No permutation applied. Using direct label-to-symbol mapping.")
-
-    #     # Step 3: Replace in prompts and completions
-    #     updated_batch = batch.copy()
-    #     for key in ["prompt", "completion"]:
-    #         if key in batch:
-    #             updated = []
-    #             logging.info(f"\n📝 Replacing in {key.upper()}s:")
-    #             for idx, text in enumerate(batch[key]):
-    #                 original_text = text
-    #                 for src_symbol, tgt_symbol in symbol_to_swapped_symbol.items():
-    #                     text = text.replace(src_symbol, tgt_symbol)
-    #                 logging.debug(f"{key}[{idx}] Original: {original_text}")
-    #                 logging.debug(f"{key}[{idx}] Updated : {text}")
-    #                 updated.append(text)
-    #             updated_batch[key] = updated
-
-    #     logging.info(f"\n✅ Completed symbol replacement for epoch {epoch}\n")
-    #     return updated_batch
-
     def replace_symbols_in_batch(
-            self,
-            batch: Dict[str, Any],
-            epoch: Optional[int] = None,
-            mappings: Optional[Dict[str, str]] = None,
-            swap_symbols: bool = False,
-            label_permutations: Optional[List[List[str]]] = None,
-            original_labels: Optional[List[str]] = None,
-        ) -> Dict[str, Any]:
-            """
-            Replace symbols in a batch, optionally swapping symbols according to a label permutation.
+        self,
+        batch: Dict[str, Any],
+        epoch: Optional[int] = None,
+        mappings: Optional[Dict[str, Dict[str, str]]] = None,
+        swap_symbols: bool = False,
+        label_permutations: Optional[Dict[str, Dict[str, str]]] = None,
+        original_labels: Optional[Dict[str, List[str]]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Replace symbols in a batch, optionally swapping symbols using dataset-specific permutations.
 
-            Args:
-                batch: The input batch containing 'prompt' and/or 'completion'.
-                epoch: Current training epoch (used to determine symbol mappings or permutation).
-                mappings: Optional custom label → symbol mapping.
-                swap_symbols: Whether to apply label permutation swapping.
-                label_permutations: A list of label permutations, used if swap_symbols=True.
-                original_labels: The original label ordering to match against permutation.
+        Args:
+            batch: Input batch with 'prompt' and/or 'completion'.
+            epoch: Current epoch (only used for fallback mapping).
+            mappings: Optional full mapping per dataset: {dataset: {label: symbol}}.
+            swap_symbols: Whether to apply permutation-based swapping.
+            label_permutations: Optional permutation dict: {dataset: {original_label: permuted_label}}.
+            original_labels: Original labels for each dataset: {dataset: [label1, label2, ...]}.
 
-            Returns:
-                A batch with replaced (and optionally permuted) symbols.
-            """
+        Returns:
+            Updated batch with replaced (and optionally permuted) symbols.
+        """
 
-            # logging.info(f"\n--- Symbol Replacement for Epoch {epoch} | Swap Symbols: {swap_symbols} ---")
+        # Fallback to current mapping if not provided
+        if mappings is not None:
+            label_to_symbol_by_dataset = mappings
+        elif epoch is not None:
+            label_to_symbol_by_dataset = self.get_symbols_for_epoch(epoch)
+        else:
+            label_to_symbol_by_dataset = self.get_current_symbols()
 
-            # Step 1: Get the label → symbol mapping
-            if mappings is not None:
-                label_to_symbol = mappings
-                logging.info("✔ Using custom label-to-symbol mapping.")
-            elif epoch is not None:
-                label_to_symbol = self.get_symbols_for_epoch(epoch)
-                logging.info(f"✔ Using epoch-based label-to-symbol mapping for epoch {epoch}.")
-            else:
-                label_to_symbol = self.get_current_symbols()
-                logging.info("✔ Using current label-to-symbol mapping.")
+        if not label_to_symbol_by_dataset:
+            logging.warning("✘ No symbol mappings found. Returning original batch.")
+            return batch
 
-            if not label_to_symbol:
-                logging.warning("✘ No symbol mappings found. Returning original batch.")
-                return batch
+        # Compose final symbol mappings
+        symbol_mappings = {}
 
-            # logging.info(f"🔍 Label → Symbol mapping:\n{dict(sorted(label_to_symbol.items()))}")
-
-            # Step 2: Apply permutation if enabled
-            if swap_symbols:
-                if not label_permutations or not original_labels:
-                    raise ValueError("swap_symbols=True requires label_permutations and original_labels to be provided.")
-
-                permutation = label_permutations[epoch % len(label_permutations)]
-                logging.info(f"🔁 Label Permutation:\nOriginal:    {original_labels}\nPermutation: {permutation}")
-
-                # Build symbol → permuted_symbol mapping
+        for dataset, label_to_symbol in label_to_symbol_by_dataset.items():
+            if swap_symbols and label_permutations and dataset in label_permutations:
+                perm_map = label_permutations[dataset]  # {original_label: permuted_label}
                 try:
-                    symbol_to_swapped_symbol = {
-                        label_to_symbol[orig]: label_to_symbol[perm]
-                        for orig, perm in zip(original_labels, permutation)
-                    }
+                    symbol_mappings.update({
+                        label_to_symbol[orig]: label_to_symbol[perm_map[orig]]
+                        for orig in perm_map
+                    })
                 except KeyError as e:
-                    raise KeyError(f"Missing label in label_to_symbol mapping: {e}")
-
-                logging.info(f"🔄 Symbol → Swapped Symbol mapping:\n{dict(sorted(symbol_to_swapped_symbol.items()))}")
+                    raise KeyError(f"Missing label in label_to_symbol for dataset '{dataset}': {e}")
             else:
-                symbol_to_swapped_symbol = label_to_symbol
-                logging.info("⏩ No permutation applied. Using direct label-to-symbol mapping.")
-            
-            symbol_mappings = symbol_to_swapped_symbol
+                # No permutation
+                symbol_mappings.update(label_to_symbol)
 
-            updated_batch = batch.copy()
-            
-            # Replace in prompts
-            if "prompt" in batch:
-                updated_prompts = []
-                for prompt in batch["prompt"]:
-                    updated_prompt = prompt
-                    for original, symbol in symbol_mappings.items():
-                        updated_prompt = updated_prompt.replace(original, symbol)
-                    updated_prompts.append(updated_prompt)
-                updated_batch["prompt"] = updated_prompts
-            
-            # Replace in completions
-            if "completion" in batch:
-                updated_completions = []
-                for completion in batch["completion"]:
-                    updated_completion = completion
-                    for original, symbol in symbol_mappings.items():
-                        updated_completion = updated_completion.replace(original, symbol)
-                    updated_completions.append(updated_completion)
-                updated_batch["completion"] = updated_completions
-            
-            # logging.info(f"Updated batch with symbols for epoch {epoch} {updated_batch['prompt']}")
-            # logging.info(f"\n✅ Completed symbol replacement for epoch {epoch}\n")
+        updated_batch = batch.copy()
 
-            return updated_batch
+        def replace_in_text(text: str) -> str:
+            for original, symbol in symbol_mappings.items():
+                text = text.replace(original, symbol)
+            return text
+
+        if "prompt" in batch:
+            updated_batch["prompt"] = [replace_in_text(p) for p in batch["prompt"]]
+
+        if "completion" in batch:
+            updated_batch["completion"] = [replace_in_text(c) for c in batch["completion"]]
+
+        return updated_batch
     
     def convert_symbols_back(self, text: str, epoch: Optional[int] = None, mappings: Optional[Dict[str, str]] = None) -> str:
         """

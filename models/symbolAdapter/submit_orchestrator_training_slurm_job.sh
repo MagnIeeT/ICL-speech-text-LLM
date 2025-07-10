@@ -27,7 +27,7 @@ dynamic_symbols_per_epoch=False  # Generate new symbols each epoch
 batch_size=1
 gradient_accumulation_steps=8
 max_grad_norm=1.0
-max_samples=0    # Set reasonable default
+max_samples=50    # Set reasonable default
 only_original=False  # If True, use only original labels as symbols without generation
 
 # Orchestrator-specific parameters (get_default_config() method in traning_configs.py)
