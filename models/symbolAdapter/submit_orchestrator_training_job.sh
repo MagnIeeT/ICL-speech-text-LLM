@@ -3,8 +3,8 @@
 
 # Configuration - Edit these values as needed
 model_type="salmonn"  # Options: "salmonn" or "qwen2"
-# dataset_type="hvb-meld_emotion"  # Dataset type(s) to use
-dataset_type="voxceleb-voxpopuli"  # Dataset type(s) to use
+dataset_type="hvb-meld_emotion"  # Dataset type(s) to use
+# dataset_type="voxceleb-voxpopuli"  # Dataset type(s) to use
 device="cuda:0"  # GPU device
 
 hold_job_id=""
@@ -129,7 +129,7 @@ qsub -q longgpu.q -V -cwd \
     -l h_rt=72:00:00 \
     -o "${LOG_DIR}/${RUN_NAME}.log" \
     -j y \
-    -v CUDA_VISIBLE_DEVICES=2,\
+    -v CUDA_VISIBLE_DEVICES=1,\
 TODAY=${TODAY},\
 PYTHONUNBUFFERED=1,\
 RUN_NAME=${RUN_NAME},\
