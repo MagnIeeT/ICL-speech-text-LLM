@@ -283,8 +283,8 @@ class UnifiedTrainer:
                         gc.collect()
                         torch.cuda.empty_cache()
 
-                    force_new_symbols = (batch_idx % (100 * accumulation_steps) == 0)
-                    # force_new_symbols = False
+                    # force_new_symbols = (batch_idx % (100 * accumulation_steps) == 0)
+                    force_new_symbols = False
                     random_mask = True
                     # Apply symbol replacement
                     if getattr(step, 'use_symbols', True):
