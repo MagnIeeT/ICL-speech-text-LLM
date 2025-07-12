@@ -187,7 +187,7 @@ class SymbolManager:
                 A batch with replaced (and optionally permuted) symbols.
             """
 
-            logging.info(f"\n--- Symbol Replacement for Epoch {epoch} | Swap Symbols: {swap_symbols} ---")
+            # logging.info(f"\n--- Symbol Replacement for Epoch {epoch} | Swap Symbols: {swap_symbols} ---")
 
             # Step 1: Get the label → symbol mapping
             if mappings is not None:
@@ -204,7 +204,7 @@ class SymbolManager:
                 logging.warning("✘ No symbol mappings found. Returning original batch.")
                 return batch
 
-            logging.info(f"🔍 Label → Symbol mapping:\n{dict(sorted(label_to_symbol.items()))}")
+            # logging.info(f"🔍 Label → Symbol mapping:\n{dict(sorted(label_to_symbol.items()))}")
 
             # Step 2: Apply permutation if enabled
             if swap_symbols:
@@ -212,7 +212,7 @@ class SymbolManager:
                     raise ValueError("swap_symbols=True requires label_permutations and original_labels to be provided.")
 
                 permutation = label_permutations[epoch % len(label_permutations)]
-                logging.info(f"🔁 Label Permutation:\nOriginal:    {original_labels}\nPermutation: {permutation}")
+                # logging.info(f"🔁 Label Permutation:\nOriginal:    {original_labels}\nPermutation: {permutation}")
 
                 # Build symbol → permuted_symbol mapping
                 try:
@@ -223,10 +223,10 @@ class SymbolManager:
                 except KeyError as e:
                     raise KeyError(f"Missing label in label_to_symbol mapping: {e}")
 
-                logging.info(f"🔄 Symbol → Swapped Symbol mapping:\n{dict(sorted(symbol_to_swapped_symbol.items()))}")
+                # logging.info(f"🔄 Symbol → Swapped Symbol mapping:\n{dict(sorted(symbol_to_swapped_symbol.items()))}")
             else:
                 symbol_to_swapped_symbol = label_to_symbol
-                logging.info("⏩ No permutation applied. Using direct label-to-symbol mapping.")
+                # logging.info("⏩ No permutation applied. Using direct label-to-symbol mapping.")
             
             symbol_mappings = label_to_symbol
 
@@ -252,8 +252,8 @@ class SymbolManager:
                     updated_completions.append(updated_completion)
                 updated_batch["completion"] = updated_completions
             
-            logging.info(f"Updated batch with symbols for epoch {epoch} {updated_batch['prompt']}")
-            logging.info(f"\n✅ Completed symbol replacement for epoch {epoch}\n")
+            # logging.info(f"Updated batch with symbols for epoch {epoch} {updated_batch['prompt']}")
+            # logging.info(f"\n✅ Completed symbol replacement for epoch {epoch}\n")
 
             return updated_batch
     

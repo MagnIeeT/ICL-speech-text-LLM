@@ -376,11 +376,15 @@ class ValidationManager:
    
         modes = [
             ("no_mlp_symbols", True, False, False),   # NoMLP + Fixed Symbols (from training)
-            ("no_mlp_original", True, True, False),   # NoMLP + Original Labels
         ]
 
         logging.info(f"Validation modes for {phase.upper()} (bypass_mlp={bypass_mlp}, use_symbols={use_symbols}):")
 
+        if self.config.symbol_config.only_original:
+            modes = [
+               ("no_mlp_original", True, True, False),   # NoMLP + Original Labels
+            ]
+            
         # Run each validation mode
         for mode_key, bypass_mlp_val, use_original, use_dynamic in modes:
 
@@ -430,8 +434,6 @@ class ValidationManager:
                 validation_results[mode_key] = 0.0
                 # validation_results[f"{mode_key}_composite"] = "error:0.000000"
                 validation_results[f"{mode_key}_loss"] = float('inf')
-
-
         
         # Return based on mode
         if self.is_inference_mode:

@@ -4,6 +4,8 @@ import torch
 from typing import Dict, Any, Optional, List
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import traceback
+import gc
 import itertools
 import random
 from ..configs.training_configs import TrainingConfig
@@ -215,7 +217,7 @@ class UnifiedTrainer:
     def generate_all_permutations(
         self,
         labels: Dict[str, List[str]],
-        k: int = 5000
+        k: int = 25000
     ) -> None:
         """
         Generate and cache up to `k` unique permutations of labels within each dataset.
@@ -421,6 +423,7 @@ class UnifiedTrainer:
                     
                 except Exception as e:
                     logging.error(f"Error in batch {batch_idx}: {str(e)}")
+                    traceback.print_exc()
                     continue
         
         except KeyboardInterrupt:

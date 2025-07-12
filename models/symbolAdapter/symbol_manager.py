@@ -246,36 +246,38 @@ class SymbolManager:
                 # logging.info(f"  🔁 Permutation Map: {perm_map}")
                 try:
                     for orig_label, permuted_label in perm_map.items():
-                        from_symbol = label_to_symbol[orig_label]
                         to_symbol = label_to_symbol[permuted_label]
-                        symbol_mappings[from_symbol] = to_symbol
-                        # logging.info(f"    🔄 {from_symbol} → {to_symbol}")
+                        symbol_mappings[orig_label] = to_symbol
+                        # logging.info(f"    🔄 {orig_label} → {to_symbol}")
                 except KeyError as e:
                     raise KeyError(f"❌ Missing label in label_to_symbol for dataset '{dataset}': {e}")
             else:
-                # logging.info(f"  ⏩ No permutation applied.")
-                for label, symbol in label_to_symbol.items():
-                    symbol_mappings[label] = symbol
-                    # logging.info(f"    ➕ {label} → {symbol}")
+                logging.info(f"  ⏩ No permutation applied.")
+                for orig_label, symbol in label_to_symbol.items():
+                    symbol_mappings[orig_label] = symbol
+                    # logging.info(f"    ➕ {orig_label} → {symbol}")
+
 
         updated_batch = batch.copy()
 
-        logging.info("\n🔄 Replacing symbols in batch...")
+        # logging.info("\n🔄 Replacing symbols in batch...")
+
+        logging.info(f"SYMBOL MAPPINGS {symbol_mappings}")
 
         # --- 🛠️ Two-pass non-destructive replacement ---
         def non_destructive_replace(text: str, mapping: Dict[str, str]) -> str:
             placeholder_map = {}
             temp_text = text
 
-            # First pass: Replace with placeholders
-            for i, (original, _) in enumerate(mapping.items()):
+            # First pass: Replace original labels with placeholders
+            for i, (label, _) in enumerate(mapping.items()):
                 placeholder = f"<<SYM{i}>>"
-                placeholder_map[placeholder] = original
-                temp_text = temp_text.replace(original, placeholder)
+                placeholder_map[placeholder] = label
+                temp_text = temp_text.replace(label, placeholder)
 
             # Second pass: Replace placeholders with final symbols
-            for placeholder, original in placeholder_map.items():
-                temp_text = temp_text.replace(placeholder, mapping[original])
+            for placeholder, label in placeholder_map.items():
+                temp_text = temp_text.replace(placeholder, mapping[label])
 
             return temp_text
 
@@ -296,6 +298,7 @@ class SymbolManager:
             #     logging.info(f"  [{i}] {c}")
 
         logging.info("Symbol replacement completed.\n")
+        
         return updated_batch
 
     def convert_symbols_back(self, text: str, epoch: Optional[int] = None, mappings: Optional[Dict[str, str]] = None) -> str:

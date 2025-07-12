@@ -1,10 +1,11 @@
 #!/bin/bash -l
 #SBATCH --job-name=inference_orchestrator
-#SBATCH --partition=long
+#SBATCH --partition=short
 #SBATCH --time=1-00:00:00
+#SBATCH --nodelist=cn5
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=48G
-#SBATCH --gres=gpu:A6000:1
+#SBATCH --mem=25G
+#SBATCH --gres=gpu:A5000:1
 #SBATCH --output=/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_inference/logs/slurm_logs/%x_%j.out
 #SBATCH --error=/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_inference/logs/slurm_logs/%x_%j.err
 #SBATCH --export=ALL
@@ -16,7 +17,7 @@
 # HVB - VoxCeleb 
 # checkpoint_path="/home/sriramg/aneeraj/storage/salmonn_v1.pth"
 # Regular FT
-checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/0907_1208_orchestrator_bypass_mlp_sym_1c_5le_1me_bypass_mlp_org_salmonn_hvb-voxceleb/lora_step0_cycle0_epoch4_periodic.pt"
+# checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/0907_1208_orchestrator_bypass_mlp_sym_1c_5le_1me_bypass_mlp_org_salmonn_hvb-voxceleb/lora_step0_cycle0_epoch4_periodic.pt"
 # Symbol FT
 # checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/0907_1215_orchestrator_bypass_mlp_sym_1c_5le_1me_bypass_mlp_org_salmonn_hvb-voxceleb/lora_step0_cycle0_epoch1_periodic.pt"
 
@@ -37,6 +38,7 @@ max_val_samples=0
 device="cuda:0"
 output_dir="/home/sriramg/aneeraj/storage/results/model_ICL"
 num_examples=2
+
 # ========================== Conda Setup ==========================
 export CONDA_ENV="salmon"
 echo "Set conda environment to: $CONDA_ENV"
@@ -80,6 +82,32 @@ mkdir -p "$LOG_DIR"
 LOG_PATH="${LOG_DIR}/${RUN_NAME}.log"
 rm -f "$LOG_PATH"
 
+GPU_LOG_PATH="${LOG_DIR}/${RUN_NAME}_gpu_usage.csv"
+CPU_LOG_PATH="${LOG_DIR}/${RUN_NAME}_cpu_mem_usage.log"
+FINAL_TOP_PATH="${LOG_DIR}/${RUN_NAME}_final_top.log"
+FINAL_GPU_PATH="${LOG_DIR}/${RUN_NAME}_final_gpu.log"
+
+# Start GPU usage logging
+nvidia-smi --query-gpu=timestamp,index,name,memory.used,memory.total,utilization.gpu \
+           --format=csv -l 5 > "$GPU_LOG_PATH" &
+GPU_PID=$!
+
+# Start CPU/mem logging
+(
+  echo "timestamp,CPU %,MEM %,Load Avg,Used RAM (MB),Free RAM (MB)"
+  while true; do
+    TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
+    CPU_USAGE=$(top -b -n1 | grep "Cpu(s)" | awk '{print $2 + $4}')
+    MEM_USAGE=$(free | grep Mem | awk '{print ($3/$2) * 100.0}')
+    LOAD_AVG=$(uptime | awk -F'load average:' '{ print $2 }' | sed 's/^[ \t]*//')
+    MEM_USED=$(free -m | awk '/Mem:/ {print $3}')
+    MEM_FREE=$(free -m | awk '/Mem:/ {print $4}')
+    echo "${TIMESTAMP},${CPU_USAGE},${MEM_USAGE},${LOAD_AVG},${MEM_USED},${MEM_FREE}"
+    sleep 5
+  done
+) >> "$CPU_LOG_PATH" &
+CPU_PID=$!
+
 # ========================================
 # Display Configuration
 # ========================================
@@ -115,6 +143,14 @@ python "${SCRIPT_PATH}" \
     --output_dir "${output_dir}" > "${LOG_PATH}" 2>&1
 
 EXIT_CODE=$?
+
+# ========================================
+# Final Logs and Cleanup
+# ========================================
+kill $GPU_PID
+kill $CPU_PID
+top -b -n1 -u $USER > "$FINAL_TOP_PATH"
+nvidia-smi > "$FINAL_GPU_PATH"
 
 echo "=========================================="
 echo "Inference job completed at: $(date)"

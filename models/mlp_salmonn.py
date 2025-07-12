@@ -39,6 +39,10 @@ class MLPSalmonn(nn.Module):
         self.device = device or ("cuda:0" if torch.cuda.is_available() else "cpu")
         self.use_fp16 = torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7.0
         
+        logging.info(f"Device count: {torch.cuda.device_count()}")
+        logging.info(f"Current device index: {torch.cuda.current_device()}")
+
+
         # SALMONN config
         salmonn_config = {
             "llama_path": llama_path,
@@ -76,13 +80,13 @@ class MLPSalmonn(nn.Module):
         logging.info("Loading base SALMONN model...")
         self.salmonn = SALMONN.from_config(salmonn_config)
         logging.info("Base SALMONN model loaded successfully")
-
+        
         # Check for meta tensors
         for name, param in self.salmonn.named_parameters():
             if param.is_meta:
                 logging.error(f"Parameter {name} is still a meta tensor!")
                 
-        self.salmonn = self.salmonn.to(self.device)
+        self.salmonn = self.salmonn.to("cuda:0")
         sys.stdout.flush() 
 
         self.batch_counter = 0
