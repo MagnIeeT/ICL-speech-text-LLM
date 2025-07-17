@@ -230,7 +230,6 @@ class SymbolManager:
             label_to_symbol_by_dataset = self.get_symbols_for_epoch(epoch)
         else:
             label_to_symbol_by_dataset = self.get_current_symbols()
-
         if not label_to_symbol_by_dataset:
             logging.warning("✘ No symbol mappings found. Returning original batch.")
             return batch
@@ -253,6 +252,7 @@ class SymbolManager:
                     raise KeyError(f"❌ Missing label in label_to_symbol for dataset '{dataset}': {e}")
             else:
                 logging.info(f"  ⏩ No permutation applied.")
+
                 for orig_label, symbol in label_to_symbol.items():
                     symbol_mappings[orig_label] = symbol
                     # logging.info(f"    ➕ {orig_label} → {symbol}")
@@ -260,9 +260,9 @@ class SymbolManager:
 
         updated_batch = batch.copy()
 
-        # logging.info("\n🔄 Replacing symbols in batch...")
+        logging.info("\n🔄 Replacing symbols in batch...")
 
-        logging.info(f"SYMBOL MAPPINGS {symbol_mappings}")
+        # logging.info(f"SYMBOL MAPPINGS {symbol_mappings}")
 
         # --- 🛠️ Two-pass non-destructive replacement ---
         def non_destructive_replace(text: str, mapping: Dict[str, str]) -> str:

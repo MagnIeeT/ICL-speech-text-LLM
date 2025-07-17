@@ -154,7 +154,8 @@ class InferenceOrchestrator:
             # Setup tokenizer and other components
             from models.symbolAdapter.orchestrator_training import (
                 setup_tokenizer,
-                extract_dataset_labels
+                extract_dataset_labels,
+                extract_dataset_labels_dict
             )
             
             # Setup tokenizer (same as training)
@@ -164,6 +165,9 @@ class InferenceOrchestrator:
             # Extract dataset labels (same as training)
             dataset_labels = extract_dataset_labels(self.config)
             logging.info(f"dataset_labels : {dataset_labels}")
+            dataset_labels_dict = extract_dataset_labels_dict(self.config)
+            logging.info(f"dataset_labels : {dataset_labels_dict}")
+
             # Setup symbol manager (same as training)
             if 'symbol_mappings' in checkpoint:
                 symbol_data = checkpoint['symbol_mappings']
@@ -173,16 +177,20 @@ class InferenceOrchestrator:
             else:
                 logging.warning("⚠️ No symbol mappings found in checkpoint, using default setup")
             
-            
-            
             self.symbol_manager = SymbolManager(
                     original_labels=dataset_labels,
+                    original_labels_dict=dataset_labels_dict,
                     tokenizer=tokenizer,
                     dynamic_per_epoch=False,
                     symbol_type=self.config.symbol_config.symbol_type
                 )
 
             self.current_mappings = current_mappings
+
+            # logging.info(f"✅ SymbolManager initialized with {len(self.symbol_manager.symbols)} symbols")
+
+            logging.info(f"current_mappings: {self.current_mappings}")            
+
             # ✅ FIX: Update config for TEST split inference
             self.config.data_config.split = 'test'  # Force test split for inference
 

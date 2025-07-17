@@ -1,8 +1,8 @@
 #!/bin/bash -l
 #SBATCH --job-name=inference_orchestrator
 #SBATCH --partition=short
+#SBATCH --nodelist=cn2
 #SBATCH --time=1-00:00:00
-#SBATCH --nodelist=cn5
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=25G
 #SBATCH --gres=gpu:A5000:1
@@ -21,7 +21,9 @@
 # Symbol FT
 # checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/0907_1215_orchestrator_bypass_mlp_sym_1c_5le_1me_bypass_mlp_org_salmonn_hvb-voxceleb/lora_step0_cycle0_epoch1_periodic.pt"
 # Random Regular FT
-checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/1107_0900_orchestrator_bypass_mlp_sym_1c_5le_1me_bypass_mlp_org_salmonn_hvb-voxceleb/lora_step0_cycle0_epoch1_periodic.pt"
+# checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/1107_0900_orchestrator_bypass_mlp_sym_1c_5le_1me_bypass_mlp_org_salmonn_hvb-voxceleb/lora_step0_cycle0_epoch1_periodic.pt"
+# Random Symbol FT
+# checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/1207_1132_orchestrator_bypass_mlp_sym_1c_5le_1me_bypass_mlp_org_salmonn_hvb-voxceleb/lora_step0_cycle0_epoch1_periodic.pt"
 
 # HVB - Meld-Emotion
 # Regular FT 
@@ -30,8 +32,10 @@ checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_tr
 # checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/1007_0908_orchestrator_bypass_mlp_sym_1c_5le_1me_bypass_mlp_org_salmonn_hvb-meld_emotion/lora_step0_cycle0_epoch1_periodic.pt"
 # Random Regular FT
 # checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/1107_0903_orchestrator_bypass_mlp_sym_1c_5le_1me_bypass_mlp_org_salmonn_hvb-meld_emotion/lora_step0_cycle0_epoch1_periodic.pt"
+# Random Symbol FT
+checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/1207_1134_orchestrator_bypass_mlp_sym_1c_5le_1me_bypass_mlp_org_salmonn_hvb-meld_emotion/lora_step0_cycle0_epoch2_periodic.pt"
 
-# Voxpopuli - Voxceleb
+# Voxpopuli - Voxceleb  
 # Regular FT
 # checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/0907_1213_orchestrator_bypass_mlp_sym_1c_5le_1me_bypass_mlp_org_salmonn_voxceleb-voxpopuli/lora_step0_cycle0_epoch4_periodic.pt"
 # Symbol FT 
@@ -48,7 +52,7 @@ dataset_type="voxceleb-hvb-voxpopuli-meld_emotion"  # Comma-separated list of da
 max_val_samples=0
 device="cuda:0"
 output_dir="/home/sriramg/aneeraj/storage/results/model_ICL"
-num_examples=2
+num_examples=0
 
 # ========================== Conda Setup ==========================
 export CONDA_ENV="salmon"
