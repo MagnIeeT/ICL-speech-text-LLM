@@ -167,7 +167,7 @@ class ValidationManager:
                         updated_batch = self.symbol_manager.replace_symbols_in_batch(batch, mappings=symbol_mappings)
 
                     # ✅ Log first validation prompt
-                    if log_first_prompt:
+                    if batch_idx % 1000 == 0:
                         logging.info("=" * 80)
                         logging.info(f"FIRST VALIDATION PROMPT - {mode_name} (Epoch {epoch})")
                         logging.info("=" * 80)

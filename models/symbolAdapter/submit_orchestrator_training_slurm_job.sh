@@ -1,19 +1,23 @@
 #!/bin/bash -l
-#SBATCH --job-name=train_orchestrator
-#SBATCH --output=/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/logs/slurm_logs/%x_%j.out
-#SBATCH --error=/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/logs/slurm_logs/%x_%j.err
-#SBATCH --time=2-00:00:00
+#SBATCH --job-name=_orchestrator_train
+#SBATCH --output=//home/sriramg/chandnia/slurm_logs/qwen_train/%x_%j.out
+#SBATCH --error=/home/sriramg/chandnia/slurm_logs/qwen_train/%x_%j.err
+#SBATCH --time=1-00:00:00
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=48G
 #SBATCH --partition=long
-#SBATCH --gres=gpu:A6000:1
+#SBATCH --gres=gpu:1
 #SBATCH --export=ALL
 
-SLURM_LOG_DIR="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/logs/${TODAY}"
+SLURM_LOG_DIR="/home/sriramg/chandnia/slurm_logs/qwen_train"
 mkdir -p "$SLURM_LOG_DIR"
 
 # ==== Configuration - Edit these values as needed ====
+<<<<<<< HEAD
 model_type="salmonn"    # Options: "salmonn" or "qwen"
+=======
+model_type="qwen"    # Options: "salmonn" or "qwen"
+>>>>>>> f1678dd (Updated models and data/model_processors.py)
 dataset_type="voxceleb-voxpopuli"   # Dataset type(s) to use
 
 # Training parameters
@@ -30,7 +34,7 @@ max_grad_norm=1.0
 max_samples=0 # Set reasonable default
 num_examples=5
 # Orchestrator-specific parameters (get_default_config() method in traning_configs.py)
-schedule_type="bypass_mlp_sym"    # Options: "lora_first", "mlp_first", "joint_training","lora_mlp_joint"
+schedule_type="bypass_mlp_org"    # Options: "lora_first", "mlp_first", "joint_training","lora_mlp_joint"
 
 # MLP Architecture parameters
 use_output_mlp=False   # Enable/disable output MLP
@@ -49,9 +53,8 @@ else
 fi
 
 # ========================== Conda Setup ==========================
-export CONDA_ENV="salmon"
 echo "Set conda environment to: $CONDA_ENV"
-source /home/sriramg/aneeraj/miniconda3/etc/profile.d/conda.sh
+source /home/sriramg/chandnia/miniconda3/etc/profile.d/conda.sh
 conda deactivate
 conda activate "$CONDA_ENV"
 echo "Activated conda environment: $CONDA_ENV"
@@ -96,12 +99,12 @@ effective_batch_size=$((batch_size * gradient_accumulation_steps))
 RUN_NAME="${CURRENT_DATETIME}_orchestrator_${schedule_type}_${total_cycles}c_${lora_epochs}le_${mlp_epochs}me_${MLP_SUFFIX}_${model_type}_${CLEAN_DATASET_TYPE}"
 
 # Directory setup
-SCRIPT_PATH="/home/sriramg/aneeraj/code/ICL-speech-text-LLM/models/symbolAdapter/orchestrator_training.py"
+SCRIPT_PATH="/home/sriramg/chandnia/code/ICL-speech-text-LLM/models/symbolAdapter/orchestrator_training.py"
 TODAY=$(date +"%Y-%m-%d")
 
 # Directory setup
-OUTPUT_DIR="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training"
-LOG_DIR="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/logs/${TODAY}"
+OUTPUT_DIR="/home/sriramg/chandnia/results/orchestrator_training"
+LOG_DIR="/home/sriramg/chandnia/results/orchestrator_training/logs/${TODAY}"
 
 mkdir -p "$LOG_DIR" "$OUTPUT_DIR"
 LOG_FILE="${LOG_DIR}/${RUN_NAME}.log"
@@ -164,9 +167,9 @@ if [ "$dynamic_symbols_per_epoch" = "True" ] || [ "$dynamic_symbols_per_epoch" =
     CMD="$CMD --dynamic_symbols_per_epoch"
 fi
 
-if [ "$only_original" = "True" ] || [ "$only_original" = "true" ]; then
-    CMD="$CMD --only_original"
-fi
+# if [ "$only_original" = "True" ] || [ "$only_original" = "true" ]; then
+#     CMD="$CMD --only_original"
+# fi
 
 
 # Run the command

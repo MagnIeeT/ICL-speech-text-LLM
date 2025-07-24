@@ -264,6 +264,8 @@ class SymbolManager:
 
         logging.info(f"SYMBOL MAPPINGS {symbol_mappings}")
 
+        # logging.info(f"SYMBOL MAPPINGS {symbol_mappings}")
+
         # --- 🛠️ Two-pass non-destructive replacement ---
         def non_destructive_replace(text: str, mapping: Dict[str, str]) -> str:
             placeholder_map = {}

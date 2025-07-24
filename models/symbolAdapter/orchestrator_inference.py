@@ -25,11 +25,12 @@ sys.path.append(project_root)
 sys.path.append(os.path.join(project_root, "models"))
 
 # Import required modules
-from models.mlp_salmonn import MLPSalmonn
-from models.symbolAdapter.configs.training_configs import TrainingConfig,SymbolMode
-from models.symbolAdapter.symbol_manager_inference import SymbolManager
-from models.symbolAdapter.training.validation import ValidationManager
-from models.symbolAdapter.orchestrator_training import load_datasets_for_config, create_combined_dataloader
+# from models.mlp_salmonn import MLPSalmonn
+from models.custom_qwen import CustomQwen
+from models.symbolAdapter2.configs.training_configs import TrainingConfig,SymbolMode
+from models.symbolAdapter2.symbol_manager import SymbolManager
+from models.symbolAdapter2.training.validation import ValidationManager
+from models.symbolAdapter2.orchestrator_training import load_datasets_for_config, create_combined_dataloader
 from utils.evaluation_utils import evaluate_predictions
 from data.master_config import DatasetType
 
@@ -52,7 +53,7 @@ class InferenceOrchestrator:
         self.num_examples = num_examples
 
         # Setup output directories
-        self.results_base = output_dir or "/data1/chandnia/neeraja/results/model_ICL"
+        self.results_base = output_dir or "/home/sriramg/chandnia/results/orchestrator_inference"
         self.metrics_dir = os.path.join(self.results_base, "orchestrator_metrics")
         self.logs_dir = os.path.join(self.results_base, "orchestrator_logs")
         
@@ -152,18 +153,25 @@ class InferenceOrchestrator:
         
         try:
             # Setup tokenizer and other components
-            from models.symbolAdapter.orchestrator_training import (
-                setup_tokenizer,
-                extract_dataset_labels
+            from models.symbolAdapter2.orchestrator_training import (
+                # setup_tokenizer,
+                setup_tokenizer_and_processor,
+                extract_dataset_labels,
+                extract_dataset_labels_dict
             )
             
             # Setup tokenizer (same as training)
-            tokenizer = setup_tokenizer()
-            logging.info("✅ Tokenizer setup complete")
+            # tokenizer = setup_tokenizer()
+            # logging.info("✅ Tokenizer setup complete")
+            tokenizer, processor = setup_tokenizer_and_processor(self.config)
+            logging.info("✓ Tokenizer and Processor setup complete")
             
             # Extract dataset labels (same as training)
             dataset_labels = extract_dataset_labels(self.config)
-            
+            logging.info(f"dataset_labels : {dataset_labels}")
+            dataset_labels_dict = extract_dataset_labels_dict(self.config)
+            logging.info(f"dataset_labels : {dataset_labels_dict}")
+
             # Setup symbol manager (same as training)
             if 'symbol_mappings' in checkpoint:
                 symbol_data = checkpoint['symbol_mappings']
@@ -172,49 +180,21 @@ class InferenceOrchestrator:
                 logging.info(f"✅ Restored symbol mappings: {current_mappings}")
             else:
                 logging.warning("⚠️ No symbol mappings found in checkpoint, using default setup")
-                # current_mappings = {
-                #         'acknowledge': 'augc', 'anger': 'zugi', 'answer_agree': 'acke',
-                #         'answer_dis': 'annj', 'answer_general': 'sbia', 'apology': 'pukh',
-                #         'backchannel': 'jsfd', 'disfluency': 'nrzy', 'disgust': 'cuurs',
-                #         'fear': 'phin', 'joy': 'pgky', 'law': 'dxzk',
-                #         'negative': 'mmoo', 'neutral': 'njtf', 'noemotion': 'wyzte',
-                #         'norp': 'vact', 'org': 'sejb', 'other': 'ouat',
-                #         'person': 'whij', 'place': 'bctx', 'positive': 'guzo',
-                #         'quant': 'zmzd', 'question_check': 'banx', 'question_general': 'ngtd',
-                #         'question_repeat': 'nrnb', 'sadness': 'sfwe', 'self': 'afux',
-                #         'statement_close': 'xlig', 'statement_general': 'ukng', 
-                #         'statement_instruct': 'israi', 'statement_open': 'dtwo',
-                #         'statement_problem': 'mvfw', 'surprise': 'fago', 'thanks': 'puhe',
-                #         'when': 'secd'
-                #     }
-
-                current_mappings = {
-                    'acknowledge': 'azqq', 'anger': 'qloy', 'answer_agree': 'xsno',
-                    'answer_dis': 'uibr', 'answer_general': 'runfn', 'apology': 'eesz',
-                    'backchannel': 'onbr', 'disfluency': 'busox', 'disgust': 'zwpy',
-                    'fear': 'skwt', 'joy': 'ptma', 'law': 'rcov',
-                    'negative': 'ajsp', 'neutral': 'vbkt', 'noemotion': 'ifig',
-                    'norp': 'punxf', 'org': 'elazu', 'other': 'edfs',
-                    'person': 'flnt', 'place': 'imamd', 'positive': 'xzem',
-                    'quant': 'dosh', 'question_check': 'brua', 'question_general': 'pkin',
-                    'question_repeat': 'zuka', 'sadness': 'oftam', 'self': 'tkfw',
-                    'statement_close': 'ngkm', 'statement_general': 'pezy', 
-                    'statement_instruct': 'oamt', 'statement_open': 'hayc',
-                    'statement_problem': 'bedr', 'surprise': 'jkil', 'thanks': 'odih',
-                    'when': 'exuj'
-                }
-
-                logging.info(f"symbol mappings: {current_mappings}")
-                
             
             self.symbol_manager = SymbolManager(
                     original_labels=dataset_labels,
+                    original_labels_dict=dataset_labels_dict,
                     tokenizer=tokenizer,
                     dynamic_per_epoch=False,
                     symbol_type=self.config.symbol_config.symbol_type
                 )
 
             self.current_mappings = current_mappings
+
+            # logging.info(f"✅ SymbolManager initialized with {len(self.symbol_manager.symbols)} symbols")
+
+            logging.info(f"current_mappings: {self.current_mappings}")            
+
             # ✅ FIX: Update config for TEST split inference
             self.config.data_config.split = 'test'  # Force test split for inference
 
@@ -228,9 +208,9 @@ class InferenceOrchestrator:
             
             
             # ✅ FIX: Create processor with correct model type
-            from data.model_processors import get_processor
-            processor = get_processor(self.config.model_type.value, tokenizer=tokenizer)  # ✅ Use model_type.value
-            logging.info("✅ Processor initialized")
+            # from data.model_processors import get_processor
+            # processor = get_processor(self.config.model_type.value, tokenizer=tokenizer)  # ✅ Use model_type.value
+            # logging.info("✅ Processor initialized")
             
             # ✅ FIX: Create test dataloader (not validation)
             self.val_dataloader = create_combined_dataloader(
@@ -248,7 +228,7 @@ class InferenceOrchestrator:
             
             # ✅ FIX: Initialize model with correct config attributes
             logging.info("🤖 Initializing model...")
-            self.model = MLPSalmonn(
+            self.model = CustomQwen(
                 device="cuda:0",
                 # label_tokens=list(initial_symbol_mappings.values()),
                 # hidden_dim=self.config.mlp_config.hidden_dim,  # ✅ mlp_config.hidden_dim
@@ -413,7 +393,8 @@ def main():
     parser.add_argument("--output_dir", type=str, default=None,
                        help="Output directory for results")
     parser.add_argument("--num_examples", type=int, default=5)
-
+    parser.add_argument('--run_name', type=str, default=None, 
+                        help='Optional run name for this inference run')
     args = parser.parse_args()
     
     # Validate checkpoint path

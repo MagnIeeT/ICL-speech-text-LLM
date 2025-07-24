@@ -63,6 +63,7 @@ class QwenProcessor(ModelProcessor):
             max_length: Maximum sequence length for tokenization
         """
         self.processor = processor
+        self.tokenizer = processor.tokenizer
         self.max_length = max_length
         self.batch_counter = 0 
 
@@ -1024,7 +1025,7 @@ def get_processor(model_type: str, processor=None, tokenizer=None) -> ModelProce
     
     if model_type == "salmonn":
         return SalmonProcessor(tokenizer)
-    elif model_type == "qwen2":
+    elif model_type == "qwen":
         return QwenProcessor(processor)
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
