@@ -13,18 +13,14 @@ SLURM_LOG_DIR="/home/sriramg/chandnia/slurm_logs/qwen_train"
 mkdir -p "$SLURM_LOG_DIR"
 
 # ==== Configuration - Edit these values as needed ====
-<<<<<<< HEAD
-model_type="salmonn"    # Options: "salmonn" or "qwen"
-=======
 model_type="qwen"    # Options: "salmonn" or "qwen"
->>>>>>> f1678dd (Updated models and data/model_processors.py)
 dataset_type="voxceleb-voxpopuli"   # Dataset type(s) to use
 
 # Training parameters
 mlp_lr=1e-5
 lora_lr=1e-5
 mlp_epochs=1
-lora_epochs=5 # change to 5 
+lora_epochs=10 # change to 5 
 lora_final_epochs=1 
 total_cycles=1
 dynamic_symbols_per_epoch=False  # Generate new symbols each epoch

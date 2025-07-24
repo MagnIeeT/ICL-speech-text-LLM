@@ -27,10 +27,10 @@ sys.path.append(os.path.join(project_root, "models"))
 # Import required modules
 # from models.mlp_salmonn import MLPSalmonn
 from models.custom_qwen import CustomQwen
-from models.symbolAdapter2.configs.training_configs import TrainingConfig,SymbolMode
-from models.symbolAdapter2.symbol_manager import SymbolManager
-from models.symbolAdapter2.training.validation import ValidationManager
-from models.symbolAdapter2.orchestrator_training import load_datasets_for_config, create_combined_dataloader
+from models.symbolAdapter.configs.training_configs import TrainingConfig,SymbolMode
+from models.symbolAdapter.symbol_manager import SymbolManager
+from models.symbolAdapter.training.validation import ValidationManager
+from models.symbolAdapter.orchestrator_training import load_datasets_for_config, create_combined_dataloader
 from utils.evaluation_utils import evaluate_predictions
 from data.master_config import DatasetType
 
@@ -153,7 +153,7 @@ class InferenceOrchestrator:
         
         try:
             # Setup tokenizer and other components
-            from models.symbolAdapter2.orchestrator_training import (
+            from models.symbolAdapter.orchestrator_training import (
                 # setup_tokenizer,
                 setup_tokenizer_and_processor,
                 extract_dataset_labels,

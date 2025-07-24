@@ -12,7 +12,7 @@ import numpy as np
 import re
 import traceback
 
-from ..symbol_manager_inference import SymbolManager
+from ..symbol_manager import SymbolManager
 from ..configs.training_configs import TrainingConfig, SymbolMode
 from ..training.schedulers import TrainingStep
 

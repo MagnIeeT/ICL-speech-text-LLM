@@ -1,14 +1,5 @@
 #!/bin/bash
 #SBATCH --job-name=inference_orchestrator
-<<<<<<< HEAD
-#SBATCH --partition=long
-#SBATCH --time=1-00:00:00
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=48G
-#SBATCH --gres=gpu:A6000:1
-#SBATCH --output=/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_inference/logs/slurm_logs/%x_%j.out
-#SBATCH --error=/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_inference/logs/slurm_logs/%x_%j.err
-=======
 #SBATCH --chdir=/home/sriramg/chandnia
 #SBATCH --output=/home/sriramg/chandnia/slurm_logs/qwen_inference/%x_%j.out
 #SBATCH --error=/home/sriramg/chandnia/slurm_logs/qwen_inference/%x_%j.err
@@ -18,7 +9,6 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=22G
 #SBATCH --gres=gpu:1
->>>>>>> f1678dd (Updated models and data/model_processors.py)
 #SBATCH --export=ALL
 
 SLURM_LOG_DIR="/home/sriramg/chandnia/slurm_logs/qwen_inference"
@@ -42,31 +32,6 @@ mkdir -p "$SLURM_LOG_DIR"
 
 # HVB - VoxCeleb 
 # Regular FT
-<<<<<<< HEAD
-checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/0907_1208_orchestrator_bypass_mlp_sym_1c_5le_1me_bypass_mlp_org_salmonn_hvb-voxceleb/lora_step0_cycle0_epoch4_periodic.pt"
-# Symbol FT
-# checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/0907_1215_orchestrator_bypass_mlp_sym_1c_5le_1me_bypass_mlp_org_salmonn_hvb-voxceleb/lora_step0_cycle0_epoch1_periodic.pt"
-
-# HVB - Meld-Emotion
-# Regular FT 
-# checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/0907_1211_orchestrator_bypass_mlp_sym_1c_5le_1me_bypass_mlp_org_salmonn_hvb-meld_emotion/lora_step0_cycle0_epoch3_periodic.pt"
-# Symbol FT
-# checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/1007_0908_orchestrator_bypass_mlp_sym_1c_5le_1me_bypass_mlp_org_salmonn_hvb-meld_emotion/lora_step0_cycle0_epoch1_periodic.pt"
-
-# Voxpopuli - Voxceleb
-# Regular FT
-checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/0907_1213_orchestrator_bypass_mlp_sym_1c_5le_1me_bypass_mlp_org_salmonn_voxceleb-voxpopuli/lora_step0_cycle0_epoch4_periodic.pt"
-# Symbol FT 
-# checkpoint_path="/home/sriramg/aneeraj/storage/results/model_ICL/orchestrator_training/checkpoints/1007_0234_orchestrator_bypass_mlp_sym_1c_5le_1me_bypass_mlp_org_salmonn_voxceleb-voxpopuli/lora_step0_cycle0_epoch1_periodic.pt"
-
-dataset_type="voxceleb-hvb-voxpopuli-meld_emotion"  # Comma-separated list of dataset types
-max_val_samples=0
-device="cuda:0"
-output_dir="/home/sriramg/aneeraj/storage/results/model_ICL"
-num_examples=2
-# ========================== Conda Setup ==========================
-export CONDA_ENV="salmon"
-=======
 # checkpoint_path="/home/sriramg/chandnia/results/orchestrator_training/checkpoints/0807_1026_orchestrator_bypass_mlp_org_1c_10le_1me_bypass_mlp_org_qwen_hvb-voxceleb_reg_ft/lora_step0_cycle0_epoch2_periodic.pt"
 # Symbol FT
 # checkpoint_path="/home/sriramg/chandnia/results/orchestrator_training/checkpoints/0807_1036_orchestrator_bypass_mlp_org_1c_10le_1me_bypass_mlp_org_qwen_hvb-voxceleb_sym_ft/lora_step0_cycle0_epoch3_periodic.pt"
@@ -116,7 +81,7 @@ else
     exit 1
 fi
 
->>>>>>> f1678dd (Updated models and data/model_processors.py)
+
 echo "Set conda environment to: $CONDA_ENV"
 source /home/sriramg/chandnia/miniconda3/etc/profile.d/conda.sh
 conda deactivate
