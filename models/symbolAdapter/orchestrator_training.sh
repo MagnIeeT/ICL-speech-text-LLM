@@ -7,7 +7,7 @@ echo "Environment variables:"
 env | grep -E "(RUN_NAME|dataset_type|model_type|schedule_type|use_output_mlp|bypass_mlp|dynamic_symbols_per_epoch)" | sort
 
 # Script path
-SCRIPT_PATH="/data2/neeraja/neeraja/code/ICL/models/symbolAdapter/orchestrator_training.py"
+# SCRIPT_PATH="/home/neeraja/code/ICL/models/symbolAdapter/orchestrator_training.py"
 
 # Build COMMON_ARGS
 COMMON_ARGS="--model_type \"${model_type}\" \

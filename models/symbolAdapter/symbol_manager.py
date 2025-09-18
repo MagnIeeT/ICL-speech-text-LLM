@@ -67,8 +67,8 @@ class SymbolManager:
             # Return fixed symbols
             return self.fixed_mappings
 
-        # Dynamic mode: generate new symbols for this epoch if needed
-        if force_new_symbols or epoch not in self.epoch_mappings_history:
+        # Dynamic mode: generate new symbols only when forced, otherwise reuse previous
+        if force_new_symbols:
             logging.info(f"Generating NEW symbols for epoch {epoch} (force_new_symbols={force_new_symbols})")
             new_mappings = self._generate_symbol_mappings()
             self.epoch_mappings_history[epoch] = new_mappings
@@ -77,6 +77,23 @@ class SymbolManager:
             logging.info(f"Epoch {epoch} symbol mappings:")
             for orig, symbol in new_mappings.items():
                 logging.info(f"  '{orig}' -> '{symbol}'")
+
+        elif epoch not in self.epoch_mappings_history:
+            # If not forced and epoch not in history, reuse previous epoch's symbols
+            prev_epoch = epoch - 1
+            if prev_epoch in self.epoch_mappings_history:
+                self.epoch_mappings_history[epoch] = self.epoch_mappings_history[prev_epoch]
+                logging.info(f"Reusing symbols from epoch {prev_epoch} for epoch {epoch}")
+            else:
+                # First epoch: generate symbols
+                logging.info(f"Generating initial symbols for epoch {epoch}")
+                new_mappings = self._generate_symbol_mappings()
+                self.epoch_mappings_history[epoch] = new_mappings
+
+                # Log the new mappings
+                logging.info(f"Epoch {epoch} symbol mappings:")
+                for orig, symbol in new_mappings.items():
+                    logging.info(f"  '{orig}' -> '{symbol}'")
 
         self.current_epoch = epoch
         return self.epoch_mappings_history[epoch]

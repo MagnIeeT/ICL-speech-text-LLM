@@ -11,7 +11,7 @@ hold_job_id=""
 
 # Training parameters
 lora_lr=1e-5
-lora_epochs=5
+lora_epochs=4
 
 batch_size=1
 
@@ -19,7 +19,7 @@ dynamic_symbols_per_epoch=True  # Generate new symbols each epoch
 
 gradient_accumulation_steps=8
 max_grad_norm=1
-max_samples=0 # Set reasonable default
+max_samples=10 # Set reasonable default
 
 
 
@@ -36,9 +36,9 @@ hidden_dim=32
 
 
 # Set conda environment
-export CONDA_ENV="salmon"
+export CONDA_ENV="salmonn"
 echo "Set conda environment to: $CONDA_ENV"
-source /home/share/anaconda3/etc/profile.d/conda.sh  
+source /home/leapers/anaconda3/etc/profile.d/conda.sh   
 conda deactivate
 conda activate $CONDA_ENV
 
@@ -70,14 +70,14 @@ fi
 RUN_NAME="${CURRENT_DATETIME}_orchestrator_${schedule_type}_${total_cycles}c_${lora_epochs}le_${mlp_epochs}me_${MLP_SUFFIX}_${model_type}_${CLEAN_DATASET_TYPE}"
 
 # Set script path
-SCRIPT_PATH="/data2/neeraja/neeraja/code/ICL/models/symbolAdapter/orchestrator_training.py"
+SCRIPT_PATH="/home/neeraja/code/ICL/models/symbolAdapter/orchestrator_training.py"
 TODAY=$(date +"%Y-%m-%d")
 
 # Directory setup
-OUTPUT_DIR="/data2/neeraja/neeraja/results/model_ICL/orchestrator_training"
+OUTPUT_DIR="/home/leapers/weights/neeraja/ICL/orchestrator_training"
 # OUTPUT_DIR="/data1/chandnia/neeraja/results/model_ICL/orchestrator_training"
 
-LOG_DIR="/data2/neeraja/neeraja/results/model_ICL/orchestrator_training/logs/${TODAY}"
+LOG_DIR="/home/neeraja/results/ICL/orchestrator_training/logs/${TODAY}"
 # LOG_DIR="/data1/chandnia/neeraja/results/model_ICL/orchestrator_training/logs/${TODAY}"
 
 # Create directories
@@ -123,9 +123,9 @@ echo "Log File: ${LOG_DIR}/${RUN_NAME}.log"
 echo "=========================================="
 
 # Submit job
-qsub -q gpu.q -V -cwd \
+qsub -q long-gpu.q -V -cwd \
     $HOLD_FLAG \
-    -l hostname=compute-0-9 \
+    -l hostname=compute-0-5 \
     -l h_rt=72:00:00 \
     -o "${LOG_DIR}/${RUN_NAME}.log" \
     -j y \
@@ -153,7 +153,7 @@ max_samples=${max_samples},\
 schedule_type=${schedule_type},\
 dynamic_symbols_per_epoch=${dynamic_symbols_per_epoch},\
 OUTPUT_DIR=${OUTPUT_DIR} \
-    -S /bin/bash /data2/neeraja/neeraja/code/ICL/models/symbolAdapter/orchestrator_training.sh
+    -S /bin/bash /home/neeraja/code/ICL/models/symbolAdapter/orchestrator_training.sh
 
 echo "Submitted orchestrator symbol training job: ${RUN_NAME}"
 echo "Monitor with: tail -f ${LOG_DIR}/${RUN_NAME}.log"

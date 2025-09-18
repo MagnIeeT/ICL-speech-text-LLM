@@ -47,6 +47,8 @@ class UnifiedTrainer:
             tokenizer=tokenizer,
             max_val_samples=getattr(config.data_config, 'val_max_samples', 200)
         )
+
+        self.symbol_change_epochs = getattr(config, 'symbol_change_epochs', 3) 
         
         logging.info("UnifiedTrainer initialized")
     
@@ -228,7 +230,7 @@ class UnifiedTrainer:
         """Create scheduler that restarts warmup at each epoch"""
     
         def lr_lambda(step):
-            epoch_length = len(self.train_dataloader) // self.config.lora_config.gradient_accumulation_steps
+            epoch_length = len(self.train_dataloader) // self.config.lora_config.gradient_accumulation_steps*self.symbol_change_epochs
             current_epoch = step // epoch_length
             step_in_epoch = step % epoch_length
             
@@ -284,8 +286,10 @@ class UnifiedTrainer:
                         torch.cuda.empty_cache()
 
                     # force_new_symbols = (batch_idx % (100 * accumulation_steps) == 0)
-                    force_new_symbols = False
-                    random_mask = True
+                    # force_new_symbols = False
+                    force_new_symbols = (epoch %  self.symbol_change_epochs == 0 and batch_idx == 0)
+
+                    random_mask = False
                     # Apply symbol replacement
                     if getattr(step, 'use_symbols', True):
                         updated_batch = self.symbol_manager.replace_symbols_in_batch(
