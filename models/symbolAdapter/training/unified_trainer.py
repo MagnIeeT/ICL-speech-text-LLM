@@ -230,7 +230,7 @@ class UnifiedTrainer:
         """Create scheduler that restarts warmup at each epoch"""
     
         def lr_lambda(step):
-            epoch_length = len(self.train_dataloader) // self.config.lora_config.gradient_accumulation_steps*self.symbol_change_epochs
+            epoch_length = (len(self.train_dataloader) // self.config.lora_config.gradient_accumulation_steps)*self.symbol_change_epochs
             current_epoch = step // epoch_length
             step_in_epoch = step % epoch_length
             

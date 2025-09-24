@@ -26,7 +26,7 @@ class MLPSalmonn(nn.Module):
         self,
         llama_path="lmsys/vicuna-13b-v1.1",
         whisper_path="openai/whisper-large-v2",
-        beats_path="/data2/neeraja/neeraja/BEATs_iter3_plus_AS2M_finetuned_on_AS2M_cpt2.pt",
+        beats_path="/home/leapers/weights/SALMONN/BEATs_iter3_plus_AS2M_finetuned_on_AS2M_cpt2.pt",
         lora=True,
         lora_rank=8,
         lora_alpha=32,
@@ -48,7 +48,7 @@ class MLPSalmonn(nn.Module):
             "lora_rank": lora_rank,
             "lora_alpha": lora_alpha,
             "lora_dropout": lora_dropout,
-            "low_resource": False,
+            "low_resource": low_resource,
             "use_speech_Qformer": True,
             "freeze_whisper": True,
             "freeze_beats": True,
@@ -59,7 +59,7 @@ class MLPSalmonn(nn.Module):
             "second_stride": 0.333333,
             "speech_llama_proj_model": "",
             "freeze_speech_llama_proj": False,
-            "ckpt": "/data2/neeraja/neeraja/salmonn_v1.pth"
+            "ckpt": "/home/leapers/weights/SALMONN/salmonn_v1.pth"
         }
         logging.info("=" * 80)
         logging.info("🔧 INITIALIZING MLP-SALMONN MODEL")
@@ -95,7 +95,7 @@ class MLPSalmonn(nn.Module):
                 self.embed_module = self.llama_model.model.embed_tokens
         else:
             self.embed_module = self.llama_model.embed_tokens
- 
+
     def forward(self, samples):
         """
         Forward pass for training.

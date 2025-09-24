@@ -49,7 +49,7 @@ def parse_args():
     parser.add_argument("--max_samples", type=int, default=64)
     
     # Output parameters
-    parser.add_argument("--output_dir", type=str, default="/data2/neeraja/neeraja/results/model_ICL/unified_training")
+    parser.add_argument("--output_dir", type=str, default="/home/leapers/weights/neeraja/ICL/unified_training")
     parser.add_argument("--run_name", type=str, default="")
     
     # NEW: Schedule type parameter

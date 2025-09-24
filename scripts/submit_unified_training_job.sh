@@ -10,24 +10,26 @@ device="cuda:0"  # GPU device
 lora_lr=1e-5
 mlp_lr=1e-4
 lora_epochs=1
-lora_final_epochs=2 
-mlp_epochs=2
+lora_final_epochs=1 
+mlp_epochs=1
 
 total_cycles=1
 
 # MLP Architecture parameters (NEW SECTION)
-use_output_mlp=True  # Enable/disable output MLP
-bypass_mlp=False 
+use_output_mlp=False  # Enable/disable output MLP
+bypass_mlp=True 
+
+
 hidden_dim=8
 batch_size=1
 gradient_accumulation_steps=8
 max_grad_norm=1.0
-max_samples=0  # ✅ Set reasonable default instead of 0
+max_samples=10  # ✅ Set reasonable default instead of 0
 
 # Set conda environment
-export CONDA_ENV="salmon"
+export CONDA_ENV="salmonn"
 echo "Set conda environment to: $CONDA_ENV"
-source /home/share/anaconda3/etc/profile.d/conda.sh  
+source /home/leapers/anaconda3/etc/profile.d/conda.sh  
 conda deactivate
 conda activate $CONDA_ENV
 
@@ -55,12 +57,12 @@ fi
 
 RUN_NAME="${CURRENT_DATETIME}_unified_${total_cycles}c_${lora_epochs}le_${mlp_epochs}me_${MLP_SUFFIX}_${model_type}_${CLEAN_DATASET_TYPE}"
 # Set script path
-SCRIPT_PATH="/data2/neeraja/neeraja/code/ICL/models/unified_symbol_training.py"
+SCRIPT_PATH="/home/neeraja/code/ICL/models/unified_symbol_training.py"
 TODAY=$(date +"%Y-%m-%d")
 
 # Directory setup
-OUTPUT_DIR="/data2/neeraja/neeraja/results/model_ICL/unified_training"  # ✅ Fixed path
-LOG_DIR="/data2/neeraja/neeraja/results/model_ICL/logs/unified_training/${TODAY}"
+OUTPUT_DIR="/home/leapers/weights/neeraja/ICL/unified_training"  
+LOG_DIR="/home/neeraja/results/ICL/logs/unified_training/${TODAY}"
 
 # Create directories
 for dir in "$LOG_DIR" "$OUTPUT_DIR"; do
@@ -93,7 +95,7 @@ echo "Log File: ${LOG_DIR}/${RUN_NAME}.log"
 echo "=========================================="
 
 # Submit job (UPDATED WITH NEW PARAMETERS)
-qsub -q longgpu.q -V -cwd \
+qsub -q long-gpu.q -V -cwd \
     -l hostname=compute-0-9 \
     -l h_rt=72:00:00 \
     -o "${LOG_DIR}/${RUN_NAME}.log" \
@@ -120,7 +122,7 @@ max_grad_norm=${max_grad_norm},\
 max_samples=${max_samples},\
 bypass_mlp=${bypass_mlp},\
 OUTPUT_DIR=${OUTPUT_DIR} \
-    -S /bin/bash /data2/neeraja/neeraja/code/ICL/scripts/unified_training.sh
+    -S /bin/bash /home/neeraja/code/ICL/scripts/unified_training.sh
 
 echo "Submitted unified symbol training job: ${RUN_NAME}"
 echo "Monitor with: tail -f ${LOG_DIR}/${RUN_NAME}.log"
