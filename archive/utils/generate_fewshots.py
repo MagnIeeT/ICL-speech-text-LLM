@@ -36,7 +36,7 @@ def convert_ner_to_dict(text: str, ner_data: Dict) -> Dict[str, List[str]]:
     return result
 
 class FewShotGenerator:
-    def __init__(self, model_name: str = 'BAAI/llm-embedder', cache_dir: str = '/data2/neeraja/neeraja/data', gpu_id: int = 1):
+    def __init__(self, model_name: str = 'BAAI/llm-embedder', gpu_id: int = 1):
         """
         Initialize the FewShotGenerator
         Args:
@@ -56,14 +56,13 @@ class FewShotGenerator:
         self.model = AutoModel.from_pretrained(model_name)
         self.model = self.model.to(self.device)
         self.model.eval()
-        self.cache_dir = cache_dir
         
     def load_datasets(self, dataset_name: str, subset: str) -> Dict:
         """Load train, validation and test splits of a dataset"""
         return {
-            'train': load_dataset(dataset_name, subset, cache_dir=self.cache_dir, split="train"),
-            'validation': load_dataset(dataset_name, subset, cache_dir=self.cache_dir, split="validation"),
-            'test': load_dataset(dataset_name, subset, cache_dir=self.cache_dir, split="test")
+            'train': load_dataset(dataset_name, subset, split="train"),
+            'validation': load_dataset(dataset_name, subset, split="validation"),
+            'test': load_dataset(dataset_name, subset, split="test")
         }
 
     def get_embeddings(self, texts: List[str]) -> torch.Tensor:
@@ -239,7 +238,7 @@ def create_audio_lookup_dataset(datasets, subset, source_splits=["train", "valid
 
 def main():
     # Choose dataset configuration
-    DATASET_CONFIG = "hvb"  # Options: "voxpopuli", "voxceleb", "hvb"
+    DATASET_CONFIG = "voxpopuli"  # Options: "voxpopuli", "voxceleb", "hvb"
     
     if DATASET_CONFIG == "voxpopuli":
         text_column = 'normalized_text'
@@ -257,11 +256,11 @@ def main():
         dataset_name = "asapp/slue-phase-2"
         subset = "hvb"
 
-    # source_split = ["train"]
-    source_split = ["validation"]
-    target_split = "validation"
+    source_split = ["train"]
+    # source_split = ["validation"]
+    target_split = "train"
     top_k = 5
-    gpu_id = 0
+    gpu_id = 1
 
     # Initialize few-shot generator
     generator = FewShotGenerator(gpu_id=gpu_id)
@@ -323,12 +322,12 @@ def main():
     print(data_with_fewshots['few_shot_examples'][0])
     
     # Save the augmented test dataset
-    data_with_fewshots.save_to_disk(f"/data2/neeraja/neeraja/data/{dataset_name}_{subset}_{target_split}_{top_k}fewshots_new")
-    print(f"Dataset saved successfully to /data2/neeraja/neeraja/data/{dataset_name}_{subset}_{target_split}_{top_k}fewshots_new")
+    data_with_fewshots.save_to_disk(f"/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/{dataset_name}_{subset}_{target_split}_{top_k}fewshots")
+    print(f"Dataset saved successfully to /home/leapers/weights/neeraja/ICL-speech-text-LLM/data/{dataset_name}_{subset}_{target_split}_{top_k}fewshots")
 
     # Create and save audio lookup dataset
     audio_lookup = create_audio_lookup_dataset(datasets, subset, source_splits=source_split)
-    save_path = f"/data2/neeraja/neeraja/data/{dataset_name}_{subset}_{target_split}_audio_lookup_new"
+    save_path = f"/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/{dataset_name}_{subset}_{target_split}_audio_lookup"
     Dataset.from_dict(audio_lookup).save_to_disk(save_path)
     print(f"Audio lookup dataset saved to {save_path}")
 
@@ -336,9 +335,3 @@ if __name__ == "__main__":
     main()
 
 
-    # /data2/neeraja/neeraja/data/asapp/slue_voxceleb_validation_5fewshots_new
-    # /data2/neeraja/neeraja/data/asapp/slue_voxceleb_validation_audio_lookup_new
-    # /data2/neeraja/neeraja/data/asapp/slue_voxceleb_test_audio_lookup_new
-    # /data2/neeraja/neeraja/data/asapp/slue_voxceleb_test_5fewshots_new
-    # /data2/neeraja/neeraja/data/asapp/slue-phase-2_hvb_validation_5fewshots_new
-    # /data2/neeraja/neeraja/data/asapp/slue-phase-2_hvb_validation_audio_lookup_new

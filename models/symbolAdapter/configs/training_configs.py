@@ -107,8 +107,8 @@ class DataConfig:
     val_batch_size: Optional[int] = 1
     val_max_samples: int = 200  # Default validation samples
     val_frequency: int = 1  # Validate every N epochs
-    val_dataset_type: str = "voxceleb-hvb-meld_emotion-voxpopuli"  # Default validation dataset type
-
+    val_dataset_type: str = "voxceleb"  # Default validation dataset type
+    # val_dataset_type: str = "voxceleb-hvb-meld_emotion-voxpopuli"  # Default validation dataset type
 
 @dataclass
 class TrainingConfig:
@@ -127,7 +127,7 @@ class TrainingConfig:
     total_cycles: int = 2
     
     # I/O parameters
-    output_dir: str = "/home/leapers/weights/neeraja/ICL/orchestrator_training"
+    output_dir: str = "/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training"
 
     # output_dir: str = "/data1/chandnia/neeraja/results/model_ICL"  # Default output directory
     run_name: str = "symbol_training_run"

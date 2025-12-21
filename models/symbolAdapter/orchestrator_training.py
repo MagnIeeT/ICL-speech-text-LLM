@@ -290,7 +290,6 @@ def main():
             
         except Exception as e:
             logging.error(f"❌ Training failed: {str(e)}")
-            import traceback
             logging.error(traceback.format_exc())
             return None
             

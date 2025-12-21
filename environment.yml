@@ -62,7 +62,6 @@ dependencies:
   - gmpy2=2.2.1=py39h5eee18b_0
   - graphite2=1.3.14=h295c915_1
   - harfbuzz=10.2.0=hdfddeaa_1
-  - huggingface_hub=0.34.4=py39h06a4308_0
   - icu=73.1=h6a678d5_0
   - idna=3.7=py39h06a4308_0
   - intel-openmp=2023.0.0=h9e868ea_25371
@@ -153,7 +152,6 @@ dependencies:
   - python-dateutil=2.9.0post0=py39h06a4308_2
   - python-tzdata=2025.2=pyhd3eb1b0_0
   - python-xxhash=3.5.0=py39h5eee18b_0
-  - pytorch=2.0.1=py3.9_cuda11.7_cudnn8.5.0_0
   - pytorch-cuda=11.7=h778d358_5
   - pytorch-mutex=1.0=cuda
   - pytz=2025.2=py39h06a4308_0
@@ -171,9 +169,6 @@ dependencies:
   - tbb=2021.8.0=hdb19cb5_0
   - tesseract=5.2.0=hb0d2e87_3
   - tk=8.6.15=h54e0aa7_0
-  - torchaudio=2.0.2=py39_cu117
-  - torchtriton=2.0.0=py39
-  - torchvision=0.15.2=py39_cu117
   - tqdm=4.67.1=py39h2f386ee_0
   - typing-extensions=4.15.0=py39h06a4308_0
   - typing_extensions=4.15.0=py39h06a4308_0
@@ -197,22 +192,46 @@ dependencies:
   - pip:
       - accelerate==0.20.3
       - antlr4-python3-runtime==4.9.3
-      - bitsandbytes==0.42.0
+      - audioread==3.1.0
+      - bitsandbytes==0.41.1
+      - decorator==5.2.1
       - fire==0.7.1
       - fsspec==2025.9.0
       - hf-xet==1.1.10
       - huggingface-hub==0.35.0
       - joblib==1.5.2
+      - lazy-loader==0.4
+      - librosa==0.11.0
+      - llvmlite==0.43.0
+      - msgpack==1.1.2
+      - numba==0.60.0
+      - nvidia-cublas-cu11==11.11.3.6
+      - nvidia-cuda-cupti-cu11==11.8.87
+      - nvidia-cuda-nvrtc-cu11==11.8.89
+      - nvidia-cuda-runtime-cu11==11.8.89
+      - nvidia-cudnn-cu11==9.1.0.70
+      - nvidia-cufft-cu11==10.9.0.58
+      - nvidia-curand-cu11==10.3.0.86
+      - nvidia-cusolver-cu11==11.4.1.48
+      - nvidia-cusparse-cu11==11.7.5.86
+      - nvidia-nccl-cu11==2.21.5
+      - nvidia-nvtx-cu11==11.8.86
       - omegaconf==2.3.0
       - peft==0.3.0
+      - platformdirs==4.4.0
+      - pooch==1.8.2
       - psutil==7.1.0
       - regex==2025.9.1
       - scikit-learn==1.6.1
       - scipy==1.13.1
       - sentencepiece==0.1.97
       - soundfile==0.12.1
+      - soxr==1.0.0
       - termcolor==3.1.0
       - threadpoolctl==3.6.0
       - tokenizers==0.13.3
+      - torch==2.7.1+cu118
+      - torchaudio==2.7.1+cu118
+      - torchvision==0.22.1+cu118
       - transformers==4.28.0
 prefix: /home/neeraja/.conda/envs/salmonn

@@ -8,6 +8,8 @@ device="cuda:0"  # GPU device
 
 # Training parameters
 lora_lr=1e-5
+
+
 mlp_lr=1e-4
 lora_epochs=1
 lora_final_epochs=1 
@@ -57,12 +59,12 @@ fi
 
 RUN_NAME="${CURRENT_DATETIME}_unified_${total_cycles}c_${lora_epochs}le_${mlp_epochs}me_${MLP_SUFFIX}_${model_type}_${CLEAN_DATASET_TYPE}"
 # Set script path
-SCRIPT_PATH="/home/neeraja/code/ICL/models/unified_symbol_training.py"
+SCRIPT_PATH="/home/neeraja/code/ICL-speech-text-LLM/models/unified_symbol_training.py"
 TODAY=$(date +"%Y-%m-%d")
 
 # Directory setup
-OUTPUT_DIR="/home/leapers/weights/neeraja/ICL/unified_training"  
-LOG_DIR="/home/neeraja/results/ICL/logs/unified_training/${TODAY}"
+OUTPUT_DIR="/home/leapers/weights/neeraja/ICL-speech-text-LLM/unified_training"  
+LOG_DIR="/home/neeraja/results/ICL-speech-text-LLM/logs/unified_training/${TODAY}"
 
 # Create directories
 for dir in "$LOG_DIR" "$OUTPUT_DIR"; do
@@ -95,12 +97,11 @@ echo "Log File: ${LOG_DIR}/${RUN_NAME}.log"
 echo "=========================================="
 
 # Submit job (UPDATED WITH NEW PARAMETERS)
-qsub -q long-gpu.q -V -cwd \
-    -l hostname=compute-0-9 \
-    -l h_rt=72:00:00 \
+qsub -l select=1:num_gpus=1:gpu_mem=48GB:host=n6 \
+    -l walltime=72:00:00 \
     -o "${LOG_DIR}/${RUN_NAME}.log" \
-    -j y \
-    -v CUDA_VISIBLE_DEVICES=0,\
+    -j oe \
+    -v CUDA_VISIBLE_DEVICES=1,\
 TODAY=${TODAY},\
 PYTHONUNBUFFERED=1,\
 RUN_NAME=${RUN_NAME},\
@@ -122,7 +123,7 @@ max_grad_norm=${max_grad_norm},\
 max_samples=${max_samples},\
 bypass_mlp=${bypass_mlp},\
 OUTPUT_DIR=${OUTPUT_DIR} \
-    -S /bin/bash /home/neeraja/code/ICL/scripts/unified_training.sh
+    /home/neeraja/code/ICL-speech-text-LLM/scripts/unified_training.sh
 
 echo "Submitted unified symbol training job: ${RUN_NAME}"
 echo "Monitor with: tail -f ${LOG_DIR}/${RUN_NAME}.log"

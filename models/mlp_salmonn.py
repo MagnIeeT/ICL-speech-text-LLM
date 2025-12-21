@@ -37,8 +37,8 @@ class MLPSalmonn(nn.Module):
         super().__init__()
         
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.use_fp16 = torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7.0
-        
+        # self.use_fp16 = torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7.0
+        self.use_fp16 = False
         # SALMONN config
         salmonn_config = {
             "llama_path": llama_path,
@@ -73,9 +73,20 @@ class MLPSalmonn(nn.Module):
         logging.getLogger().handlers[0].flush() 
         # Initialize SALMONN
         logging.info("Loading base SALMONN model...")
+        
         self.salmonn = SALMONN.from_config(salmonn_config)
+        self.salmonn.to(self.device) 
+
+        # ✅ FIX: Cast internal SALMONN components to match LLaMA's precision
+        # We avoid calling .to() on self.salmonn because it contains the LLaMA meta-tensors
+        # target_dtype = torch.float16 if self.use_fp16 else torch.float32
+        
+        # for name, module in self.salmonn.named_children():
+        #     if name != 'llama_model':  # Skip LLaMA as it's already handled by device_map
+        #         module.to(device=self.device, dtype=target_dtype)
+        #         logging.info(f"Moved {name} to {self.device} with dtype {target_dtype}")
+
         logging.info("Base SALMONN model loaded successfully")
-        self.salmonn.to(self.device)
         sys.stdout.flush() 
 
         self.batch_counter = 0
@@ -232,8 +243,11 @@ class MLPSalmonn(nn.Module):
                     logging.info(f"Padding mask dtype: {padding_mask.dtype}")
                     logging.info(f"Padding mask shape: {padding_mask.shape}")
                     logging.info(f"Padding mask first 5 values: {padding_mask[0, :5].tolist()}")
-                    logging.info(f"Non-padded length: {padding_mask.sum().item()}")
-                    logging.info(f"Padding percentage: {(1 - padding_mask.float().mean()) * 100:.2f}%")
+                    non_padded_count = (padding_mask == False).sum().item()
+                    padding_percent = padding_mask.float().mean().item() * 100
+                    
+                    logging.info(f"Non-padded length (real data): {non_padded_count}")
+                    logging.info(f"Padding percentage: {padding_percent:.2f}%")
 
         if self.batch_counter == 0:
             if has_main_speech:

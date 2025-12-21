@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Navigate to the ICL directory
-cd /data2/neeraja/neeraja/code/ICL
+cd /home/neeraja/code/ICL-speech-text-LLM
 
 # Get current date for commit message
 DATE=$(date '+%Y-%m-%d %H:%M:%S')

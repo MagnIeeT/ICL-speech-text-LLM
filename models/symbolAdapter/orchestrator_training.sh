@@ -2,6 +2,9 @@
 set -e
 
 echo "Starting Orchestrator Symbol Training..."
+export HF_HOME=/home/leapers/common_cache/huggingface
+export TRANSFORMERS_CACHE=/home/leapers/common_cache/huggingface
+echo "HF_HOME is set to: $HF_HOME"
 echo "Python path: $(which python)"
 echo "Environment variables:"
 env | grep -E "(RUN_NAME|dataset_type|model_type|schedule_type|use_output_mlp|bypass_mlp|dynamic_symbols_per_epoch)" | sort
@@ -44,6 +47,6 @@ fi
 echo "COMMON_ARGS: ${COMMON_ARGS}"
 
 # Run the training script using eval
-eval "python ${SCRIPT_PATH} ${COMMON_ARGS}"
+eval "python ${SCRIPT_PATH} ${COMMON_ARGS} 2>&1 | tee ${LOG_FILE}"
 
 echo "Orchestrator training completed successfully!"

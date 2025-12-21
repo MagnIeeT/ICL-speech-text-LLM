@@ -13,9 +13,9 @@ HVB_CONFIG = DatasetConfig(
         # DatasetSplit.VAL: "/data1/harshanj/data/Embedding/hvb/asapp-slue-phase-2_hvb_validation_embedding_topk5",
         # DatasetSplit.TEST: "/data1/harshanj/data/Embedding/hvb/asapp-slue-phase-2_hvb_test_embedding_topk5"
 
-        DatasetSplit.TRAIN: "/data1/harshanj/data/new/embedding/hvb/asapp-slue-phase-2_hvb_train_embedding_topk10",
-        DatasetSplit.VAL: "/data1/harshanj/data/new/embedding/hvb/asapp-slue-phase-2_hvb_validation_embedding_topk10",
-        DatasetSplit.TEST: "/data1/harshanj/data/new/embedding/hvb/asapp-slue-phase-2_hvb_test_embedding_topk10",
+        DatasetSplit.TRAIN: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/asapp/slue-phase-2_hvb_train_5fewshots",
+        DatasetSplit.VAL: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/asapp/slue-phase-2_hvb_validation_5fewshots",
+        DatasetSplit.TEST: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/asapp/slue-phase-2_hvb_test_5fewshots",
         
 
         # DatasetSplit.TRAIN: "/data1/harshanj/data/new/random/hvb/asapp-slue-phase-2_hvb_train_random_topk10",
@@ -64,9 +64,9 @@ Guidelines:
         # DatasetSplit.TEST: "/data2/neeraja/neeraja/data/asapp/slue-phase-2_hvb_test_audio_lookup",
         # # DatasetSplit.TEST: "/data2/neeraja/neeraja/data/asapp/slue-phase-2_hvb_test_20fewshots",
         # DatasetSplit.VAL: "/data2/neeraja/neeraja/data/asapp/slue-phase-2_hvb_validation_audio_lookup_new",
-        DatasetSplit.TRAIN: "/data1/harshanj/data/Embedding/hvb/asapp-slue-phase-2_hvb_train_audio_lookup",
-        DatasetSplit.VAL: "/data1/harshanj/data/Embedding/hvb/asapp-slue-phase-2_hvb_validation_audio_lookup",
-        DatasetSplit.TEST: "/data1/harshanj/data/Embedding/hvb/asapp-slue-phase-2_hvb_test_audio_lookup"
+        DatasetSplit.TRAIN: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/asapp/slue-phase-2_hvb_train_audio_lookup",
+        DatasetSplit.VAL: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/asapp/slue-phase-2_hvb_validation_audio_lookup",
+        DatasetSplit.TEST: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/asapp/slue-phase-2_hvb_test_audio_lookup",
     }
 )
 

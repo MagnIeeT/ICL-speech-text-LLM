@@ -1,5 +1,10 @@
 #!/bin/bash
 set -e
+export BNB_CUDA_VERSION=118
+
+
+# export C_INCLUDE_PATH=/usr/include:$C_INCLUDE_PATH
+# export CPLUS_INCLUDE_PATH=/usr/include:$CPLUS_INCLUDE_PATH
 
 echo "Starting unified symbol training..."
 echo "Python path: $(which python)"

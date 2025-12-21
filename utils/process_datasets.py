@@ -164,7 +164,7 @@ def process_vp_nel_dataset():
         raise
 
 def process_meld_dataset():
-    cache_dir = '/data2/neeraja/neeraja/data'
+    # cache_dir = '/data2/neeraja/neeraja/data'
     dataset_name = "zrr1999/MELD_Text_Audio"
     
     emotion_labels = {
@@ -192,8 +192,7 @@ def process_meld_dataset():
             
             split_dataset = load_dataset(
                 dataset_name,
-                split=split,
-                cache_dir=cache_dir
+                split=split
             )
             
             logger.info(f"Initial number of examples: {len(split_dataset)}")

@@ -3,7 +3,8 @@
 
 # Configuration - Edit these values as needed
 model_type="salmonn"  # Options: "salmonn" or "qwen2"
-dataset_type="hvb-voxceleb"  # Dataset type(s) to use
+# dataset_type="hvb-voxceleb"  # Dataset type(s) to use
+dataset_type="voxceleb"  # Dataset type(s) to use
 # dataset_type="voxceleb-voxpopuli"  # Dataset type(s) to use
 device="cuda:0"  # GPU device
 
@@ -11,7 +12,7 @@ hold_job_id=""
 
 # Training parameters
 lora_lr=1e-5
-lora_epochs=9
+lora_epochs=1
 
 batch_size=1
 
@@ -19,7 +20,7 @@ dynamic_symbols_per_epoch=True  # Generate new symbols each epoch
 
 gradient_accumulation_steps=8
 max_grad_norm=1
-max_samples=0 # Set reasonable default
+max_samples=10 # Set reasonable default
 
 
 
@@ -70,14 +71,14 @@ fi
 RUN_NAME="${CURRENT_DATETIME}_orchestrator_${schedule_type}_${total_cycles}c_${lora_epochs}le_${mlp_epochs}me_${MLP_SUFFIX}_${model_type}_${CLEAN_DATASET_TYPE}"
 
 # Set script path
-SCRIPT_PATH="/home/neeraja/code/ICL/models/symbolAdapter/orchestrator_training.py"
+SCRIPT_PATH="/home/neeraja/code/ICL-speech-text-LLM/models/symbolAdapter/orchestrator_training.py"
 TODAY=$(date +"%Y-%m-%d")
 
 # Directory setup
-OUTPUT_DIR="/home/leapers/weights/neeraja/ICL/orchestrator_training"
+OUTPUT_DIR="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training"
 # OUTPUT_DIR="/data1/chandnia/neeraja/results/model_ICL/orchestrator_training"
 
-LOG_DIR="/home/neeraja/results/ICL/orchestrator_training/logs/${TODAY}"
+LOG_DIR="/home/neeraja/results/ICL-speech-text-LLM/orchestrator_training/logs/${TODAY}"
 # LOG_DIR="/data1/chandnia/neeraja/results/model_ICL/orchestrator_training/logs/${TODAY}"
 
 # Create directories
@@ -123,13 +124,16 @@ echo "Log File: ${LOG_DIR}/${RUN_NAME}.log"
 echo "=========================================="
 
 # Submit job
-qsub -q long-gpu.q -V -cwd \
+qsub -q workq \
     $HOLD_FLAG \
-    -l hostname=compute-0-9 \
-    -l h_rt=72:00:00 \
-    -o "${LOG_DIR}/${RUN_NAME}.log" \
-    -j y \
-    -v CUDA_VISIBLE_DEVICES=2,\
+    -l select=1:num_gpus=1:gpu_mem=48GB:host=n6 \
+    -l walltime=72:00:00 \
+    -o /dev/null \
+    -j oe \
+    -v CUDA_VISIBLE_DEVICES=1,\
+LOG_FILE="${LOG_DIR}/${RUN_NAME}.log",\
+BNB_CUDA_VERSION=118,\
+HF_HOME=/home/leapers/common_cache/huggingface,\
 TODAY=${TODAY},\
 PYTHONUNBUFFERED=1,\
 RUN_NAME=${RUN_NAME},\
@@ -153,7 +157,7 @@ max_samples=${max_samples},\
 schedule_type=${schedule_type},\
 dynamic_symbols_per_epoch=${dynamic_symbols_per_epoch},\
 OUTPUT_DIR=${OUTPUT_DIR} \
-    -S /bin/bash /home/neeraja/code/ICL/models/symbolAdapter/orchestrator_training.sh
+    /home/neeraja/code/ICL-speech-text-LLM/models/symbolAdapter/orchestrator_training.sh
 
 echo "Submitted orchestrator symbol training job: ${RUN_NAME}"
 echo "Monitor with: tail -f ${LOG_DIR}/${RUN_NAME}.log"
