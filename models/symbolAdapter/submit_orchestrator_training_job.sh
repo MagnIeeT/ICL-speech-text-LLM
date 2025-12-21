@@ -4,7 +4,7 @@
 # Configuration - Edit these values as needed
 model_type="salmonn"  # Options: "salmonn" or "qwen2"
 # dataset_type="hvb-voxceleb"  # Dataset type(s) to use
-dataset_type="voxceleb"  # Dataset type(s) to use
+dataset_type="hvb-voxceleb"  # Dataset type(s) to use
 # dataset_type="voxceleb-voxpopuli"  # Dataset type(s) to use
 device="cuda:0"  # GPU device
 
