@@ -107,8 +107,8 @@ class DataConfig:
     val_batch_size: Optional[int] = 1
     val_max_samples: int = 200  # Default validation samples
     val_frequency: int = 1  # Validate every N epochs
-    val_dataset_type: str = "voxceleb"  # Default validation dataset type
-    # val_dataset_type: str = "voxceleb-hvb-meld_emotion-voxpopuli"  # Default validation dataset type
+    # val_dataset_type: str = "voxceleb"  # Default validation dataset type
+    val_dataset_type: str = "voxceleb-hvb-meld_emotion-voxpopuli"  # Default validation dataset type
 
 @dataclass
 class TrainingConfig:
@@ -146,6 +146,7 @@ class TrainingConfig:
     inference_mode: bool = False
     
     only_original: bool = False  # Only use original labels without symbols
+    symbol_change_epochs: int = 3 
 
     scheduler: str = "cosine"  # ✅ ADD GLOBAL SCHEDULER
     warmup_steps: float = 100  # ✅ ADD GLOBAL WARMUP
@@ -343,7 +344,8 @@ class TrainingConfig:
             total_cycles=args.total_cycles,
             output_dir=args.output_dir,
             run_name=args.run_name,
-            device=args.device
+            device=args.device,
+            symbol_change_epochs=args.symbol_change_epochs 
         )
 
 
@@ -445,6 +447,8 @@ def parse_training_args() -> argparse.Namespace:
     # New arguments
     parser.add_argument("--dynamic_symbols_per_epoch", action="store_true", 
                        help="Generate new symbols each epoch")
+    parser.add_argument("--symbol_change_epochs", type=int, default=3,
+                       help="Number of epochs before changing symbols")
     parser.add_argument("--schedule_type", type=str, default="lora_first",
                        choices=["lora_first", "mlp_first", "joint_training","bypass_mlp_sym", "bypass_mlp_org","lora_mlp_joint",""])
     

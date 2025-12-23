@@ -10,17 +10,22 @@ device="cuda:0"  # GPU device
 
 hold_job_id=""
 
-# Training parameters
-lora_lr=1e-5
-lora_epochs=1
 
 batch_size=1
 
+# Training parameters
+lora_lr=1e-5
+lora_epochs=9
+symbol_change_epochs=9 
+
+
+
 dynamic_symbols_per_epoch=True  # Generate new symbols each epoch
+
 
 gradient_accumulation_steps=8
 max_grad_norm=1
-max_samples=10 # Set reasonable default
+max_samples=0 # Set reasonable default
 
 
 
@@ -126,7 +131,7 @@ echo "=========================================="
 # Submit job
 qsub -q workq \
     $HOLD_FLAG \
-    -l select=1:num_gpus=1:gpu_mem=48GB:host=n6 \
+    -l select=1:num_gpus=1:gpu_mem=48GB:host=n8 \
     -l walltime=72:00:00 \
     -o /dev/null \
     -j oe \
@@ -156,6 +161,7 @@ max_grad_norm=${max_grad_norm},\
 max_samples=${max_samples},\
 schedule_type=${schedule_type},\
 dynamic_symbols_per_epoch=${dynamic_symbols_per_epoch},\
+symbol_change_epochs=${symbol_change_epochs},\
 OUTPUT_DIR=${OUTPUT_DIR} \
     /home/neeraja/code/ICL-speech-text-LLM/models/symbolAdapter/orchestrator_training.sh
 

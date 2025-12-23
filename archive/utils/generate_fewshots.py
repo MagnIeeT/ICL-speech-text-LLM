@@ -1,5 +1,5 @@
 import torch
-from datasets import load_dataset
+from datasets import load_dataset, load_from_disk
 from transformers import AutoTokenizer, AutoModel
 from typing import List, Tuple, Dict, Union
 from sklearn.metrics.pairwise import cosine_similarity
@@ -161,17 +161,8 @@ class FewShotGenerator:
         source_texts = source_dataset[text_column]
         source_labels = source_dataset[label_column]
         
-        # Get index fields based on dataset type
-        if 'normalized_combined_ner' in source_dataset:  # VoxPopuli
-            source_indices = source_dataset['id']
-            index_type = 'voxpopuli'
-        elif 'issue_id' in source_dataset:  # HVB
-            source_issue_ids = source_dataset['issue_id']
-            source_utt_indices = source_dataset['utt_index']
-            index_type = 'hvb'
-        else:  # VoxCeleb
-            source_indices = source_dataset['index']
-            index_type = 'voxceleb'
+        # ✅ Fix: Use the standardized 'id' key provided by the main function
+        source_indices = source_dataset['id']
         
         # Find similar examples
         similar_indices, similarity_scores = self.find_similar_examples(
@@ -194,17 +185,10 @@ class FewShotGenerator:
                 
                 example = {
                     'text': source_texts[source_idx],
-                    'label': label,  # This will be the filtered NER dict
-                    'similarity_score': similarity_scores[idx][j]
+                    'label': label,
+                    'similarity_score': similarity_scores[idx][j],
+                    'index': str(source_indices[source_idx]) # ✅ Use standardized index
                 }
-                
-                # Add index information based on dataset type
-                if index_type == 'voxpopuli':
-                    example['index'] = source_indices[source_idx]
-                elif index_type == 'hvb':
-                    example['index'] = f"{source_issue_ids[source_idx]}_{source_utt_indices[source_idx]}"
-                else:  # voxceleb
-                    example['index'] = str(source_indices[source_idx])
                 
                 examples.append(example)
             few_shot_examples.append(examples)
@@ -214,7 +198,7 @@ class FewShotGenerator:
         
         return target_dataset
 
-def create_audio_lookup_dataset(datasets, subset, source_splits=["train", "validation"]):
+def create_audio_lookup_dataset(datasets, dataset_config, source_splits=["train"]):
     """Create a lookup dataset containing only audio and index information"""
     combined_audio = []
     combined_indices = []
@@ -222,12 +206,16 @@ def create_audio_lookup_dataset(datasets, subset, source_splits=["train", "valid
     for split in source_splits:
         dataset = datasets[split]
         for item in dataset:
-            if subset == "hvb":
+            # ✅ Updated to handle all 5 datasets
+            if dataset_config == "hvb":
                 index = f"{item['issue_id']}_{item['utt_index']}"
-            elif subset == "voxpopuli":  # VoxPopuli
+            elif dataset_config == "voxpopuli":
                 index = item['id']
+            elif dataset_config in ["meld", "vp_nel"]:
+                index = item['unique_id']
             else:  # voxceleb
                 index = str(item['index'])
+                
             combined_indices.append(index)
             combined_audio.append(item['audio'])
     
@@ -238,98 +226,91 @@ def create_audio_lookup_dataset(datasets, subset, source_splits=["train", "valid
 
 def main():
     # Choose dataset configuration
-    DATASET_CONFIG = "voxpopuli"  # Options: "voxpopuli", "voxceleb", "hvb"
+    # Options: "voxpopuli", "voxceleb", "hvb", "meld", "vp_nel"
+    DATASET_CONFIG = "meld" 
     
-    if DATASET_CONFIG == "voxpopuli":
-        text_column = 'normalized_text'
-        label_column = 'normalized_combined_ner'  # or 'raw_ner'
-        dataset_name = "asapp/slue"
-        subset = "voxpopuli"
-    elif DATASET_CONFIG == "voxceleb":
-        text_column = 'normalized_text'
-        label_column = 'sentiment'
-        dataset_name = "asapp/slue"
-        subset = "voxceleb"
-    else:  # hvb
-        text_column = 'text'
-        label_column = 'dialog_acts'
-        dataset_name = "asapp/slue-phase-2"
-        subset = "hvb"
-
-    source_split = ["train"]
-    # source_split = ["validation"]
-    target_split = "train"
+    # Define splits
+    target_split = "test"      # Split to generate few-shots FOR
+    source_splits = ["train"]  # Split to pick examples FROM
     top_k = 5
-    gpu_id = 1
-
-    # Initialize few-shot generator
-    generator = FewShotGenerator(gpu_id=gpu_id)
     
-    # Load datasets
-    datasets = generator.load_datasets(dataset_name, subset)
-
-    # Combine source splits
-    combined_texts = []
-    combined_labels = []
+    PROCESSED_BASE_PATH = "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data"
     
-    # Dataset-specific fields
-    combined_ids = []
-    combined_issue_ids = []
-    combined_utt_indices = []
-    combined_indices = []
+    # 1. Configure Dataset Metadata
+    if DATASET_CONFIG == "voxpopuli":
+        text_column, label_column = 'normalized_text', 'normalized_combined_ner'
+        dataset_name, subset = "asapp/slue", "voxpopuli"
+        use_processed = False
+    elif DATASET_CONFIG == "voxceleb":
+        text_column, label_column = 'normalized_text', 'sentiment'
+        dataset_name, subset = "asapp/slue", "voxceleb"
+        use_processed = False
+    elif DATASET_CONFIG == "meld":
+        text_column, label_column = 'text', 'emotion_label'
+        use_processed = True
+    elif DATASET_CONFIG == "vp_nel":
+        text_column, label_column = 'text', 'ne_spans'
+        use_processed = True
+    else: # hvb
+        text_column, label_column = 'text', 'dialog_acts'
+        dataset_name, subset = "asapp/slue-phase-2", "hvb"
+        use_processed = False
 
-    for split in source_split:
-        combined_texts.extend(datasets[split][text_column])
-        
-        if DATASET_CONFIG == "voxpopuli":
-            # Don't convert NER format here, just keep the original format
-            combined_labels.extend(datasets[split][label_column])
-            combined_ids.extend(datasets[split]['id'])
+    # 2. Load Datasets
+    datasets = {}
+    all_needed_splits = list(set([target_split] + source_splits))
+    generator = FewShotGenerator(gpu_id=1)
+
+    for split in all_needed_splits:
+        if use_processed:
+            path = f"{PROCESSED_BASE_PATH}/{DATASET_CONFIG}_{split}"
+            logging.info(f"Loading processed {split} split from: {path}")
+            datasets[split] = load_from_disk(path)
         else:
-            combined_labels.extend(datasets[split][label_column])
-            if DATASET_CONFIG == "hvb":
-                combined_issue_ids.extend(datasets[split]['issue_id'])
-                combined_utt_indices.extend(datasets[split]['utt_index'])
-            elif DATASET_CONFIG == "voxceleb":
-                combined_indices.extend(datasets[split]['index'])
+            datasets[split] = load_dataset(dataset_name, subset, split=split)
+
+    # 3. Combine Source Splits for Example Pool
+    combined_texts, combined_labels, combined_ids = [], [], []
+    for split in source_splits:
+        ds = datasets[split]
+        combined_texts.extend(ds[text_column])
+        combined_labels.extend(ds[label_column])
+        
+        if use_processed:
+            combined_ids.extend(ds['unique_id'])
+        elif DATASET_CONFIG == "voxpopuli":
+            combined_ids.extend(ds['id'])
+        elif DATASET_CONFIG == "hvb":
+            combined_ids.extend([f"{i}_{u}" for i, u in zip(ds['issue_id'], ds['utt_index'])])
+        else: # voxceleb
+            combined_ids.extend([str(i) for i in ds['index']])
     
-    # Create the source dataset dictionary
     source_dataset = {
-        f'{text_column}': combined_texts,
-        f'{label_column}': combined_labels
+        text_column: combined_texts,
+        label_column: combined_labels,
+        'id': combined_ids
     }
     
-    # Add dataset-specific fields
-    if DATASET_CONFIG == "voxpopuli":
-        source_dataset['id'] = combined_ids
-    elif DATASET_CONFIG == "hvb":
-        source_dataset['issue_id'] = combined_issue_ids
-        source_dataset['utt_index'] = combined_utt_indices
-    elif DATASET_CONFIG == "voxceleb":
-        source_dataset['index'] = combined_indices
-    
-    # Generate few-shot examples
+    # 4. Generate Few-Shots
     data_with_fewshots = generator.generate_fewshot_examples(
         target_dataset=datasets[target_split],
         source_dataset=source_dataset,
         top_k=top_k,
         text_column=text_column,
         label_column=label_column,
-        is_source_in_target=(target_split in source_split)
+        is_source_in_target=(target_split in source_splits)
     )
-    # Example of how to access the few-shot examples
-    print("Example few-shot data for first  instance:")
-    print(data_with_fewshots['few_shot_examples'][0])
-    
-    # Save the augmented test dataset
-    data_with_fewshots.save_to_disk(f"/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/{dataset_name}_{subset}_{target_split}_{top_k}fewshots")
-    print(f"Dataset saved successfully to /home/leapers/weights/neeraja/ICL-speech-text-LLM/data/{dataset_name}_{subset}_{target_split}_{top_k}fewshots")
 
-    # Create and save audio lookup dataset
-    audio_lookup = create_audio_lookup_dataset(datasets, subset, source_splits=source_split)
-    save_path = f"/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/{dataset_name}_{subset}_{target_split}_audio_lookup"
-    Dataset.from_dict(audio_lookup).save_to_disk(save_path)
-    print(f"Audio lookup dataset saved to {save_path}")
+    # 5. Save Augmented Dataset
+    save_name = f"{DATASET_CONFIG}_{target_split}_{top_k}fewshots"
+    data_with_fewshots.save_to_disk(f"{PROCESSED_BASE_PATH}/{save_name}")
+    print(f"Dataset saved to {PROCESSED_BASE_PATH}/{save_name}")
+
+    # 6. Create and Save Audio Lookup
+    audio_lookup = create_audio_lookup_dataset(datasets, DATASET_CONFIG, source_splits=source_splits)
+    lookup_save_path = f"{PROCESSED_BASE_PATH}/{DATASET_CONFIG}_{target_split}_audio_lookup"
+    Dataset.from_dict(audio_lookup).save_to_disk(lookup_save_path)
+    print(f"Audio lookup saved to {lookup_save_path}")
 
 if __name__ == "__main__":
     main()

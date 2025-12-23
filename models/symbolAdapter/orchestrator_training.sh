@@ -4,6 +4,7 @@ set -e
 echo "Starting Orchestrator Symbol Training..."
 export HF_HOME=/home/leapers/common_cache/huggingface
 export TRANSFORMERS_CACHE=/home/leapers/common_cache/huggingface
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64
 echo "HF_HOME is set to: $HF_HOME"
 echo "Python path: $(which python)"
 echo "Environment variables:"
@@ -29,6 +30,7 @@ COMMON_ARGS="--model_type \"${model_type}\" \
     --max_samples ${max_samples} \
     --output_dir \"${OUTPUT_DIR}\" \
     --run_name \"${RUN_NAME}\" \
+    --symbol_change_epochs \"${symbol_change_epochs}\" \
     --schedule_type \"${schedule_type}\""
 
 # Add boolean flags only if true

@@ -48,8 +48,8 @@ class UnifiedTrainer:
             max_val_samples=getattr(config.data_config, 'val_max_samples', 200)
         )
 
-        self.symbol_change_epochs = getattr(config, 'symbol_change_epochs', 3) 
-        
+        # self.symbol_change_epochs = getattr(config, 'symbol_change_epochs', 3) 
+        self.symbol_change_epochs = config.symbol_change_epochs
         logging.info("UnifiedTrainer initialized")
     
     def train_step(self, step: TrainingStep) -> dict:

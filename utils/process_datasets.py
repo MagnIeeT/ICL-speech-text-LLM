@@ -94,7 +94,7 @@ def process_sqa5_dataset():
 def process_vp_nel_dataset():
     dataset_name = "asapp/slue-phase-2"
     subset = "vp_nel"
-    cache_dir = '/data2/neeraja/neeraja/data'
+    # cache_dir = '/data2/neeraja/neeraja/data'
     
     try:
         logger.info(f"Loading {dataset_name} {subset} dataset...")
@@ -108,7 +108,6 @@ def process_vp_nel_dataset():
                 dataset_name, 
                 subset, 
                 split=split, 
-                cache_dir=cache_dir
             )
             
             logger.info(f"Initial number of examples: {len(split_dataset)}")
@@ -140,7 +139,8 @@ def process_vp_nel_dataset():
             )
             
             # Save processed dataset
-            output_path = f"/data2/neeraja/neeraja/data/{dataset_name}_{subset}_{split}"
+            # output_path = f"/data2/neeraja/neeraja/data/{dataset_name}_{subset}_{split}"
+            output_path= f"/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/vp_nel_{split}"
             split_dataset.save_to_disk(output_path)
             logger.info(f"Saved {split} split to {output_path}")
             
@@ -186,7 +186,7 @@ def process_meld_dataset():
     
     try:
         # Process each split
-        for split in ['train']:
+        for split in ['train','test', 'validation']:
             logger.info(f"\n{'='*50}")
             logger.info(f"Processing {split} split...")
             
@@ -235,7 +235,8 @@ def process_meld_dataset():
             # audio_lookup = {uid: path for uid, path in zip(split_dataset['unique_id'], split_dataset['path'])}
             
             # Save processed dataset
-            output_path = f"/data2/neeraja/neeraja/data/meld_{split}"
+            # output_path = f"/data2/neeraja/neeraja/data/meld_{split}"
+            output_path= f"/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/meld_{split}"
             split_dataset.save_to_disk(output_path)
             logger.info(f"Saved {split} split to {output_path}")
             
@@ -267,5 +268,5 @@ def process_meld_dataset():
 
 if __name__ == "__main__":
     # process_sqa5_dataset()
-    # process_vp_nel_dataset()
-    process_meld_dataset()
+    process_vp_nel_dataset()
+    # process_meld_dataset()
