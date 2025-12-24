@@ -80,7 +80,7 @@ class LoRAConfig:
 
                  
     
-    warmup_per_epoch: bool = True        # Restart warmup each epoch
+    warmup_per_epoch: bool = False        # Restart warmup each epoch
     warmup_steps_per_epoch: int = 300     # Steps per epoch if warmup_per_epoch=True
     warmup_ratio: float = 0               # Percentage of total training
     warmup_steps: int = 100               # Absolute number of steps

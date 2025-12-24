@@ -4,7 +4,9 @@ set -e
 echo "Starting Orchestrator Symbol Training..."
 export HF_HOME=/home/leapers/common_cache/huggingface
 export TRANSFORMERS_CACHE=/home/leapers/common_cache/huggingface
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64
+if [[ $(hostname) == *"n8"* ]]; then
+    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64
+fi
 echo "HF_HOME is set to: $HF_HOME"
 echo "Python path: $(which python)"
 echo "Environment variables:"

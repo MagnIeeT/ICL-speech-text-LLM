@@ -16,7 +16,7 @@ batch_size=1
 # Training parameters
 lora_lr=1e-5
 lora_epochs=9
-symbol_change_epochs=9 
+symbol_change_epochs=10 
 
 
 
@@ -42,7 +42,7 @@ hidden_dim=32
 
 
 # Set conda environment
-export CONDA_ENV="salmonn"
+export CONDA_ENV="salmonn2"
 echo "Set conda environment to: $CONDA_ENV"
 source /home/leapers/anaconda3/etc/profile.d/conda.sh   
 conda deactivate
@@ -73,7 +73,7 @@ else
     fi
 fi
 
-RUN_NAME="${CURRENT_DATETIME}_orchestrator_${schedule_type}_${total_cycles}c_${lora_epochs}le_${mlp_epochs}me_${MLP_SUFFIX}_${model_type}_${CLEAN_DATASET_TYPE}"
+RUN_NAME="${CURRENT_DATETIME}_orchestrator_${lora_epochs}e_${symbol_change_epochs}sce_${MLP_SUFFIX}_${model_type}_${CLEAN_DATASET_TYPE}"
 
 # Set script path
 SCRIPT_PATH="/home/neeraja/code/ICL-speech-text-LLM/models/symbolAdapter/orchestrator_training.py"
@@ -131,7 +131,7 @@ echo "=========================================="
 # Submit job
 qsub -q workq \
     $HOLD_FLAG \
-    -l select=1:num_gpus=1:gpu_mem=48GB:host=n8 \
+    -l select=1:num_gpus=1:gpu_mem=48GB:host=n11 \
     -l walltime=72:00:00 \
     -o /dev/null \
     -j oe \
