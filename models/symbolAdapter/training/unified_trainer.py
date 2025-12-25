@@ -87,7 +87,6 @@ class UnifiedTrainer:
             # Save periodic checkpoint
             if self.config.checkpoint_frequency > 0 and (epoch + 1) % self.config.checkpoint_frequency == 0:
                 self._save_checkpoint(step, epoch, "periodic")
-        
 
         return validation_scores
     

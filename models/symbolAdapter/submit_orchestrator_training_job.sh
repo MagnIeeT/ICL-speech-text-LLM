@@ -15,8 +15,8 @@ batch_size=1
 
 # Training parameters
 lora_lr=1e-5
-lora_epochs=9
-symbol_change_epochs=10 
+lora_epochs=5
+symbol_change_epochs=9
 
 
 
@@ -42,7 +42,7 @@ hidden_dim=32
 
 
 # Set conda environment
-export CONDA_ENV="salmonn2"
+export CONDA_ENV="salmonn"
 echo "Set conda environment to: $CONDA_ENV"
 source /home/leapers/anaconda3/etc/profile.d/conda.sh   
 conda deactivate
@@ -131,13 +131,12 @@ echo "=========================================="
 # Submit job
 qsub -q workq \
     $HOLD_FLAG \
-    -l select=1:num_gpus=1:gpu_mem=48GB:host=n11 \
+    -l select=1:num_gpus=1:gpu_mem=48GB:host=n8 \
     -l walltime=72:00:00 \
     -o /dev/null \
     -j oe \
     -v CUDA_VISIBLE_DEVICES=1,\
 LOG_FILE="${LOG_DIR}/${RUN_NAME}.log",\
-BNB_CUDA_VERSION=118,\
 HF_HOME=/home/leapers/common_cache/huggingface,\
 TODAY=${TODAY},\
 PYTHONUNBUFFERED=1,\

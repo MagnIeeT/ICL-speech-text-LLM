@@ -5,7 +5,8 @@ echo "Starting Orchestrator Symbol Training..."
 export HF_HOME=/home/leapers/common_cache/huggingface
 export TRANSFORMERS_CACHE=/home/leapers/common_cache/huggingface
 if [[ $(hostname) == *"n8"* ]]; then
-    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64
+    # export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64
+    export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib:$LD_LIBRARY_PATH
 fi
 echo "HF_HOME is set to: $HF_HOME"
 echo "Python path: $(which python)"
