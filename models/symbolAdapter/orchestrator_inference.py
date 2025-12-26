@@ -52,7 +52,7 @@ class InferenceOrchestrator:
         self.num_examples = num_examples
         
         # Setup output directories
-        self.results_base = output_dir or "/data1/chandnia/neeraja/results/model_ICL"
+        self.results_base = output_dir
         self.metrics_dir = os.path.join(self.results_base, "orchestrator_metrics")
         self.logs_dir = os.path.join(self.results_base, "orchestrator_logs")
         

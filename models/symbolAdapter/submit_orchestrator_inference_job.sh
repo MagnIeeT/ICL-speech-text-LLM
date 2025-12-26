@@ -5,32 +5,22 @@
 # Configuration - Edit these values as needed
 # ========================================
 
-#vox + vop
-# checkpoint_path="/data1/chandnia/neeraja/results/model_ICL/orchestrator_training/checkpoints/0507_1713_orchestrator__1c_8le_1me_bypass_mlp_sym_salmonn_voxceleb_voxpopuli/lora_step0_cycle0_epoch5_periodic.pt"
-# checkpoint_path="/data1/chandnia/neeraja/results/model_ICL/orchestrator_training/checkpoints/0507_1713_orchestrator__1c_8le_1me_bypass_mlp_sym_salmonn_voxceleb_voxpopuli/lora_step0_cycle0_epoch2_periodic.pt"
-#vox + hvb
-# checkpoint_path="/data1/chandnia/neeraja/results/model_ICL/orchestrator_training/checkpoints/0507_1713_orchestrator__1c_8le_1me_bypass_mlp_sym_salmonn_voxceleb_hvb/lora_step0_cycle0_epoch2_periodic.pt"
-#meld + hvb
-# checkpoint_path="/data1/chandnia/neeraja/results/model_ICL/orchestrator_training/checkpoints/0507_1712_orchestrator__1c_8le_1me_bypass_mlp_sym_salmonn_meld_emotion_hvb/lora_step0_cycle0_epoch3_periodic.pt"
-# checkpoint_path="/data1/chandnia/neeraja/results/model_ICL/orchestrator_training/checkpoints/0507_1712_orchestrator__1c_8le_1me_bypass_mlp_sym_salmonn_meld_emotion_hvb/lora_step0_cycle0_epoch2_periodic.pt"
+checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/2512_1730_orchestrator_5e_9sce_bypass_mlp_sym_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch5_periodic.pt"
 
-checkpoint_path=/data2/neeraja/neeraja/results/model_ICL/orchestrator_training/checkpoints/1007_1912_orchestrator__1c_5le_1me_bypass_mlp_sym_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch2_periodic.pt
-# checkpoint_path="/data2/neeraja/neeraja/results/model_ICL/orchestrator_training/checkpoints/1007_1914_orchestrator__1c_5le_1me_bypass_mlp_sym_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch2_periodic.pt"
+# dataset_type="hvb-voxceleb-voxpopuli-meld_emotion"  # Dataset type to evaluate on
 
-
-dataset_type="hvb-voxceleb-voxpopuli-meld_emotion"  # Dataset type to evaluate on
+dataset_type="voxpopuli" 
 max_val_samples=0          # 0 = use all samples
 
 num_examples=3
 
 # Optional parameters
 device="cuda:0"
-output_dir="/data1/chandnia/neeraja/results/model_ICL"
+output_dir="/home/neeraja/results/ICL-speech-text-LLM/"
 
-# Node configuration
-queue_name="longgpu.q"
-hostname="compute-0-9"
-cuda_device=2
+
+hostname="n6"
+cuda_device=1
 
 hold_job_id=""
 # ========================================
@@ -38,9 +28,9 @@ hold_job_id=""
 # ========================================
 
 # Set conda environment
-export CONDA_ENV="salmon"
+export CONDA_ENV="salmonn"
 echo "Set conda environment to: $CONDA_ENV"
-source /home/share/anaconda3/etc/profile.d/conda.sh  
+source /home/leapers/anaconda3/etc/profile.d/conda.sh  
 conda deactivate
 conda activate $CONDA_ENV   
 
@@ -98,12 +88,11 @@ RUN_NAME="${CURRENT_DATETIME}_infer_${CHECKPOINT_NAME}_on_${CLEAN_DATASET_TYPE_C
 
 
 # Set script path
-SCRIPT_PATH="/data2/neeraja/neeraja/code/ICL/models/symbolAdapter/orchestrator_inference.py"
+SCRIPT_PATH="/home/neeraja/code/ICL-speech-text-LLM/models/symbolAdapter/orchestrator_inference.py"
 TODAY=$(date +"%Y-%m-%d")
 
 # Create output directories
-LOG_DIR="/data2/neeraja/neeraja/results/model_ICL/orchestrator_logs/${TODAY}"
-# LOG_DIR="/data1/chandnia/neeraja/results/model_ICL/orchestrator_logs/${TODAY}"
+LOG_DIR="/home/neeraja/results/ICL-speech-text-LLM/orchestrator_inference/logs/${TODAY}"
 
 mkdir -p "$LOG_DIR"
 
@@ -131,13 +120,14 @@ echo "=========================================="
 # ========================================
 # Submit Job
 # ========================================
-JOB_ID=$(qsub -q ${queue_name} -V -cwd \
+qsub -q workq \
     ${HOLD_FLAG} \
-    -l hostname=${hostname} \
-    -l h_rt=24:00:00 \
-    -o "${LOG_DIR}/${RUN_NAME}.log" \
-    -j y \
+    -l select=1:num_gpus=1:gpu_mem=48GB:host=${hostname} \
+    -l walltime=24:00:00 \
+    -o /dev/null \
+    -j oe \
     -v CUDA_VISIBLE_DEVICES=${cuda_device},\
+LOG_FILE="${LOG_DIR}/${RUN_NAME}.log",\
 PYTHONUNBUFFERED=1,\
 RUN_NAME=${RUN_NAME},\
 SCRIPT_PATH=${SCRIPT_PATH},\
@@ -160,37 +150,7 @@ echo "Python path: $(which python)"
 echo "CUDA devices: $CUDA_VISIBLE_DEVICES"
 echo ""
 
-echo "Environment variables:"
-env | grep -E "(RUN_NAME|checkpoint_path|dataset_type|max_val_samples|device|output_dir)" | sort
-echo ""
-
-# Activate conda environment
-echo "Activating conda environment..."
-source /home/share/anaconda3/etc/profile.d/conda.sh
-conda activate salmon
-
-echo "Conda environment: $(conda info --envs | grep '*')"
-echo "Python version: $(python --version)"
-echo ""
-
-# Validate inputs
-echo "Validating inputs..."
-if [ ! -f "${checkpoint_path}" ]; then
-    echo "ERROR: Checkpoint file not found: ${checkpoint_path}"
-    exit 1
-fi
-echo "✅ Checkpoint file exists"
-
-if [ ! -f "${SCRIPT_PATH}" ]; then
-    echo "ERROR: Script file not found: ${SCRIPT_PATH}"
-    exit 1
-fi
-echo "✅ Script file exists"
-
-echo ""
-echo "=========================================="
-echo "Running Orchestrator Inference"
-echo "=========================================="
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
 
 # Run inference with detailed logging
 python ${SCRIPT_PATH} \
@@ -200,26 +160,13 @@ python ${SCRIPT_PATH} \
     --max_val_samples ${max_val_samples} \
     --num_examples ${num_examples} \
     --output_dir "${output_dir}"\
-    --run_name "${RUN_NAME}"
+    --run_name "${RUN_NAME}" 2>&1 | tee ${LOG_FILE}
 
 EXIT_CODE=$?
 
-echo ""
-echo "=========================================="
-echo "Job Completion"
-echo "=========================================="
-echo "Job completed at: $(date)"
-echo "Exit code: ${EXIT_CODE}"
-
-if [ ${EXIT_CODE} -eq 0 ]; then
-    echo "✅ Orchestrator inference completed successfully!"
-else
-    echo "❌ Orchestrator inference failed with exit code: ${EXIT_CODE}"
-fi
-
 exit ${EXIT_CODE}
 EOF
-)
+
 
 # ========================================
 # Report Job Submission
@@ -232,7 +179,6 @@ echo "Job Submitted Successfully"
 echo "=========================================="
 echo "Job Name: ${RUN_NAME}"
 echo "Job ID: ${JOB_ID_NUM}"
-echo "Queue: ${queue_name}"
 echo "Host: ${hostname}"
 echo ""
 echo "Monitor commands:"
