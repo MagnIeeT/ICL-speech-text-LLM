@@ -131,7 +131,7 @@ echo "=========================================="
 # Submit job
 qsub -q workq \
     $HOLD_FLAG \
-    -l select=1:num_gpus=1:gpu_mem=48GB:host=n8 \
+    -l select=1:num_gpus=1:gpu_mem=48GB:host=n6 \
     -l walltime=72:00:00 \
     -o /dev/null \
     -j oe \

@@ -394,7 +394,7 @@ class ValidationManager:
 
             if self.is_inference_mode:
                 # Skip fixed symbol modes (use_dynamic=False) when dynamic symbols are enabled
-                if  use_dynamic or use_original:
+                if  use_dynamic:
                     logging.info(f"⏭️ Skipping {mode_key} (fixed symbols) - dynamic symbols enabled in inference")
                     continue
 

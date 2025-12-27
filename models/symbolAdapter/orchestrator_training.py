@@ -106,7 +106,7 @@ def load_datasets_for_config(config: TrainingConfig, inference_mode: bool = Fals
                 logging.error(f"✗ Failed to load dataset {dataset_name}: {e}")
                 continue
 
-        logging.info(f"✓ Loaded {dataset_name} Val: {len(val_datasets[dataset_type])} samples")
+            logging.info(f"✓ Loaded {dataset_name} Val: {len(val_datasets[dataset_type])} samples")
     return train_datasets, val_datasets
 
 

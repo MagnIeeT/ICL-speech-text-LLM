@@ -114,7 +114,7 @@ class InferenceOrchestrator:
         try:
             # Load checkpoint
             logging.info(f"Loading checkpoint: {self.checkpoint_path}")
-            checkpoint = torch.load(self.checkpoint_path, map_location='cpu')
+            checkpoint = torch.load(self.checkpoint_path, map_location='cpu',weights_only=False)
             
             # Extract configuration
             if 'config' in checkpoint:

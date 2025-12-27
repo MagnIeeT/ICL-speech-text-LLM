@@ -10,9 +10,9 @@ checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_
 # dataset_type="hvb-voxceleb-voxpopuli-meld_emotion"  # Dataset type to evaluate on
 
 dataset_type="voxpopuli" 
-max_val_samples=0          # 0 = use all samples
+max_val_samples=20         # 0 = use all samples
 
-num_examples=3
+num_examples=5
 
 # Optional parameters
 device="cuda:0"
@@ -121,8 +121,8 @@ echo "=========================================="
 # Submit Job
 # ========================================
 qsub -q workq \
-    ${HOLD_FLAG} \
-    -l select=1:num_gpus=1:gpu_mem=48GB:host=${hostname} \
+    $HOLD_FLAG \
+    -l select=1:num_gpus=1:gpu_mem=48GB:host=$hostname \
     -l walltime=24:00:00 \
     -o /dev/null \
     -j oe \
@@ -150,7 +150,7 @@ echo "Python path: $(which python)"
 echo "CUDA devices: $CUDA_VISIBLE_DEVICES"
 echo ""
 
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
+export LD_LIBRARY_PATH=/usr/local/cuda-11.8/lib64:$LD_LIBRARY_PATH
 
 # Run inference with detailed logging
 python ${SCRIPT_PATH} \
