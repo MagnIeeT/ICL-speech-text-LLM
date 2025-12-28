@@ -9,7 +9,7 @@ checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_
 
 # dataset_type="hvb-voxceleb-voxpopuli-meld_emotion"  # Dataset type to evaluate on
 
-dataset_type="voxpopuli" 
+dataset_type="meld_emotion"  # Dataset type to evaluate on
 max_val_samples=20         # 0 = use all samples
 
 num_examples=5
@@ -150,7 +150,7 @@ echo "Python path: $(which python)"
 echo "CUDA devices: $CUDA_VISIBLE_DEVICES"
 echo ""
 
-export LD_LIBRARY_PATH=/usr/local/cuda-11.8/lib64:$LD_LIBRARY_PATH
+
 
 # Run inference with detailed logging
 python ${SCRIPT_PATH} \
@@ -190,3 +190,8 @@ echo "Results will be saved to:"
 echo "  ${output_dir}/orchestrator_metrics/"
 echo "  ${output_dir}/orchestrator_logs/"
 echo "=========================================="
+
+
+# export LD_LIBRARY_PATH=/usr/local/cuda-11.8/lib64:$LD_LIBRARY_PATH
+# unset LD_LIBRARY_PATH
+# python -c "import torch; print(torch.cuda.is_available())"

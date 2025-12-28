@@ -101,17 +101,19 @@ class BaseMultiTaskDataset(Dataset):
         # Pre-load audio lookup if using speech examples
         self.audio_lookup = None
         self.audio_index_map = None
-        # if fewshot_mode == 'speech':
-        audio_lookup_path = self.config.get_audio_lookup_path(self.split)
+        if fewshot_mode == 'speech':
+            audio_lookup_path = self.config.get_audio_lookup_path(self.split)
+        else:
+            audio_lookup_path = None
         if audio_lookup_path:
             load_time = time.time()
             if  self.dataset_type in [
                 DatasetType.SQA, 
-                DatasetType.VOXPOPULI_NEL,
-                DatasetType.MELD,
+                # DatasetType.VOXPOPULI_NEL,
+                # DatasetType.MELD,
                 # DatasetType.HVB,
                 # DatasetType.MELD_EMOTION,
-                DatasetType.MELD_GREEK,
+                # DatasetType.MELD_GREEK,
                 # DatasetType.MELD_EMOTION_GREEK,
                 # DatasetType.VOXPOPULI,
                 # DatasetType.VOXPOPULI_GREEK,
@@ -350,16 +352,19 @@ class BaseMultiTaskDataset(Dataset):
         formatted_examples = []
         examples_audio = []
         
-        if (self.dataset_type == DatasetType.VOXPOPULI_NEL or 
-        self.dataset_type == DatasetType.MELD or 
+        if (
+            # self.dataset_type == DatasetType.VOXPOPULI_NEL or 
+        # self.dataset_type == DatasetType.MELD or 
+        
         # self.DatasetType.HVB or
         # self.dataset_type == DatasetType.MELD_EMOTION or
-        self.dataset_type == DatasetType.MELD_GREEK 
+        # self.dataset_type == DatasetType.MELD_GREEK 
         # self.dataset_type == DatasetType.MELD_EMOTION_GREEK or 
         # self.dataset_type == DatasetType.VOXPOPULI or
         # self.dataset_type == DatasetType.VOXPOPULI_GREEK or
         # self.dataset_type == DatasetType.VOXPOPULI_SWAP or
         # self.dataset_type == DatasetType.MELD_EMOTION_SWAP
+        self.dataset_type == DatasetType.SQA 
         ) and self.audio_lookup is not None and self.num_examples > 0:
             
             # Random sampling from audio_lookup
