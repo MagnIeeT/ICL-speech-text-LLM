@@ -186,7 +186,7 @@ class UnifiedTrainer:
         
 
         self.optimizer = torch.optim.AdamW(
-            self.model.parameters(),
+            param_groups,
             lr=self.config.lora_config.learning_rate,
             betas=(0.9, 0.999),
             eps=1e-8,
@@ -198,7 +198,7 @@ class UnifiedTrainer:
  
 
         if self.config.lora_config.warmup_per_epoch:
-        # Use per-epoch warmup
+            # Use per-epoch warmup
             warmup_steps = self.config.lora_config.warmup_steps_per_epoch
             logging.info(f"Using per-epoch warmup: {warmup_steps} steps per epoch")
         elif self.config.lora_config.warmup_ratio > 0:

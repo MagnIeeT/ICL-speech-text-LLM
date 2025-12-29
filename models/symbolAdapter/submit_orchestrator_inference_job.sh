@@ -5,11 +5,14 @@
 # Configuration - Edit these values as needed
 # ========================================
 
-checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/2512_1730_orchestrator_5e_9sce_bypass_mlp_sym_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch5_periodic.pt"
+# checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/2512_1730_orchestrator_5e_9sce_bypass_mlp_sym_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch5_periodic.pt"
+checkpoint_path="/data1/neeraja/neeraja/results/model_ICL/orchestrator_training/checkpoints/1007_1914_orchestrator__1c_5le_1me_bypass_mlp_sym_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch5_periodic.pt"
+
+
 
 # dataset_type="hvb-voxceleb-voxpopuli-meld_emotion"  # Dataset type to evaluate on
 
-dataset_type="meld_emotion"  # Dataset type to evaluate on
+dataset_type="voxpopuli"  # Dataset type to evaluate on
 max_val_samples=20         # 0 = use all samples
 
 num_examples=5
