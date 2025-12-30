@@ -16,7 +16,7 @@ batch_size=1
 # Training parameters
 lora_lr=1e-5
 lora_epochs=6
-symbol_change_epochs=3
+symbol_change_epochs=9
 
 
 
@@ -25,7 +25,7 @@ dynamic_symbols_per_epoch=True  # Generate new symbols each epoch
 
 gradient_accumulation_steps=8
 max_grad_norm=1
-max_samples=0 # Set reasonable default
+max_samples=1000 # Set reasonable default
 
 
 
@@ -135,7 +135,7 @@ qsub -q workq \
     -l walltime=72:00:00 \
     -o /dev/null \
     -j oe \
-    -v CUDA_VISIBLE_DEVICES=0,\
+    -v CUDA_VISIBLE_DEVICES=1,\
 LOG_FILE="${LOG_DIR}/${RUN_NAME}.log",\
 HF_HOME=/home/leapers/common_cache/huggingface,\
 TODAY=${TODAY},\
@@ -166,3 +166,6 @@ OUTPUT_DIR=${OUTPUT_DIR} \
 
 echo "Submitted orchestrator symbol training job: ${RUN_NAME}"
 echo "Monitor with: tail -f ${LOG_DIR}/${RUN_NAME}.log"
+
+
+# python -c "import torch; print(torch.cuda.is_available())"

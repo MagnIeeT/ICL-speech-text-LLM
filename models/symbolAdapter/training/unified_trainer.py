@@ -102,6 +102,12 @@ class UnifiedTrainer:
         """Setup LoRA parameters for training"""
         logging.info(f"Setting up LoRA training for {step.description}")
 
+        for name, param in self.model.named_parameters():
+            if 'speech_Qformer' in name or 'speech_query_tokens' in name or 'speech_llama_proj' in name:
+                param.requires_grad = False
+        logging.info("Froze SALMONN QFormer parameters")
+
+
         # Log parameter status
         self._log_parameter_status("LoRA")
         
@@ -110,6 +116,24 @@ class UnifiedTrainer:
         
         # Set model to training mode
         self.model.train()
+
+        # ✅ ADD THIS DEBUG CODE:
+        logging.info("=" * 60)
+        logging.info("DEBUG: Checking which parameters have requires_grad=True")
+        trainable_names = []
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                trainable_names.append(name)
+        
+        # Log first 20 trainable parameter names
+        logging.info(f"Total trainable params: {len(trainable_names)}")
+        logging.info("First 30 trainable parameter names:")
+        for name in trainable_names[:30]:
+            logging.info(f"  {name}")
+        logging.info("=" * 60)
+        # ✅ END DEBUG CODE
+        
+        logging.info("✓ LoRA training setup complete")
         
         logging.info("✓ LoRA training setup complete")
     
@@ -155,8 +179,8 @@ class UnifiedTrainer:
             if param.requires_grad:
                 if 'lora' in name.lower():
                     lora_params.append(param)
-                elif ('speech_Qformer' in name or 'speech_query_tokens' in name or 'speech_llama_proj' in name):
-                    salmonn_params.append(param)
+                # elif ('speech_Qformer' in name or 'speech_query_tokens' in name or 'speech_llama_proj' in name):
+                #     salmonn_params.append(param)
         
         if not lora_params and not salmonn_params:
             raise ValueError("No trainable LoRA or SALMONN parameters found!")
@@ -171,12 +195,12 @@ class UnifiedTrainer:
                 'name': 'lora'
             })
         
-        if salmonn_params:
-            param_groups.append({
-                'params': salmonn_params,
-                'lr': (step.learning_rate or self.config.lora_config.learning_rate),
-                'name': 'salmonn'
-            })
+        # if salmonn_params:
+        #     param_groups.append({
+        #         'params': salmonn_params,
+        #         'lr': (step.learning_rate or self.config.lora_config.learning_rate),
+        #         'name': 'salmonn'
+        #     })
         
         
         logging.info(f"Created AdamW optimizer with {len(param_groups)} parameter groups:")
@@ -262,6 +286,15 @@ class UnifiedTrainer:
         
         # Get symbols for this epoch
         epoch_symbols = self.symbol_manager.get_symbols_for_epoch(epoch)
+
+
+        use_mixed_symbols = getattr(self.config, 'use_mixed_symbols', False)
+        num_symbol_sets = getattr(self.config, 'num_symbol_sets', 2)
+        
+        if use_mixed_symbols:
+            self.symbol_manager.setup_mixed_symbol_sets(epoch, num_symbol_sets)
+            logging.info(f"Using MIXED SYMBOLS training with {num_symbol_sets} symbol sets")
+        
         
         # Create progress bar
         progress_bar = tqdm(
@@ -291,13 +324,20 @@ class UnifiedTrainer:
                     random_mask = False
                     # Apply symbol replacement
                     if getattr(step, 'use_symbols', True):
-                        updated_batch = self.symbol_manager.replace_symbols_in_batch(
-                            batch, epoch=epoch, random_mask=random_mask, force_new_symbols=force_new_symbols
-                        )
+                        if use_mixed_symbols:
+                            # Get symbol set for THIS specific batch (alternates)
+                            current_symbol_set = self.symbol_manager.get_symbol_set_for_step(batch_idx)
+                            updated_batch = self.symbol_manager.replace_symbols_with_specific_set(
+                                batch, symbol_set=current_symbol_set
+                            )
+                        else:
+                            updated_batch = self.symbol_manager.replace_symbols_in_batch(
+                                batch, epoch=epoch, random_mask=random_mask, force_new_symbols=force_new_symbols
+                            )
                     else:
                         updated_batch = batch
 
-                    if batch_idx == 0 or force_new_symbols:
+                    if batch_idx <= 2 or force_new_symbols:
                         logging.info(f"=== {step.phase.upper()} EPOCH BATCH 1 CONTENT ===")
                         if "prompt" in batch:
                             logging.info("ORIGINAL PROMPTS:")
@@ -313,29 +353,27 @@ class UnifiedTrainer:
                             logging.info(f"EPOCH {epoch} SYMBOL MAPPINGS: {current_symbols}")
                         else:
                             logging.info("NO SYMBOL REPLACEMENT")
-                    
-                    # Calculate if random_mask should be True
-                    
-                    
-                    # DETAILED BATCH LOGGING AFTER REPLACEMENT
-                    if batch_idx == 0 or force_new_symbols:
-                        if getattr(step, 'use_symbols', True):
-                            logging.info("UPDATED AFTER SYMBOL REPLACEMENT:")
-                            if "prompt" in updated_batch:
-                                logging.info("UPDATED PROMPTS:")
-                                for i, prompt in enumerate(updated_batch["prompt"][:2]):
-                                    logging.info(f"  [{i}] {prompt}")
-                            if "completion" in updated_batch:
-                                logging.info("UPDATED COMPLETIONS:")
-                                for i, completion in enumerate(updated_batch["completion"][:2]):
-                                    logging.info(f"  [{i}] {completion}")
-                        else:
-                            logging.info("NO CHANGES (symbols not used)")
-                        logging.info(f"=== END {step.phase.upper()} EPOCH BATCH 1 CONTENT ===")
+
+                        if "prompt" in updated_batch:
+                            logging.info("UPDATED PROMPTS:")
+                            for i, prompt in enumerate(updated_batch["prompt"][:2]):
+                                logging.info(f"  [{i}] {prompt}")
+                        if "completion" in updated_batch:
+                            logging.info("UPDATED COMPLETIONS:")
+                            for i, completion in enumerate(updated_batch["completion"][:2]):
+                                logging.info(f"  [{i}] {completion}")
+                        logging.info(f"=== END BATCH {batch_idx} CONTENT ===")
+
+                    if use_mixed_symbols and batch_idx < 10:
+                        set_idx = batch_idx % num_symbol_sets
+                        symbols_preview = list(current_symbol_set.values())[:3]
+                        logging.info(f"Batch {batch_idx}: Symbol set {set_idx} -> {symbols_preview}...")
                     
                     # Move to device
                     updated_batch = self._move_batch_to_device(updated_batch)
                     
+
+
                     # Forward pass
                     outputs = self.model(updated_batch)
                     loss = outputs.get("loss")

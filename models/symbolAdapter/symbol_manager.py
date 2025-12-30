@@ -329,6 +329,88 @@ class SymbolManager:
         return f"SymbolManager({mode}, {len(current_mappings)} mappings, epoch={self.current_epoch})"
 
 
+    def setup_mixed_symbol_sets(self, epoch: int, num_symbol_sets: int = 2):
+        """
+        Setup multiple symbol sets for mixed symbol training.
+        Call this once at the start of each epoch.
+        
+        Args:
+            epoch: Current epoch number
+            num_symbol_sets: Number of different symbol sets to create
+        """
+        self._mixed_symbol_sets = []
+        self._mixed_symbol_sets_epoch = epoch
+        
+        # Set 0: Use the regular epoch symbols
+        self._mixed_symbol_sets.append(self.get_symbols_for_epoch(epoch))
+        
+        # Generate additional fresh symbol sets using existing method
+        for i in range(1, num_symbol_sets):
+            # Use existing _generate_two_token_symbols method
+            fresh_symbols_list = self._generate_two_token_symbols(len(self.original_labels))
+            fresh_mappings = dict(zip(self.original_labels, fresh_symbols_list))
+            self._mixed_symbol_sets.append(fresh_mappings)
+        
+        logging.info(f"Setup {num_symbol_sets} symbol sets for mixed training (epoch {epoch}):")
+        for i, symbols in enumerate(self._mixed_symbol_sets):
+            logging.info(f"  Set {i}: {symbols}")
+    
+
+    def get_symbol_set_for_step(self, batch_idx: int) -> Dict[str, str]:
+        """
+        Get the symbol set for a specific batch index.
+        Alternates between available symbol sets.
+        
+        Args:
+            batch_idx: Current batch index
+            
+        Returns:
+            Symbol mapping dict for this step
+        """
+        if not hasattr(self, '_mixed_symbol_sets') or not self._mixed_symbol_sets:
+            raise ValueError("Mixed symbol sets not initialized. Call setup_mixed_symbol_sets() first.")
+        
+        num_sets = len(self._mixed_symbol_sets)
+        set_idx = batch_idx % num_sets
+        return self._mixed_symbol_sets[set_idx]
+
+    def replace_symbols_with_specific_set(self, batch: Dict[str, Any], symbol_set: Dict[str, str]) -> Dict[str, Any]:
+        """
+        Replace symbols in batch using a specific symbol set.
+        
+        Args:
+            batch: Input batch with 'prompt' and 'completion' keys
+            symbol_set: Specific symbol mapping to use
+            
+        Returns:
+            Updated batch with symbol replacements
+        """
+        updated_batch = batch.copy()
+        
+        # Replace in prompts
+        if 'prompt' in batch:
+            updated_prompts = []
+            for prompt in batch['prompt']:
+                updated_prompt = prompt
+                for original, symbol in symbol_set.items():
+                    updated_prompt = updated_prompt.replace(original, symbol)
+                updated_prompts.append(updated_prompt)
+            updated_batch['prompt'] = updated_prompts
+        
+        # Replace in completions
+        if 'completion' in batch:
+            updated_completions = []
+            for completion in batch['completion']:
+                updated_completion = completion
+                for original, symbol in symbol_set.items():
+                    updated_completion = updated_completion.replace(original, symbol)
+                updated_completions.append(updated_completion)
+            updated_batch['completion'] = updated_completions
+        
+        return updated_batch
+    
+
+
 # # Backwards compatibility functions (to keep existing code working)
 # def generate_one_word_two_token_symbols(num_symbols: int, tokenizer: PreTrainedTokenizer) -> List[str]:
 #     """
