@@ -147,7 +147,7 @@ class TrainingConfig:
     
     only_original: bool = False  # Only use original labels without symbols
     symbol_change_epochs: int = 3 
-    use_mixed_symbols: bool = True  # Set to True to enable mixed symbols per batch
+    use_mixed_symbols: bool = False  # Set to True to enable mixed symbols per batch
     num_symbol_sets: int = 3 
 
     scheduler: str = "cosine"  # ✅ ADD GLOBAL SCHEDULER

@@ -15,8 +15,8 @@ batch_size=1
 
 # Training parameters
 lora_lr=1e-5
-lora_epochs=6
-symbol_change_epochs=9
+lora_epochs=10
+symbol_change_epochs=20
 
 
 
@@ -81,10 +81,8 @@ TODAY=$(date +"%Y-%m-%d")
 
 # Directory setup
 OUTPUT_DIR="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training"
-# OUTPUT_DIR="/data1/chandnia/neeraja/results/model_ICL/orchestrator_training"
 
 LOG_DIR="/home/neeraja/results/ICL-speech-text-LLM/orchestrator_training/logs/${TODAY}"
-# LOG_DIR="/data1/chandnia/neeraja/results/model_ICL/orchestrator_training/logs/${TODAY}"
 
 # Create directories
 for dir in "$LOG_DIR" "$OUTPUT_DIR"; do
@@ -131,7 +129,7 @@ echo "=========================================="
 # Submit job
 qsub -q workq \
     $HOLD_FLAG \
-    -l select=1:num_gpus=1:gpu_mem=48GB:host=n6 \
+    -l select=1:num_gpus=1:gpu_mem=48GB:host=n8 \
     -l walltime=72:00:00 \
     -o /dev/null \
     -j oe \
@@ -169,3 +167,5 @@ echo "Monitor with: tail -f ${LOG_DIR}/${RUN_NAME}.log"
 
 
 # python -c "import torch; print(torch.cuda.is_available())"
+# unset LD_LIBRARY_PATH
+# export LD_LIBRARY_PATH=/usr/local/cuda-11.8/lib64:$LD_LIBRARY_PATH
