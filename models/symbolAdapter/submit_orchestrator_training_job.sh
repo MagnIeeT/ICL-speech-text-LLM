@@ -25,7 +25,7 @@ dynamic_symbols_per_epoch=True  # Generate new symbols each epoch
 
 gradient_accumulation_steps=8
 max_grad_norm=1
-max_samples=1000 # Set reasonable default
+max_samples=0 # Set reasonable default
 
 
 
@@ -129,7 +129,7 @@ echo "=========================================="
 # Submit job
 qsub -q workq \
     $HOLD_FLAG \
-    -l select=1:num_gpus=1:gpu_mem=48GB:host=n8 \
+    -l select=1:num_gpus=1:gpu_mem=48GB:host=n6 \
     -l walltime=72:00:00 \
     -o /dev/null \
     -j oe \

@@ -356,23 +356,25 @@ class SymbolManager:
             logging.info(f"  Set {i}: {symbols}")
     
 
-    def get_symbol_set_for_step(self, batch_idx: int) -> Dict[str, str]:
+    def get_symbol_set_for_step(self, batch_idx: int, grad_accum_steps: int = 1) -> Dict[str, str]:
         """
         Get the symbol set for a specific batch index.
-        Alternates between available symbol sets.
-        
-        Args:
-            batch_idx: Current batch index
-            
-        Returns:
-            Symbol mapping dict for this step
+        Ensures consistency across gradient accumulation steps.
         """
         if not hasattr(self, '_mixed_symbol_sets') or not self._mixed_symbol_sets:
             raise ValueError("Mixed symbol sets not initialized. Call setup_mixed_symbol_sets() first.")
         
-        num_sets = len(self._mixed_symbol_sets)
-        set_idx = batch_idx % num_sets
-        return self._mixed_symbol_sets[set_idx]
+        # 1. Calculate the 'Update Step' (Effective Index)
+        # If grad_accum=4: batch 0,1,2,3 all result in effective_idx 0
+        effective_idx = batch_idx // grad_accum_steps
+        
+        # 2. Create a local random generator seeded by this index
+        # This makes the choice RANDOM but REPEATABLE for the same update step
+        seed = effective_idx + getattr(self, '_mixed_symbol_sets_epoch', 0)
+        rng = random.Random(seed)
+        
+        # 3. Pick a random set
+        return rng.choice(self._mixed_symbol_sets)
 
     def replace_symbols_with_specific_set(self, batch: Dict[str, Any], symbol_set: Dict[str, str]) -> Dict[str, Any]:
         """
@@ -408,55 +410,3 @@ class SymbolManager:
             updated_batch['completion'] = updated_completions
         
         return updated_batch
-    
-
-
-# # Backwards compatibility functions (to keep existing code working)
-# def generate_one_word_two_token_symbols(num_symbols: int, tokenizer: PreTrainedTokenizer) -> List[str]:
-#     """
-#     Backwards compatibility function for existing code
-#     """
-#     manager = SymbolManager(
-#         original_labels=[f"label_{i}" for i in range(num_symbols)],
-#         tokenizer=tokenizer,
-#         dynamic_per_epoch=False,
-#         symbol_type="two_token"
-#     )
-#     return manager._generate_two_token_symbols(num_symbols)
-
-# def create_label_mapping(original_labels: List[str], symbols: List[str]) -> Dict[str, str]:
-#     """
-#     Backwards compatibility function for existing code
-#     """
-#     return dict(zip(original_labels, symbols))
-
-# def replace_symbols_in_batch(batch: Dict[str, Any], symbol_mappings: Dict[str, str]) -> Dict[str, Any]:
-#     """
-#     Backwards compatibility function for existing code
-#     """
-#     if not symbol_mappings:
-#         return batch
-    
-#     updated_batch = batch.copy()
-    
-#     # Replace in prompts
-#     if "prompt" in batch:
-#         updated_prompts = []
-#         for prompt in batch["prompt"]:
-#             updated_prompt = prompt
-#             for original, symbol in symbol_mappings.items():
-#                 updated_prompt = updated_prompt.replace(original, symbol)
-#             updated_prompts.append(updated_prompt)
-#         updated_batch["prompt"] = updated_prompts
-    
-#     # Replace in completions
-#     if "completion" in batch:
-#         updated_completions = []
-#         for completion in batch["completion"]:
-#             updated_completion = completion
-#             for original, symbol in symbol_mappings.items():
-#                 updated_completion = updated_completion.replace(original, symbol)
-#             updated_completions.append(updated_completion)
-#         updated_batch["completion"] = updated_completions
-    
-#     return updated_batch
