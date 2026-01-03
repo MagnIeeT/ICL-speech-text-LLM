@@ -15,8 +15,8 @@ batch_size=1
 
 # Training parameters
 lora_lr=1e-5
-lora_epochs=10
-symbol_change_epochs=20
+lora_epochs=5
+symbol_change_epochs=1
 
 
 
@@ -133,7 +133,7 @@ qsub -q workq \
     -l walltime=72:00:00 \
     -o /dev/null \
     -j oe \
-    -v CUDA_VISIBLE_DEVICES=1,\
+    -v CUDA_VISIBLE_DEVICES=0,\
 LOG_FILE="${LOG_DIR}/${RUN_NAME}.log",\
 HF_HOME=/home/leapers/common_cache/huggingface,\
 TODAY=${TODAY},\
