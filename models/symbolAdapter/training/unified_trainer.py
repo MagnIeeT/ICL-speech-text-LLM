@@ -326,7 +326,7 @@ class UnifiedTrainer:
                     if getattr(step, 'use_symbols', True):
                         if use_mixed_symbols:
                             # Get symbol set for THIS specific batch (alternates)
-                            current_symbol_set = self.symbol_manager.get_symbol_set_for_step(batch_idx, 8)
+                            current_symbol_set = self.symbol_manager.get_symbol_set_for_step(batch_idx, 1)
                             updated_batch = self.symbol_manager.replace_symbols_with_specific_set(
                                 batch, symbol_set=current_symbol_set
                             )

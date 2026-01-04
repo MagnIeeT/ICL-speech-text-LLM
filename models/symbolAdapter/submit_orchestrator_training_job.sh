@@ -4,7 +4,8 @@
 # Configuration - Edit these values as needed
 model_type="salmonn"  # Options: "salmonn" or "qwen2"
 # dataset_type="hvb-voxceleb"  # Dataset type(s) to use
-dataset_type="hvb-voxceleb"  # Dataset type(s) to use
+# dataset_type="hvb-voxceleb"  # Dataset type(s) to use
+dataset_type="voxpopuli-meld_emotion"
 # dataset_type="voxceleb-voxpopuli"  # Dataset type(s) to use
 device="cuda:0"  # GPU device
 
@@ -16,7 +17,7 @@ batch_size=1
 # Training parameters
 lora_lr=1e-5
 lora_epochs=5
-symbol_change_epochs=1
+symbol_change_epochs=20
 
 
 
@@ -133,7 +134,7 @@ qsub -q workq \
     -l walltime=72:00:00 \
     -o /dev/null \
     -j oe \
-    -v CUDA_VISIBLE_DEVICES=0,\
+    -v CUDA_VISIBLE_DEVICES=1,\
 LOG_FILE="${LOG_DIR}/${RUN_NAME}.log",\
 HF_HOME=/home/leapers/common_cache/huggingface,\
 TODAY=${TODAY},\
