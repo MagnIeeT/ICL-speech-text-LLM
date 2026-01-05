@@ -5,7 +5,8 @@
 model_type="salmonn"  # Options: "salmonn" or "qwen2"
 # dataset_type="hvb-voxceleb"  # Dataset type(s) to use
 # dataset_type="hvb-voxceleb"  # Dataset type(s) to use
-dataset_type="voxpopuli-meld_emotion"
+# dataset_type="voxpopuli-meld_emotion"
+dataset_type="voxpopuli-voxceleb"
 # dataset_type="voxceleb-voxpopuli"  # Dataset type(s) to use
 device="cuda:0"  # GPU device
 
