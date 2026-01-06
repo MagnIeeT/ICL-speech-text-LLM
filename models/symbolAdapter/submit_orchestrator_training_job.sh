@@ -18,7 +18,7 @@ batch_size=1
 # Training parameters
 lora_lr=1e-5
 lora_epochs=5
-symbol_change_epochs=20
+symbol_change_epochs=1
 
 
 
@@ -131,7 +131,7 @@ echo "=========================================="
 # Submit job
 qsub -q workq \
     $HOLD_FLAG \
-    -l select=1:num_gpus=1:gpu_mem=48GB:host=n6 \
+    -l select=1:num_gpus=1:gpu_mem=48GB:host=n8 \
     -l walltime=72:00:00 \
     -o /dev/null \
     -j oe \
