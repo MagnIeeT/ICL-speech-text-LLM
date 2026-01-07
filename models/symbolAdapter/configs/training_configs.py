@@ -145,7 +145,7 @@ class TrainingConfig:
     # NEW: Inference configuration
     inference_mode: bool = False
     
-    only_original: bool = False  # Only use original labels without symbols
+    only_original: bool = True  # Only use original labels without symbols
     symbol_change_epochs: int = 3 
     use_mixed_symbols: bool = False  # Set to True to enable mixed symbols per batch
     num_symbol_sets: int = 5 

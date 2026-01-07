@@ -5,24 +5,31 @@
 # Configuration - Edit these values as needed
 # ========================================
 
-# checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/2512_1730_orchestrator_5e_9sce_bypass_mlp_sym_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch5_periodic.pt"
-checkpoint_path="/data1/neeraja/neeraja/results/model_ICL/orchestrator_training/checkpoints/1007_1914_orchestrator__1c_5le_1me_bypass_mlp_sym_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch5_periodic.pt"
+# export LD_LIBRARY_PATH=/usr/local/cuda-11.8/lib64:$LD_LIBRARY_PATH
+# unset LD_LIBRARY_PATH
+# python -c "import torch; print(torch.cuda.is_available())"
+
+# HVB-Vox
+# random
+# checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0301_1316_orchestrator_5e_20sce_bypass_mlp_sym_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch5_periodic.pt"
+# change every epoch
+checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0301_1318_orchestrator_5e_1sce_bypass_mlp_sym_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch1_periodic.pt"
 
 
 
-# dataset_type="hvb-voxceleb-voxpopuli-meld_emotion"  # Dataset type to evaluate on
+dataset_type="hvb-voxceleb-voxpopuli-meld_emotion"  # Dataset type to evaluate on
 
-dataset_type="voxpopuli"  # Dataset type to evaluate on
-max_val_samples=20         # 0 = use all samples
+# dataset_type="voxpopuli"  # Dataset type to evaluate on
+max_val_samples=0         # 0 = use all samples
 
-num_examples=5
+num_examples=3
 
 # Optional parameters
 device="cuda:0"
 output_dir="/home/neeraja/results/ICL-speech-text-LLM/"
 
 
-hostname="n6"
+hostname="n8"
 cuda_device=1
 
 hold_job_id=""
@@ -195,6 +202,3 @@ echo "  ${output_dir}/orchestrator_logs/"
 echo "=========================================="
 
 
-# export LD_LIBRARY_PATH=/usr/local/cuda-11.8/lib64:$LD_LIBRARY_PATH
-# unset LD_LIBRARY_PATH
-# python -c "import torch; print(torch.cuda.is_available())"
