@@ -13,8 +13,9 @@
 # random
 # checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0301_1316_orchestrator_5e_20sce_bypass_mlp_sym_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch5_periodic.pt"
 # change every epoch
-checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0301_1318_orchestrator_5e_1sce_bypass_mlp_sym_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch1_periodic.pt"
-
+# checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0301_1318_orchestrator_5e_1sce_bypass_mlp_sym_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch1_periodic.pt"
+# change every step
+checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0101_2146_orchestrator_10e_20sce_bypass_mlp_sym_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch1_periodic.pt"
 
 
 dataset_type="hvb-voxceleb-voxpopuli-meld_emotion"  # Dataset type to evaluate on
@@ -22,7 +23,7 @@ dataset_type="hvb-voxceleb-voxpopuli-meld_emotion"  # Dataset type to evaluate o
 # dataset_type="voxpopuli"  # Dataset type to evaluate on
 max_val_samples=0         # 0 = use all samples
 
-num_examples=3
+num_examples=0
 
 # Optional parameters
 device="cuda:0"
@@ -32,7 +33,7 @@ output_dir="/home/neeraja/results/ICL-speech-text-LLM/"
 hostname="n8"
 cuda_device=1
 
-hold_job_id=""
+hold_job_id="3615.eehpc"
 # ========================================
 # Validation and Setup
 # ========================================
