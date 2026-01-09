@@ -15,7 +15,14 @@
 # change every epoch
 # checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0301_1318_orchestrator_5e_1sce_bypass_mlp_sym_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch1_periodic.pt"
 # change every step
-checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0101_2146_orchestrator_10e_20sce_bypass_mlp_sym_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch1_periodic.pt"
+# checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0101_2146_orchestrator_10e_20sce_bypass_mlp_sym_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch1_periodic.pt"
+
+#meld-vop
+#random
+checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0401_1209_orchestrator_5e_20sce_bypass_mlp_sym_salmonn_voxpopuli_meld_emotion/lora_step0_cycle0_epoch5_periodic.pt"
+# change every step
+# checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0401_1210_orchestrator_5e_20sce_bypass_mlp_sym_salmonn_voxpopuli_meld_emotion/lora_step0_cycle0_epoch3_periodic.pt"
+
 
 
 dataset_type="hvb-voxceleb-voxpopuli-meld_emotion"  # Dataset type to evaluate on
@@ -23,7 +30,7 @@ dataset_type="hvb-voxceleb-voxpopuli-meld_emotion"  # Dataset type to evaluate o
 # dataset_type="voxpopuli"  # Dataset type to evaluate on
 max_val_samples=0         # 0 = use all samples
 
-num_examples=0
+num_examples=3
 
 # Optional parameters
 device="cuda:0"
@@ -33,7 +40,7 @@ output_dir="/home/neeraja/results/ICL-speech-text-LLM/"
 hostname="n8"
 cuda_device=1
 
-hold_job_id="3615.eehpc"
+hold_job_id="3627.eehpc"
 # ========================================
 # Validation and Setup
 # ========================================
@@ -48,7 +55,7 @@ conda activate $CONDA_ENV
 
 if [ -n "$hold_job_id" ]; then
     echo "Job will wait for completion of job: $hold_job_id"
-    HOLD_FLAG="-hold_jid $hold_job_id"
+    HOLD_FLAG="-W depend=afterok:$hold_job_id"
 else
     HOLD_FLAG=""
 fi
