@@ -140,8 +140,8 @@ VOXCELEB_PERMUTATIONS_GREEKS = [
 ]
 
 VOXCELEB_SWAP_CONFIGS = []
-# for perm in VOXCELEB_PERMUTATIONS:
-for perm in VOXCELEB_PERMUTATIONS_GREEKS:
+for perm in VOXCELEB_PERMUTATIONS:
+# for perm in VOXCELEB_PERMUTATIONS_GREEKS:
     mapping = {orig: swapped for orig, swapped in zip(VOXCELEB_CONFIG.valid_labels, perm)}
     VOXCELEB_SWAP_CONFIGS.append(DatasetConfig(
         prompt_template=f"""You are a sentiment analysis expert. Based on the input, respond with EXACTLY ONE WORD from these options: {perm[0]}, {perm[1]}, or {perm[2]}.

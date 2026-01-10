@@ -3,7 +3,7 @@
 
 # Configuration - Edit these values as needed
 model_type="salmonn"  # Options: "salmonn" or "qwen2"
-dataset_type="hvb-voxceleb"  # Dataset type(s) to use
+dataset_type="hvb_swap-voxceleb_swap"  # Dataset type(s) to use
 # dataset_type="voxpopuli-meld_emotion"
 # dataset_type="voxpopuli-voxceleb"
 # dataset_type="voxceleb-voxpopuli"  # Dataset type(s) to use
@@ -130,11 +130,11 @@ echo "=========================================="
 # Submit job
 qsub -q workq \
     $HOLD_FLAG \
-    -l select=1:num_gpus=1:gpu_mem=48GB:host=n8 \
+    -l select=1:num_gpus=1:gpu_mem=48GB:host=n6 \
     -l walltime=72:00:00 \
     -o /dev/null \
     -j oe \
-    -v CUDA_VISIBLE_DEVICES=1,\
+    -v CUDA_VISIBLE_DEVICES=0,\
 LOG_FILE="${LOG_DIR}/${RUN_NAME}.log",\
 HF_HOME=/home/leapers/common_cache/huggingface,\
 TODAY=${TODAY},\

@@ -398,17 +398,17 @@ class ValidationManager:
                     logging.info(f"⏭️ Skipping {mode_key} (fixed symbols) - dynamic symbols enabled in inference")
                     continue
 
-            # if self.only_original:
-            #     # If only original labels are used, skip all symbol modes
-            #     if not use_original:
-            #         logging.info(f"⏭️ Skipping {mode_key} - only original labels are used")
-            #         continue
-
             if self.only_original:
                 # If only original labels are used, skip all symbol modes
-                if use_original:
-                    logging.info(f"⏭️ Skipping {mode_key} -  original labels are not used")
+                if not use_original:
+                    logging.info(f"⏭️ Skipping {mode_key} - only original labels are used")
                     continue
+
+            # if self.only_original:
+            #     # If only original labels are used, skip all symbol modes
+            #     if use_original:
+            #         logging.info(f"⏭️ Skipping {mode_key} -  original labels are not used")
+            #         continue
 
             try:
                 metrics = self.validate_model(
