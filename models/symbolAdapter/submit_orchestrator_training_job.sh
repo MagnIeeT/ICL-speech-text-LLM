@@ -3,13 +3,14 @@
 
 # Configuration - Edit these values as needed
 model_type="salmonn"  # Options: "salmonn" or "qwen2"
-dataset_type="hvb_swap-voxceleb_swap"  # Dataset type(s) to use
+# dataset_type="hvb_swap-voxceleb_swap"  # Dataset type(s) to use
 # dataset_type="voxpopuli-meld_emotion"
+dataset_type="voxpopuli_swap-meld_emotion_swap"
 # dataset_type="voxpopuli-voxceleb"
 # dataset_type="voxceleb-voxpopuli"  # Dataset type(s) to use
 device="cuda:0"  # GPU device
 
-hold_job_id=""
+hold_job_id="3700.eehpc"
 
 
 batch_size=1
@@ -17,7 +18,7 @@ batch_size=1
 # Training parameters
 lora_lr=1e-5
 lora_epochs=5
-symbol_change_epochs=1
+symbol_change_epochs=10
 
 
 
@@ -96,7 +97,7 @@ done
 
 if [ -n "$hold_job_id" ]; then
     echo "Job will wait for completion of job: $hold_job_id"
-    HOLD_FLAG="-hold_jid $hold_job_id"
+    HOLD_FLAG="-W depend=afterok:$hold_job_id"
 else
     HOLD_FLAG=""
 fi
@@ -130,11 +131,11 @@ echo "=========================================="
 # Submit job
 qsub -q workq \
     $HOLD_FLAG \
-    -l select=1:num_gpus=1:gpu_mem=48GB:host=n6 \
+    -l select=1:num_gpus=1:gpu_mem=48GB:host=n8 \
     -l walltime=72:00:00 \
     -o /dev/null \
     -j oe \
-    -v CUDA_VISIBLE_DEVICES=0,\
+    -v CUDA_VISIBLE_DEVICES=1,\
 LOG_FILE="${LOG_DIR}/${RUN_NAME}.log",\
 HF_HOME=/home/leapers/common_cache/huggingface,\
 TODAY=${TODAY},\

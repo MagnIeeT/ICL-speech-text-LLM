@@ -18,7 +18,8 @@
 # checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0101_2146_orchestrator_10e_20sce_bypass_mlp_sym_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch1_periodic.pt"
 # original
 # checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0901_1452_orchestrator_5e_1sce_bypass_mlp_org_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch5_periodic.pt"
-
+# interspeech
+# checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/1001_1521_orchestrator_5e_1sce_bypass_mlp_org_salmonn_hvb_swap_voxceleb_swap/lora_step0_cycle0_epoch1_periodic.pt"
 
 #meld-vop
 #random
@@ -26,7 +27,16 @@
 # change every step
 # checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0401_1210_orchestrator_5e_20sce_bypass_mlp_sym_salmonn_voxpopuli_meld_emotion/lora_step0_cycle0_epoch3_periodic.pt"
 #change every epoch
-checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0501_0241_orchestrator_5e_1sce_bypass_mlp_sym_salmonn_voxpopuli_meld_emotion/lora_step0_cycle0_epoch5_periodic.pt"
+# checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0501_0241_orchestrator_5e_1sce_bypass_mlp_sym_salmonn_voxpopuli_meld_emotion/lora_step0_cycle0_epoch5_periodic.pt"
+
+
+#vox vop
+#random
+checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0501_2331_orchestrator_5e_20sce_bypass_mlp_sym_salmonn_voxpopuli_voxceleb/lora_step0_cycle0_epoch3_periodic.pt"
+#every step
+# checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0601_1443_orchestrator_5e_20sce_bypass_mlp_sym_salmonn_voxpopuli_voxceleb/lora_step0_cycle0_epoch5_periodic.pt"
+#every epoch
+# checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0601_1448_orchestrator_5e_1sce_bypass_mlp_sym_salmonn_voxpopuli_voxceleb/lora_step0_cycle0_epoch2_periodic.pt"
 
 
 dataset_type="hvb-voxceleb-voxpopuli-meld_emotion"  # Dataset type to evaluate on
@@ -34,17 +44,17 @@ dataset_type="hvb-voxceleb-voxpopuli-meld_emotion"  # Dataset type to evaluate o
 # dataset_type="voxpopuli"  # Dataset type to evaluate on
 max_val_samples=0         # 0 = use all samples
 
-num_examples=1
+num_examples=0
 
 # Optional parameters
 device="cuda:0"
 output_dir="/home/neeraja/results/ICL-speech-text-LLM/"
 
 
-hostname="n6"
-cuda_device=0
+hostname="n8"
+cuda_device=1
 
-hold_job_id="3689.eehpc"
+hold_job_id="3700.eehpc"
 # ========================================
 # Validation and Setup
 # ========================================
