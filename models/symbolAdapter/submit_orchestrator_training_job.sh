@@ -5,12 +5,13 @@
 model_type="salmonn"  # Options: "salmonn" or "qwen2"
 # dataset_type="hvb_swap-voxceleb_swap"  # Dataset type(s) to use
 # dataset_type="voxpopuli-meld_emotion"
-dataset_type="voxpopuli_swap-meld_emotion_swap"
+# dataset_type="voxpopuli_swap-meld_emotion_swap"
 # dataset_type="voxpopuli-voxceleb"
+dataset_type="voxpopuli_swap-voxceleb_swap"
 # dataset_type="voxceleb-voxpopuli"  # Dataset type(s) to use
 device="cuda:0"  # GPU device
 
-hold_job_id="3700.eehpc"
+hold_job_id="3761.eehpc"
 
 
 batch_size=1

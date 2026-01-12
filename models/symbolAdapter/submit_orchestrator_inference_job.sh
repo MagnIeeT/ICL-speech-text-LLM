@@ -28,11 +28,15 @@
 # checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0401_1210_orchestrator_5e_20sce_bypass_mlp_sym_salmonn_voxpopuli_meld_emotion/lora_step0_cycle0_epoch3_periodic.pt"
 #change every epoch
 # checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0501_0241_orchestrator_5e_1sce_bypass_mlp_sym_salmonn_voxpopuli_meld_emotion/lora_step0_cycle0_epoch5_periodic.pt"
+#original 
+# checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/1101_1357_orchestrator_5e_10sce_bypass_mlp_org_salmonn_voxpopuli_meld_emotion/lora_step0_cycle0_epoch3_periodic.pt"
+#swap interspeech
+checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/1101_2301_orchestrator_5e_10sce_bypass_mlp_org_salmonn_voxpopuli_swap_meld_emotion_swap/lora_step0_cycle0_epoch1_periodic.pt"
 
 
 #vox vop
 #random
-checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0501_2331_orchestrator_5e_20sce_bypass_mlp_sym_salmonn_voxpopuli_voxceleb/lora_step0_cycle0_epoch3_periodic.pt"
+# checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0501_2331_orchestrator_5e_20sce_bypass_mlp_sym_salmonn_voxpopuli_voxceleb/lora_step0_cycle0_epoch3_periodic.pt"
 #every step
 # checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0601_1443_orchestrator_5e_20sce_bypass_mlp_sym_salmonn_voxpopuli_voxceleb/lora_step0_cycle0_epoch5_periodic.pt"
 #every epoch
@@ -51,10 +55,10 @@ device="cuda:0"
 output_dir="/home/neeraja/results/ICL-speech-text-LLM/"
 
 
-hostname="n8"
+hostname="n6"
 cuda_device=1
 
-hold_job_id="3700.eehpc"
+hold_job_id="3826.eehpc"
 # ========================================
 # Validation and Setup
 # ========================================
