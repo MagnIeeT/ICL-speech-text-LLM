@@ -31,7 +31,7 @@
 #original 
 # checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/1101_1357_orchestrator_5e_10sce_bypass_mlp_org_salmonn_voxpopuli_meld_emotion/lora_step0_cycle0_epoch3_periodic.pt"
 #swap interspeech
-checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/1101_2301_orchestrator_5e_10sce_bypass_mlp_org_salmonn_voxpopuli_swap_meld_emotion_swap/lora_step0_cycle0_epoch1_periodic.pt"
+# checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/1101_2301_orchestrator_5e_10sce_bypass_mlp_org_salmonn_voxpopuli_swap_meld_emotion_swap/lora_step0_cycle0_epoch1_periodic.pt"
 
 
 #vox vop
@@ -40,7 +40,12 @@ checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_
 #every step
 # checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0601_1443_orchestrator_5e_20sce_bypass_mlp_sym_salmonn_voxpopuli_voxceleb/lora_step0_cycle0_epoch5_periodic.pt"
 #every epoch
-# checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0601_1448_orchestrator_5e_1sce_bypass_mlp_sym_salmonn_voxpopuli_voxceleb/lora_step0_cycle0_epoch2_periodic.pt"
+checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0601_1448_orchestrator_5e_1sce_bypass_mlp_sym_salmonn_voxpopuli_voxceleb/lora_step0_cycle0_epoch2_periodic.pt"
+#original
+# checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/1201_1327_orchestrator_5e_10sce_bypass_mlp_org_salmonn_voxpopuli_voxceleb/lora_step0_cycle0_epoch3_periodic.pt"
+#swap interspeech
+# checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/1201_2125_orchestrator_5e_10sce_bypass_mlp_org_salmonn_voxpopuli_swap_voxceleb_swap/lora_step0_cycle0_epoch5_periodic.pt"
+
 
 
 dataset_type="hvb-voxceleb-voxpopuli-meld_emotion"  # Dataset type to evaluate on
@@ -48,7 +53,7 @@ dataset_type="hvb-voxceleb-voxpopuli-meld_emotion"  # Dataset type to evaluate o
 # dataset_type="voxpopuli"  # Dataset type to evaluate on
 max_val_samples=0         # 0 = use all samples
 
-num_examples=0
+num_examples=3
 
 # Optional parameters
 device="cuda:0"
@@ -56,9 +61,9 @@ output_dir="/home/neeraja/results/ICL-speech-text-LLM/"
 
 
 hostname="n6"
-cuda_device=1
+cuda_device=2
 
-hold_job_id="3826.eehpc"
+hold_job_id="3903.eehpc"
 # ========================================
 # Validation and Setup
 # ========================================
