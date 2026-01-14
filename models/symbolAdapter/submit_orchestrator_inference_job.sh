@@ -53,7 +53,7 @@ dataset_type="hvb-voxceleb-voxpopuli-meld_emotion"  # Dataset type to evaluate o
 # dataset_type="voxpopuli"  # Dataset type to evaluate on
 max_val_samples=0         # 0 = use all samples
 
-num_examples=3
+num_examples=0
 
 # Optional parameters
 device="cuda:0"
@@ -61,9 +61,9 @@ output_dir="/home/neeraja/results/ICL-speech-text-LLM/"
 
 
 hostname="n6"
-cuda_device=2
+cuda_device=1
 
-hold_job_id="3903.eehpc"
+hold_job_id=""
 # ========================================
 # Validation and Setup
 # ========================================
