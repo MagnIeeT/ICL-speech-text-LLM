@@ -192,4 +192,4 @@ def get_meld_emotion_swap_config(randomize: bool = False):
         return random.choice(MELD_EMOTION_SWAP_CONFIGS)
     else:
         # Always return the second config when not randomizing
-        return MELD_EMOTION_SWAP_CONFIGS[1]
+        return MELD_EMOTION_SWAP_CONFIGS[8]

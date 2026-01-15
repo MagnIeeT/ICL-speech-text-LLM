@@ -12,7 +12,8 @@ git add -A
 # Only commit if there are changes
 if [ -n "$(git status --porcelain)" ]; then
     git commit -m "Auto-commit: ${DATE}"
-    echo "Changes committed on ${DATE}"
+    git push origin main
+    echo "Changes committed and pushed on ${DATE}"
 else
     echo "No changes to commit on ${DATE}"
 fi 

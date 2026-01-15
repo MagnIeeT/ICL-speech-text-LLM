@@ -362,7 +362,7 @@ class ValidationManager:
         is_inference_mode = getattr(self.config, 'inference_mode', False)
         self.is_inference_mode = is_inference_mode  # Store for later use
 
-        self.only_original = getattr(self.config, 'only_original', False)
+        self.only_original = getattr(self.config, 'only_original', True)
         
         if self.is_inference_mode:
             accumulated_detailed_metrics = {}

@@ -194,7 +194,7 @@ VOXPOPULI_GREEK_PERMUTATIONS = [
 
 # Create swap configurations using the new permutations
 VOXPOPULI_SWAP_CONFIGS = []
-for perm in VOXPOPULI_GREEK_PERMUTATIONS:
+for perm in VOXPOPULI_PERMUTATIONS:
     mapping = {orig: swapped for orig, swapped in zip(VOXPOPULI_CONFIG.valid_labels, perm)}
     descriptions = {label: desc for label, desc in zip(VOXPOPULI_CONFIG.valid_labels, VOXPOPULI_DESCRIPTIONS)}
     VOXPOPULI_SWAP_CONFIGS.append(DatasetConfig(

@@ -88,7 +88,8 @@ class BaseMultiTaskDataset(Dataset):
         self.split = split
         self.model_type = model_type.lower()
         self.run_name = run_name
-        self.randomize_swap = randomize_swap
+        # self.randomize_swap = randomize_swap
+        self.randomize_swap = False
         
         # Get base dataset configuration
         self.config = get_dataset_config(dataset_type)
