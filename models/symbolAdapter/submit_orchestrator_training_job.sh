@@ -7,11 +7,13 @@ model_type="salmonn"  # Options: "salmonn" or "qwen2"
 # dataset_type="voxpopuli-meld_emotion"
 # dataset_type="voxpopuli_swap-meld_emotion_swap"
 # dataset_type="voxpopuli-voxceleb"
-dataset_type="voxpopuli_swap-voxceleb_swap"
+# dataset_type="voxpopuli_swap-voxceleb_swap"
+# dataset_type="hvb_swap-meld_emotion_swap"
+dataset_type="hvb-meld_emotion"
 # dataset_type="voxceleb-voxpopuli"  # Dataset type(s) to use
 device="cuda:0"  # GPU device
 
-hold_job_id=""
+hold_job_id="4135.eehpc "
 
 
 batch_size=1
@@ -19,11 +21,11 @@ batch_size=1
 # Training parameters
 lora_lr=1e-5
 lora_epochs=5
-symbol_change_epochs=10
+symbol_change_epochs=1
 
 
 
-dynamic_symbols_per_epoch=False  # Generate new symbols each epoch
+dynamic_symbols_per_epoch=True  # Generate new symbols each epoch
 
 
 gradient_accumulation_steps=8
@@ -136,7 +138,7 @@ qsub -q workq \
     -l walltime=72:00:00 \
     -o /dev/null \
     -j oe \
-    -v CUDA_VISIBLE_DEVICES=2,\
+    -v CUDA_VISIBLE_DEVICES=1,\
 LOG_FILE="${LOG_DIR}/${RUN_NAME}.log",\
 HF_HOME=/home/leapers/common_cache/huggingface,\
 TODAY=${TODAY},\
