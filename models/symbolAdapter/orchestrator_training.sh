@@ -5,7 +5,7 @@ echo "Starting Orchestrator Symbol Training..."
 export HF_HOME=/home/leapers/common_cache/huggingface
 export TRANSFORMERS_CACHE=/home/leapers/common_cache/huggingface
 unset LD_LIBRARY_PATH
-# export LD_LIBRARY_PATH=/usr/local/cuda-11.8/lib64:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=/usr/local/cuda-11.8/lib64:$LD_LIBRARY_PATH
 # if [[ $(hostname) == *"n8"* ]]; then
 #     # export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64
 #     export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib:$LD_LIBRARY_PATH

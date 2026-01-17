@@ -13,7 +13,7 @@ dataset_type="hvb-meld_emotion"
 # dataset_type="voxceleb-voxpopuli"  # Dataset type(s) to use
 device="cuda:0"  # GPU device
 
-hold_job_id="4135.eehpc "
+hold_job_id=""
 
 
 batch_size=1
@@ -21,7 +21,7 @@ batch_size=1
 # Training parameters
 lora_lr=1e-5
 lora_epochs=5
-symbol_change_epochs=1
+symbol_change_epochs=10
 
 
 
@@ -134,11 +134,11 @@ echo "=========================================="
 # Submit job
 qsub -q workq \
     $HOLD_FLAG \
-    -l select=1:num_gpus=1:gpu_mem=48GB:host=n6 \
+    -l select=1:num_gpus=1:gpu_mem=48GB:host=n10 \
     -l walltime=72:00:00 \
     -o /dev/null \
     -j oe \
-    -v CUDA_VISIBLE_DEVICES=1,\
+    -v CUDA_VISIBLE_DEVICES=2,\
 LOG_FILE="${LOG_DIR}/${RUN_NAME}.log",\
 HF_HOME=/home/leapers/common_cache/huggingface,\
 TODAY=${TODAY},\

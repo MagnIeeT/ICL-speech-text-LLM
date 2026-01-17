@@ -45,7 +45,12 @@
 # checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/1201_1327_orchestrator_5e_10sce_bypass_mlp_org_salmonn_voxpopuli_voxceleb/lora_step0_cycle0_epoch3_periodic.pt"
 #swap interspeech
 # checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/1201_2125_orchestrator_5e_10sce_bypass_mlp_org_salmonn_voxpopuli_swap_voxceleb_swap/lora_step0_cycle0_epoch5_periodic.pt"
-checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/1501_2327_orchestrator_5e_10sce_bypass_mlp_org_salmonn_voxpopuli_swap_voxceleb_swap/lora_step0_cycle0_epoch3_periodic.pt"
+# checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/1501_2327_orchestrator_5e_10sce_bypass_mlp_org_salmonn_voxpopuli_swap_voxceleb_swap/lora_step0_cycle0_epoch3_periodic.pt"
+
+
+#hvb meld
+#interspeech swap
+checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/1701_0021_orchestrator_5e_10sce_bypass_mlp_org_salmonn_hvb_swap_meld_emotion_swap/lora_step0_cycle0_epoch4_periodic.pt"
 
 
 dataset_type="hvb-voxceleb-voxpopuli-meld_emotion"  # Dataset type to evaluate on
@@ -60,10 +65,10 @@ device="cuda:0"
 output_dir="/home/neeraja/results/ICL-speech-text-LLM/"
 
 
-hostname="n6"
-cuda_device=2
+hostname="n8"
+cuda_device=1
 
-hold_job_id=""
+hold_job_id="4209.eehpc"
 # ========================================
 # Validation and Setup
 # ========================================
