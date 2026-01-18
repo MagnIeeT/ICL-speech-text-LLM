@@ -25,7 +25,7 @@ symbol_change_epochs=10
 
 
 
-dynamic_symbols_per_epoch=True  # Generate new symbols each epoch
+dynamic_symbols_per_epoch=False  # Generate new symbols each epoch
 
 
 gradient_accumulation_steps=8
@@ -138,7 +138,7 @@ qsub -q workq \
     -l walltime=72:00:00 \
     -o /dev/null \
     -j oe \
-    -v CUDA_VISIBLE_DEVICES=2,\
+    -v CUDA_VISIBLE_DEVICES=1,\
 LOG_FILE="${LOG_DIR}/${RUN_NAME}.log",\
 HF_HOME=/home/leapers/common_cache/huggingface,\
 TODAY=${TODAY},\
