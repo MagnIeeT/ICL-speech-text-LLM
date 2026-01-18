@@ -1024,7 +1024,7 @@ def get_processor(model_type: str, processor=None, tokenizer=None) -> ModelProce
     
     if model_type == "salmonn":
         return SalmonProcessor(tokenizer)
-    elif model_type == "qwen2":
-        return QwenProcessor(processor)
+    elif model_type in ["qwen", "qwen2"]:
+            return QwenProcessor(processor)
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
