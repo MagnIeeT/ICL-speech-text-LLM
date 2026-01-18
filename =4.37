@@ -1,2563 +1,0 @@
-2 channel Terms of Service accepted
-Channels:
- - conda-forge
- - defaults
-Platform: linux-64
-Collecting package metadata (repodata.json): - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / done
-Solving environment: \ | done
-
-## Package Plan ##
-
-  environment location: /home/harinis/.conda/envs/qwen
-
-  added / updated specs:
-    - accelerate
-    - datasets
-    - peft
-    - transformers
-
-
-The following packages will be downloaded:
-
-    package                    |            build
-    ---------------------------|-----------------
-    _python_abi3_support-1.0   |       hd8ed1ab_2           8 KB  conda-forge
-    accelerate-1.12.0          |     pyhcf101f3_0         266 KB  conda-forge
-    aiohappyeyeballs-2.6.1     |     pyhd8ed1ab_0          19 KB  conda-forge
-    aiohttp-3.13.3             |  py310h31b6992_0         871 KB  conda-forge
-    aiosignal-1.4.0            |     pyhd8ed1ab_0          13 KB  conda-forge
-    anyio-4.12.1               |     pyhcf101f3_0         142 KB  conda-forge
-    arrow-cpp-21.0.0           |       hb2ad71a_2        12.3 MB
-    async-timeout-5.0.1        |     pyhcf101f3_2          13 KB  conda-forge
-    attrs-25.4.0               |     pyhcf101f3_1          63 KB  conda-forge
-    aws-c-cal-0.9.2            |       he7b75e1_1          50 KB  conda-forge
-    aws-c-common-0.12.4        |       hb03c661_0         231 KB  conda-forge
-    aws-c-compression-0.3.1    |       h92c474e_6          22 KB  conda-forge
-    aws-c-event-stream-0.5.6   |       h4d13e43_1          57 KB  conda-forge
-    aws-c-http-0.10.4          |       hbd4fbc6_1         219 KB  conda-forge
-    aws-c-io-0.21.4            |       h88603f0_1         176 KB  conda-forge
-    aws-c-mqtt-0.13.3          |       h680d5b3_4         211 KB  conda-forge
-    aws-c-sdkutils-0.2.4       |       h92c474e_1          58 KB  conda-forge
-    aws-checksums-0.2.7        |       h92c474e_2          75 KB  conda-forge
-    backports.zstd-1.3.0       |  py310h69bd2ac_0         187 KB  conda-forge
-    blas-2.305                 |         openblas          18 KB  conda-forge
-    blas-devel-3.11.0          |5_h1ea3ea9_openblas          18 KB  conda-forge
-    brotli-python-1.2.0        |  py310hba01987_1         358 KB  conda-forge
-    c-ares-1.34.6              |       hb03c661_0         203 KB  conda-forge
-    ca-certificates-2026.1.4   |       hbd8a1cb_0         143 KB  conda-forge
-    certifi-2026.1.4           |     pyhd8ed1ab_0         147 KB  conda-forge
-    charset-normalizer-3.4.4   |     pyhd8ed1ab_0          50 KB  conda-forge
-    colorama-0.4.6             |     pyhd8ed1ab_1          26 KB  conda-forge
-    cpython-3.10.19            |  py310hd8ed1ab_2          49 KB  conda-forge
-    datasets-4.4.2             |     pyhcf101f3_0         359 KB  conda-forge
-    deprecated-1.3.1           |     pyhd8ed1ab_0          15 KB  conda-forge
-    dill-0.4.0                 |     pyhcf101f3_1          93 KB  conda-forge
-    exceptiongroup-1.3.1       |     pyhd8ed1ab_0          21 KB  conda-forge
-    filelock-3.20.3            |     pyhd8ed1ab_0          18 KB  conda-forge
-    frozenlist-1.7.0           |  py310h9548a50_0          53 KB  conda-forge
-    fsspec-2025.10.0           |     pyhd8ed1ab_0         143 KB  conda-forge
-    gflags-2.2.2               |    h5888daf_1005         117 KB  conda-forge
-    glog-0.5.0                 |       h48cff8f_0         104 KB  conda-forge
-    gmp-6.3.0                  |       hac33072_2         449 KB  conda-forge
-    gmpy2-2.2.1                |  py310h63ebcad_2         199 KB  conda-forge
-    h11-0.16.0                 |     pyhcf101f3_1          38 KB  conda-forge
-    h2-4.3.0                   |     pyhcf101f3_0          94 KB  conda-forge
-    hf-xet-1.2.1               |  py310hb823017_0         2.6 MB  conda-forge
-    hpack-4.1.0                |     pyhd8ed1ab_0          30 KB  conda-forge
-    httpcore-1.0.9             |     pyh29332c3_0          48 KB  conda-forge
-    httpx-0.28.1               |     pyhd8ed1ab_0          62 KB  conda-forge
-    huggingface_hub-0.36.0     |     pyhd8ed1ab_0         331 KB  conda-forge
-    hyperframe-6.1.0           |     pyhd8ed1ab_0          17 KB  conda-forge
-    idna-3.11                  |     pyhd8ed1ab_0          50 KB  conda-forge
-    importlib-metadata-8.7.0   |     pyhe01879c_1          34 KB  conda-forge
-    jinja2-3.1.6               |     pyhcf101f3_1         118 KB  conda-forge
-    keyutils-1.6.3             |       hb9d3cd8_0         131 KB  conda-forge
-    krb5-1.21.3                |       h659f571_0         1.3 MB  conda-forge
-    libabseil-20250814.1       | cxx17_hee66210_0         1.3 MB  conda-forge
-    libblas-3.11.0             |5_h4a7cf45_openblas          18 KB  conda-forge
-    libbrotlicommon-1.2.0      |       hb03c661_1          78 KB  conda-forge
-    libbrotlidec-1.2.0         |       hb03c661_1          34 KB  conda-forge
-    libbrotlienc-1.2.0         |       hb03c661_1         291 KB  conda-forge
-    libcblas-3.11.0            |5_h0358290_openblas          18 KB  conda-forge
-    libcurl-8.18.0             |       h4e3cde8_0         452 KB  conda-forge
-    libedit-3.1.20250104       | pl5321h7949ede_0         132 KB  conda-forge
-    libev-4.33                 |       hd590300_2         110 KB  conda-forge
-    libevent-2.1.12            |       hf998b51_1         417 KB  conda-forge
-    libgfortran-15.2.0         |      h69a702a_16          27 KB  conda-forge
-    libgfortran5-15.2.0        |      h68bc16d_16         2.4 MB  conda-forge
-    libgrpc-1.74.1             |       ha2a6211_0         8.5 MB
-    liblapack-3.11.0           |5_h47877c9_openblas          18 KB  conda-forge
-    liblapacke-3.11.0          |5_h6ae95b6_openblas          18 KB  conda-forge
-    libnghttp2-1.67.0          |       had1ee68_0         651 KB  conda-forge
-    libopenblas-0.3.30         |pthreads_h94d23a6_4         5.7 MB  conda-forge
-    libprotobuf-6.33.0         |       he382b67_0         3.6 MB  conda-forge
-    libre2-11-2025.11.05       |       h3218f0b_0         196 KB
-    libssh2-1.11.1             |       hcf80075_0         298 KB  conda-forge
-    libthrift-0.22.0           |       h454ac66_1         414 KB  conda-forge
-    libtorch-2.7.0             |cpu_openblas_hfb174cc_1        55.7 MB
-    libuv-1.51.0               |       hb03c661_1         874 KB  conda-forge
-    lz4-c-1.9.4                |       hcb278e6_0         140 KB  conda-forge
-    markupsafe-3.0.3           |  py310h3406613_0          23 KB  conda-forge
-    mpc-1.3.1                  |       h24ddda3_1         114 KB  conda-forge
-    mpfr-4.2.1                 |       h90cbb55_3         620 KB  conda-forge
-    mpmath-1.3.0               |     pyhd8ed1ab_1         429 KB  conda-forge
-    multidict-6.7.0            |  py310h3406613_0          89 KB  conda-forge
-    multiprocess-0.70.18       |  py310h139afa4_2         251 KB  conda-forge
-    networkx-3.4.2             |     pyh267e887_2         1.2 MB  conda-forge
-    nomkl-1.0                  |       h5ca1d4c_0           4 KB  conda-forge
-    numpy-2.2.6                |  py310hefbff90_0         7.5 MB  conda-forge
-    openblas-0.3.30            |pthreads_h6ec200e_4         5.8 MB  conda-forge
-    openssl-3.6.0              |       h26f9b46_0         3.0 MB  conda-forge
-    opentelemetry-api-1.39.1   |     pyhd8ed1ab_0          45 KB  conda-forge
-    orc-2.2.0                  |       h13e6d3f_1         590 KB
-    packaging-25.0             |     pyh29332c3_1          61 KB  conda-forge
-    pandas-2.3.3               |  py310h0158d43_2        11.8 MB  conda-forge
-    peft-0.18.1                |     pyhcf101f3_0         291 KB  conda-forge
-    propcache-0.3.1            |  py310h89163eb_0          52 KB  conda-forge
-    psutil-7.2.1               |  py310h139afa4_0         173 KB  conda-forge
-    pyarrow-21.0.0             |  py310h86c3e14_1         8.3 MB
-    pysocks-1.7.1              |     pyha55dd90_7          21 KB  conda-forge
-    python-dateutil-2.9.0.post0|     pyhe01879c_2         228 KB  conda-forge
-    python-gil-3.10.19         |       hd8ed1ab_2          49 KB  conda-forge
-    python-tzdata-2025.3       |     pyhd8ed1ab_0         140 KB  conda-forge
-    python-xxhash-3.6.0        |  py310hf3bd8b6_1          23 KB  conda-forge
-    python_abi-3.10            |          2_cp310           4 KB  conda-forge
-    pytorch-2.7.0              |cpu_openblas_py310haba91be_1        38.5 MB
-    pytz-2025.2                |     pyhd8ed1ab_0         185 KB  conda-forge
-    pyyaml-6.0.3               |  py310h3406613_0         177 KB  conda-forge
-    re2-2025.11.05             |       h6b3e72e_0          25 KB
-    regex-2026.1.15            |  py310h7c4b9e2_0         350 KB  conda-forge
-    requests-2.32.5            |     pyhcf101f3_1          62 KB  conda-forge
-    s2n-1.5.25                 |       h5ac9029_1         377 KB  conda-forge
-    safetensors-0.7.0          |  py310hdfeec95_0         435 KB  conda-forge
-    six-1.17.0                 |     pyhe01879c_1          18 KB  conda-forge
-    sleef-3.9.0                |       ha0421bc_0         1.9 MB  conda-forge
-    snappy-1.2.2               |       h03e3b7b_1          45 KB  conda-forge
-    sniffio-1.3.1              |     pyhd8ed1ab_2          15 KB  conda-forge
-    sympy-1.14.0               |   pyh2585a3b_105         4.4 MB  conda-forge
-    tokenizers-0.22.2          |  py310h4551fc8_0         2.3 MB  conda-forge
-    tqdm-4.67.1                |     pyhd8ed1ab_1          87 KB  conda-forge
-    transformers-4.57.5        |     pyhd8ed1ab_0         4.2 MB  conda-forge
-    typing-extensions-4.15.0   |       h396c80c_0          89 KB  conda-forge
-    typing_extensions-4.15.0   |     pyhcf101f3_0          50 KB  conda-forge
-    urllib3-2.6.3              |     pyhd8ed1ab_0         101 KB  conda-forge
-    wrapt-1.17.3               |  py310h7c4b9e2_1          56 KB  conda-forge
-    xxhash-0.8.3               |       hb47aa4a_0         106 KB  conda-forge
-    yaml-0.2.5                 |       h280c20c_3          83 KB  conda-forge
-    yarl-1.22.0                |  py310h3406613_0         135 KB  conda-forge
-    zipp-3.23.0                |     pyhcf101f3_1          24 KB  conda-forge
-    zstd-1.5.7                 |       hb78ec9c_6         587 KB  conda-forge
-    ------------------------------------------------------------
-                                           Total:       198.5 MB
-
-The following NEW packages will be INSTALLED:
-
-  _python_abi3_supp~ conda-forge/noarch::_python_abi3_support-1.0-hd8ed1ab_2 
-  accelerate         conda-forge/noarch::accelerate-1.12.0-pyhcf101f3_0 
-  aiohappyeyeballs   conda-forge/noarch::aiohappyeyeballs-2.6.1-pyhd8ed1ab_0 
-  aiohttp            conda-forge/linux-64::aiohttp-3.13.3-py310h31b6992_0 
-  aiosignal          conda-forge/noarch::aiosignal-1.4.0-pyhd8ed1ab_0 
-  anyio              conda-forge/noarch::anyio-4.12.1-pyhcf101f3_0 
-  arrow-cpp          pkgs/main/linux-64::arrow-cpp-21.0.0-hb2ad71a_2 
-  async-timeout      conda-forge/noarch::async-timeout-5.0.1-pyhcf101f3_2 
-  attrs              conda-forge/noarch::attrs-25.4.0-pyhcf101f3_1 
-  aws-c-auth         pkgs/main/linux-64::aws-c-auth-0.9.0-hb25bd0a_2 
-  aws-c-cal          conda-forge/linux-64::aws-c-cal-0.9.2-he7b75e1_1 
-  aws-c-common       conda-forge/linux-64::aws-c-common-0.12.4-hb03c661_0 
-  aws-c-compression  conda-forge/linux-64::aws-c-compression-0.3.1-h92c474e_6 
-  aws-c-event-stream conda-forge/linux-64::aws-c-event-stream-0.5.6-h4d13e43_1 
-  aws-c-http         conda-forge/linux-64::aws-c-http-0.10.4-hbd4fbc6_1 
-  aws-c-io           conda-forge/linux-64::aws-c-io-0.21.4-h88603f0_1 
-  aws-c-mqtt         conda-forge/linux-64::aws-c-mqtt-0.13.3-h680d5b3_4 
-  aws-c-s3           pkgs/main/linux-64::aws-c-s3-0.8.7-h3ff94e8_0 
-  aws-c-sdkutils     conda-forge/linux-64::aws-c-sdkutils-0.2.4-h92c474e_1 
-  aws-checksums      conda-forge/linux-64::aws-checksums-0.2.7-h92c474e_2 
-  aws-crt-cpp        pkgs/main/linux-64::aws-crt-cpp-0.34.0-h7934f7d_0 
-  aws-sdk-cpp        pkgs/main/linux-64::aws-sdk-cpp-1.11.638-hac3f51a_0 
-  backports.zstd     conda-forge/linux-64::backports.zstd-1.3.0-py310h69bd2ac_0 
-  blas               conda-forge/linux-64::blas-2.305-openblas 
-  blas-devel         conda-forge/linux-64::blas-devel-3.11.0-5_h1ea3ea9_openblas 
-  brotli-python      conda-forge/linux-64::brotli-python-1.2.0-py310hba01987_1 
-  c-ares             conda-forge/linux-64::c-ares-1.34.6-hb03c661_0 
-  certifi            conda-forge/noarch::certifi-2026.1.4-pyhd8ed1ab_0 
-  charset-normalizer conda-forge/noarch::charset-normalizer-3.4.4-pyhd8ed1ab_0 
-  colorama           conda-forge/noarch::colorama-0.4.6-pyhd8ed1ab_1 
-  cpython            conda-forge/noarch::cpython-3.10.19-py310hd8ed1ab_2 
-  datasets           conda-forge/noarch::datasets-4.4.2-pyhcf101f3_0 
-  deprecated         conda-forge/noarch::deprecated-1.3.1-pyhd8ed1ab_0 
-  dill               conda-forge/noarch::dill-0.4.0-pyhcf101f3_1 
-  exceptiongroup     conda-forge/noarch::exceptiongroup-1.3.1-pyhd8ed1ab_0 
-  filelock           conda-forge/noarch::filelock-3.20.3-pyhd8ed1ab_0 
-  frozenlist         conda-forge/linux-64::frozenlist-1.7.0-py310h9548a50_0 
-  fsspec             conda-forge/noarch::fsspec-2025.10.0-pyhd8ed1ab_0 
-  gflags             conda-forge/linux-64::gflags-2.2.2-h5888daf_1005 
-  glog               conda-forge/linux-64::glog-0.5.0-h48cff8f_0 
-  gmp                conda-forge/linux-64::gmp-6.3.0-hac33072_2 
-  gmpy2              conda-forge/linux-64::gmpy2-2.2.1-py310h63ebcad_2 
-  h11                conda-forge/noarch::h11-0.16.0-pyhcf101f3_1 
-  h2                 conda-forge/noarch::h2-4.3.0-pyhcf101f3_0 
-  hf-xet             conda-forge/linux-64::hf-xet-1.2.1-py310hb823017_0 
-  hpack              conda-forge/noarch::hpack-4.1.0-pyhd8ed1ab_0 
-  httpcore           conda-forge/noarch::httpcore-1.0.9-pyh29332c3_0 
-  httpx              conda-forge/noarch::httpx-0.28.1-pyhd8ed1ab_0 
-  huggingface_hub    conda-forge/noarch::huggingface_hub-0.36.0-pyhd8ed1ab_0 
-  hyperframe         conda-forge/noarch::hyperframe-6.1.0-pyhd8ed1ab_0 
-  idna               conda-forge/noarch::idna-3.11-pyhd8ed1ab_0 
-  importlib-metadata conda-forge/noarch::importlib-metadata-8.7.0-pyhe01879c_1 
-  jinja2             conda-forge/noarch::jinja2-3.1.6-pyhcf101f3_1 
-  keyutils           conda-forge/linux-64::keyutils-1.6.3-hb9d3cd8_0 
-  krb5               conda-forge/linux-64::krb5-1.21.3-h659f571_0 
-  libabseil          conda-forge/linux-64::libabseil-20250814.1-cxx17_hee66210_0 
-  libblas            conda-forge/linux-64::libblas-3.11.0-5_h4a7cf45_openblas 
-  libbrotlicommon    conda-forge/linux-64::libbrotlicommon-1.2.0-hb03c661_1 
-  libbrotlidec       conda-forge/linux-64::libbrotlidec-1.2.0-hb03c661_1 
-  libbrotlienc       conda-forge/linux-64::libbrotlienc-1.2.0-hb03c661_1 
-  libcblas           conda-forge/linux-64::libcblas-3.11.0-5_h0358290_openblas 
-  libcurl            conda-forge/linux-64::libcurl-8.18.0-h4e3cde8_0 
-  libedit            conda-forge/linux-64::libedit-3.1.20250104-pl5321h7949ede_0 
-  libev              conda-forge/linux-64::libev-4.33-hd590300_2 
-  libevent           conda-forge/linux-64::libevent-2.1.12-hf998b51_1 
-  libgfortran        conda-forge/linux-64::libgfortran-15.2.0-h69a702a_16 
-  libgfortran5       conda-forge/linux-64::libgfortran5-15.2.0-h68bc16d_16 
-  libgrpc            pkgs/main/linux-64::libgrpc-1.74.1-ha2a6211_0 
-  liblapack          conda-forge/linux-64::liblapack-3.11.0-5_h47877c9_openblas 
-  liblapacke         conda-forge/linux-64::liblapacke-3.11.0-5_h6ae95b6_openblas 
-  libnghttp2         conda-forge/linux-64::libnghttp2-1.67.0-had1ee68_0 
-  libopenblas        conda-forge/linux-64::libopenblas-0.3.30-pthreads_h94d23a6_4 
-  libprotobuf        conda-forge/linux-64::libprotobuf-6.33.0-he382b67_0 
-  libre2-11          pkgs/main/linux-64::libre2-11-2025.11.05-h3218f0b_0 
-  libssh2            conda-forge/linux-64::libssh2-1.11.1-hcf80075_0 
-  libthrift          conda-forge/linux-64::libthrift-0.22.0-h454ac66_1 
-  libtorch           pkgs/main/linux-64::libtorch-2.7.0-cpu_openblas_hfb174cc_1 
-  libuv              conda-forge/linux-64::libuv-1.51.0-hb03c661_1 
-  lz4-c              conda-forge/linux-64::lz4-c-1.9.4-hcb278e6_0 
-  markupsafe         conda-forge/linux-64::markupsafe-3.0.3-py310h3406613_0 
-  mpc                conda-forge/linux-64::mpc-1.3.1-h24ddda3_1 
-  mpfr               conda-forge/linux-64::mpfr-4.2.1-h90cbb55_3 
-  mpmath             conda-forge/noarch::mpmath-1.3.0-pyhd8ed1ab_1 
-  multidict          conda-forge/linux-64::multidict-6.7.0-py310h3406613_0 
-  multiprocess       conda-forge/linux-64::multiprocess-0.70.18-py310h139afa4_2 
-  networkx           conda-forge/noarch::networkx-3.4.2-pyh267e887_2 
-  nomkl              conda-forge/noarch::nomkl-1.0-h5ca1d4c_0 
-  numpy              conda-forge/linux-64::numpy-2.2.6-py310hefbff90_0 
-  openblas           conda-forge/linux-64::openblas-0.3.30-pthreads_h6ec200e_4 
-  opentelemetry-api  conda-forge/noarch::opentelemetry-api-1.39.1-pyhd8ed1ab_0 
-  orc                pkgs/main/linux-64::orc-2.2.0-h13e6d3f_1 
-  packaging          conda-forge/noarch::packaging-25.0-pyh29332c3_1 
-  pandas             conda-forge/linux-64::pandas-2.3.3-py310h0158d43_2 
-  peft               conda-forge/noarch::peft-0.18.1-pyhcf101f3_0 
-  propcache          conda-forge/linux-64::propcache-0.3.1-py310h89163eb_0 
-  psutil             conda-forge/linux-64::psutil-7.2.1-py310h139afa4_0 
-  pyarrow            pkgs/main/linux-64::pyarrow-21.0.0-py310h86c3e14_1 
-  pysocks            conda-forge/noarch::pysocks-1.7.1-pyha55dd90_7 
-  python-dateutil    conda-forge/noarch::python-dateutil-2.9.0.post0-pyhe01879c_2 
-  python-gil         conda-forge/noarch::python-gil-3.10.19-hd8ed1ab_2 
-  python-tzdata      conda-forge/noarch::python-tzdata-2025.3-pyhd8ed1ab_0 
-  python-xxhash      conda-forge/linux-64::python-xxhash-3.6.0-py310hf3bd8b6_1 
-  python_abi         conda-forge/linux-64::python_abi-3.10-2_cp310 
-  pytorch            pkgs/main/linux-64::pytorch-2.7.0-cpu_openblas_py310haba91be_1 
-  pytz               conda-forge/noarch::pytz-2025.2-pyhd8ed1ab_0 
-  pyyaml             conda-forge/linux-64::pyyaml-6.0.3-py310h3406613_0 
-  re2                pkgs/main/linux-64::re2-2025.11.05-h6b3e72e_0 
-  regex              conda-forge/linux-64::regex-2026.1.15-py310h7c4b9e2_0 
-  requests           conda-forge/noarch::requests-2.32.5-pyhcf101f3_1 
-  s2n                conda-forge/linux-64::s2n-1.5.25-h5ac9029_1 
-  safetensors        conda-forge/linux-64::safetensors-0.7.0-py310hdfeec95_0 
-  six                conda-forge/noarch::six-1.17.0-pyhe01879c_1 
-  sleef              conda-forge/linux-64::sleef-3.9.0-ha0421bc_0 
-  snappy             conda-forge/linux-64::snappy-1.2.2-h03e3b7b_1 
-  sniffio            conda-forge/noarch::sniffio-1.3.1-pyhd8ed1ab_2 
-  sympy              conda-forge/noarch::sympy-1.14.0-pyh2585a3b_105 
-  tokenizers         conda-forge/linux-64::tokenizers-0.22.2-py310h4551fc8_0 
-  tqdm               conda-forge/noarch::tqdm-4.67.1-pyhd8ed1ab_1 
-  transformers       conda-forge/noarch::transformers-4.57.5-pyhd8ed1ab_0 
-  typing-extensions  conda-forge/noarch::typing-extensions-4.15.0-h396c80c_0 
-  typing_extensions  conda-forge/noarch::typing_extensions-4.15.0-pyhcf101f3_0 
-  urllib3            conda-forge/noarch::urllib3-2.6.3-pyhd8ed1ab_0 
-  utf8proc           pkgs/main/linux-64::utf8proc-2.6.1-h5eee18b_1 
-  wrapt              conda-forge/linux-64::wrapt-1.17.3-py310h7c4b9e2_1 
-  xxhash             conda-forge/linux-64::xxhash-0.8.3-hb47aa4a_0 
-  yaml               conda-forge/linux-64::yaml-0.2.5-h280c20c_3 
-  yarl               conda-forge/linux-64::yarl-1.22.0-py310h3406613_0 
-  zipp               conda-forge/noarch::zipp-3.23.0-pyhcf101f3_1 
-  zstd               conda-forge/linux-64::zstd-1.5.7-hb78ec9c_6 
-
-The following packages will be UPDATED:
-
-  ca-certificates    pkgs/main/linux-64::ca-certificates-2~ --> conda-forge/noarch::ca-certificates-2026.1.4-hbd8a1cb_0 
-  openssl              pkgs/main::openssl-3.0.18-hd6dcaed_0 --> conda-forge::openssl-3.6.0-h26f9b46_0 
-
-
-
-Downloading and Extracting Packages: ...working...libtorch-2.7.0       | 55.7 MB   |            |   0% 
-pytorch-2.7.0        | 38.5 MB   |            |   0% [A
-
-arrow-cpp-21.0.0     | 12.3 MB   |            |   0% [A[A
-
-
-pandas-2.3.3         | 11.8 MB   |            |   0% [A[A[A
-
-
-
-libgrpc-1.74.1       | 8.5 MB    |            |   0% [A[A[A[A
-
-
-
-
-pyarrow-21.0.0       | 8.3 MB    |            |   0% [A[A[A[A[A
-
-
-
-
-
-numpy-2.2.6          | 7.5 MB    |            |   0% [A[A[A[A[A[A
-
-
-
-
-
-
-openblas-0.3.30      | 5.8 MB    |            |   0% [A[A[A[A[A[A[A
-
-
-
-
-
-
-
-libopenblas-0.3.30   | 5.7 MB    |            |   0% [A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-sympy-1.14.0         | 4.4 MB    |            |   0% [A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-transformers-4.57.5  | 4.2 MB    |            |   0% [A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-libprotobuf-6.33.0   | 3.6 MB    |            |   0% [A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-openssl-3.6.0        | 3.0 MB    |            |   0% [A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-hf-xet-1.2.1         | 2.6 MB    |            |   0% [A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-libgfortran5-15.2.0  | 2.4 MB    |            |   0% [A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-tokenizers-0.22.2    | 2.3 MB    |            |   0% [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-sleef-3.9.0          | 1.9 MB    |            |   0% [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-krb5-1.21.3          | 1.3 MB    |            |   0% [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-libabseil-20250814.1 | 1.3 MB    |            |   0% [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
- ... (more hidden) ...[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[Alibtorch-2.7.0       | 55.7 MB   |            |   0% 
-
-arrow-cpp-21.0.0     | 12.3 MB   |            |   0% [A[A
-
-
-
-libgrpc-1.74.1       | 8.5 MB    |            |   0% [A[A[A[A
-
-
-pandas-2.3.3         | 11.8 MB   |            |   0% [A[A[A
-
-arrow-cpp-21.0.0     | 12.3 MB   | 2          |   3% [A[Alibtorch-2.7.0       | 55.7 MB   |            |   1% 
-
-
-
-libgrpc-1.74.1       | 8.5 MB    | 4          |   4% [A[A[A[A
-
-
-pandas-2.3.3         | 11.8 MB   | 3          |   3% [A[A[A
-
-arrow-cpp-21.0.0     | 12.3 MB   | #          |  11% [A[Alibtorch-2.7.0       | 55.7 MB   | 4          |   4% 
-
-
-
-libgrpc-1.74.1       | 8.5 MB    | ##         |  20% [A[A[A[A
-
-
-pandas-2.3.3         | 11.8 MB   | #3         |  14% [A[A[A
-
-arrow-cpp-21.0.0     | 12.3 MB   | #5         |  15% [A[A
-
-
-
-libgrpc-1.74.1       | 8.5 MB    | ####2      |  42% [A[A[A[A
-
-
-pandas-2.3.3         | 11.8 MB   | ###        |  31% [A[A[Alibtorch-2.7.0       | 55.7 MB   | 5          |   5% 
-
-arrow-cpp-21.0.0     | 12.3 MB   | ###5       |  36% [A[A
-
-
-
-libgrpc-1.74.1       | 8.5 MB    | ######2    |  63% [A[A[A[A
-
-
-pandas-2.3.3         | 11.8 MB   | ####5      |  46% [A[A[Alibtorch-2.7.0       | 55.7 MB   | 9          |  10% 
-
-arrow-cpp-21.0.0     | 12.3 MB   | ####4      |  45% [A[A
-
-
-
-libgrpc-1.74.1       | 8.5 MB    | ########1  |  81% [A[A[A[A
-
-
-pandas-2.3.3         | 11.8 MB   | ######4    |  64% [A[A[Alibtorch-2.7.0       | 55.7 MB   | #4         |  15% 
-
-
-
-libgrpc-1.74.1       | 8.5 MB    | ########## | 100% [A[A[A[A
-pytorch-2.7.0        | 38.5 MB   |            |   0% [A
-
-arrow-cpp-21.0.0     | 12.3 MB   | ######3    |  63% [A[A
-
-
-
-
-pyarrow-21.0.0       | 8.3 MB    |            |   0% [A[A[A[A[A
-
-
-pandas-2.3.3         | 11.8 MB   | #######7   |  78% [A[A[Alibtorch-2.7.0       | 55.7 MB   | #7         |  18% 
-
-arrow-cpp-21.0.0     | 12.3 MB   | ########6  |  87% [A[A
-pytorch-2.7.0        | 38.5 MB   |            |   1% [A
-
-
-pandas-2.3.3         | 11.8 MB   | ########## | 100% [A[A[A
-
-
-
-
-pyarrow-21.0.0       | 8.3 MB    | ###7       |  38% [A[A[A[A[Alibtorch-2.7.0       | 55.7 MB   | ##         |  21% 
-pytorch-2.7.0        | 38.5 MB   | 1          |   2% [A
-
-
-
-
-
-numpy-2.2.6          | 7.5 MB    |            |   0% [A[A[A[A[A[A
-pytorch-2.7.0        | 38.5 MB   | 7          |   7% [A
-
-
-
-
-pyarrow-21.0.0       | 8.3 MB    | ########   |  80% [A[A[A[A[A
-
-arrow-cpp-21.0.0     | 12.3 MB   | ########## | 100% [A[A
-
-
-
-
-
-numpy-2.2.6          | 7.5 MB    | 8          |   9% [A[A[A[A[A[Alibtorch-2.7.0       | 55.7 MB   | ##6        |  26% 
-pytorch-2.7.0        | 38.5 MB   | #3         |  14% [A
-
-
-
-
-pyarrow-21.0.0       | 8.3 MB    | ########## | 100% [A[A[A[A[A
-
-
-
-
-
-numpy-2.2.6          | 7.5 MB    | ####1      |  42% [A[A[A[A[A[Alibtorch-2.7.0       | 55.7 MB   | ###1       |  32% 
-pytorch-2.7.0        | 38.5 MB   | #9         |  19% [A
-
-
-
-
-
-
-openblas-0.3.30      | 5.8 MB    |            |   0% [A[A[A[A[A[A[A
-
-
-
-libgrpc-1.74.1       | 8.5 MB    | ########## | 100% [A[A[A[A
-
-
-
-libgrpc-1.74.1       | 8.5 MB    | ########## | 100% [A[A[A[A
-pytorch-2.7.0        | 38.5 MB   | ##5        |  25% [Alibtorch-2.7.0       | 55.7 MB   | ###7       |  38% 
-
-
-
-
-
-numpy-2.2.6          | 7.5 MB    | #######7   |  78% [A[A[A[A[A[A
-
-
-
-
-
-
-openblas-0.3.30      | 5.8 MB    | 3          |   4% [A[A[A[A[A[A[A
-
-
-
-
-
-
-
-libopenblas-0.3.30   | 5.7 MB    |            |   0% [A[A[A[A[A[A[A[A
-pytorch-2.7.0        | 38.5 MB   | ###2       |  33% [Alibtorch-2.7.0       | 55.7 MB   | ####5      |  45% 
-
-
-
-
-
-numpy-2.2.6          | 7.5 MB    | ########## | 100% [A[A[A[A[A[A
-
-
-
-
-
-numpy-2.2.6          | 7.5 MB    | ########## | 100% [A[A[A[A[A[A
-
-
-
-
-
-
-openblas-0.3.30      | 5.8 MB    | ##6        |  26% [A[A[A[A[A[A[A
-
-
-
-
-
-
-
-libopenblas-0.3.30   | 5.7 MB    | 1          |   2% [A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-sympy-1.14.0         | 4.4 MB    |            |   0% [A[A[A[A[A[A[A[A[Alibtorch-2.7.0       | 55.7 MB   | ####9      |  50% 
-pytorch-2.7.0        | 38.5 MB   | ###8       |  38% [A
-
-
-
-
-
-
-openblas-0.3.30      | 5.8 MB    | ########3  |  84% [A[A[A[A[A[A[A
-pytorch-2.7.0        | 38.5 MB   | ####5      |  45% [A
-
-
-
-
-
-
-
-libopenblas-0.3.30   | 5.7 MB    | #3         |  14% [A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-sympy-1.14.0         | 4.4 MB    | ##4        |  24% [A[A[A[A[A[A[A[A[A
-
-arrow-cpp-21.0.0     | 12.3 MB   | ########## | 100% [A[A
-pytorch-2.7.0        | 38.5 MB   | #####2     |  53% [A
-
-
-
-
-
-
-
-libopenblas-0.3.30   | 5.7 MB    | #####8     |  59% [A[A[A[A[A[A[A[Alibtorch-2.7.0       | 55.7 MB   | #####4     |  54% 
-
-
-
-
-
-
-
-
-sympy-1.14.0         | 4.4 MB    | ########3  |  84% [A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-openblas-0.3.30      | 5.8 MB    | ########## | 100% [A[A[A[A[A[A[A
-
-
-
-
-
-
-
-libopenblas-0.3.30   | 5.7 MB    | #########2 |  93% [A[A[A[A[A[A[A[Alibtorch-2.7.0       | 55.7 MB   | ######2    |  62% 
-pytorch-2.7.0        | 38.5 MB   | #####8     |  59% [A
-
-
-
-
-
-
-
-
-
-transformers-4.57.5  | 4.2 MB    |            |   0% [A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-sympy-1.14.0         | 4.4 MB    | ########## | 100% [A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-libopenblas-0.3.30   | 5.7 MB    | ########## | 100% [A[A[A[A[A[A[A[A
-pytorch-2.7.0        | 38.5 MB   | ######6    |  67% [A
-
-
-
-
-
-
-
-
-
-
-libprotobuf-6.33.0   | 3.6 MB    |            |   0% [A[A[A[A[A[A[A[A[A[A[Alibtorch-2.7.0       | 55.7 MB   | ######7    |  67% 
-
-
-
-
-
-
-
-
-
-
-
-openssl-3.6.0        | 3.0 MB    |            |   1% [A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-transformers-4.57.5  | 4.2 MB    | 8          |   8% [A[A[A[A[A[A[A[A[A[A
-pytorch-2.7.0        | 38.5 MB   | #######3   |  73% [A
-
-
-
-
-
-
-
-
-
-
-libprotobuf-6.33.0   | 3.6 MB    | #8         |  18% [A[A[A[A[A[A[A[A[A[A[Alibtorch-2.7.0       | 55.7 MB   | #######1   |  72% 
-
-
-
-
-
-
-
-
-
-
-
-openssl-3.6.0        | 3.0 MB    | ###9       |  40% [A[A[A[A[A[A[A[A[A[A[A[A
-pytorch-2.7.0        | 38.5 MB   | #######9   |  79% [A
-
-
-
-
-
-
-
-
-
-transformers-4.57.5  | 4.2 MB    | ########4  |  85% [A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-libprotobuf-6.33.0   | 3.6 MB    | ####9      |  50% [A[A[A[A[A[A[A[A[A[A[Alibtorch-2.7.0       | 55.7 MB   | #######6   |  76% 
-
-
-
-
-
-
-
-
-
-
-
-openssl-3.6.0        | 3.0 MB    | #########5 |  96% [A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-openssl-3.6.0        | 3.0 MB    | ########## | 100% [A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-transformers-4.57.5  | 4.2 MB    | ########## | 100% [A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-libprotobuf-6.33.0   | 3.6 MB    | ########## | 100% [A[A[A[A[A[A[A[A[A[A[A
-pytorch-2.7.0        | 38.5 MB   | #########  |  91% [Alibtorch-2.7.0       | 55.7 MB   | ########4  |  85% 
-
-
-
-
-
-
-
-
-
-
-
-
-hf-xet-1.2.1         | 2.6 MB    |            |   1% [A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-tokenizers-0.22.2    | 2.3 MB    |            |   1% [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-pyarrow-21.0.0       | 8.3 MB    | ########## | 100% [A[A[A[A[A
-pytorch-2.7.0        | 38.5 MB   | #########9 |  99% [A
-
-
-
-
-
-
-
-
-
-
-
-
-
-libgfortran5-15.2.0  | 2.4 MB    |            |   1% [A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-hf-xet-1.2.1         | 2.6 MB    | #####7     |  57% [A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-tokenizers-0.22.2    | 2.3 MB    | 7          |   7% [A[A[A[A[A[A[A[A[A[A[A[A[A[A[Alibtorch-2.7.0       | 55.7 MB   | ########9  |  90% 
-
-
-
-
-
-
-
-
-
-
-
-
-
-libgfortran5-15.2.0  | 2.4 MB    | ########8  |  89% [A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-tokenizers-0.22.2    | 2.3 MB    | ########## | 100% [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-libgfortran5-15.2.0  | 2.4 MB    | ########## | 100% [A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-hf-xet-1.2.1         | 2.6 MB    | ########## | 100% [A[A[A[A[A[A[A[A[A[A[A[A[Alibtorch-2.7.0       | 55.7 MB   | #########8 |  99% 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-libabseil-20250814.1 | 1.3 MB    | 1          |   1% [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-krb5-1.21.3          | 1.3 MB    | 1          |   1% [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-sleef-3.9.0          | 1.9 MB    |            |   1% [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-libabseil-20250814.1 | 1.3 MB    | ########## | 100% [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-libabseil-20250814.1 | 1.3 MB    | ########## | 100% [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-krb5-1.21.3          | 1.3 MB    | ########## | 100% [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-krb5-1.21.3          | 1.3 MB    | ########## | 100% [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-sleef-3.9.0          | 1.9 MB    | #########1 |  92% [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-pytorch-2.7.0        | 38.5 MB   | ########## | 100% [A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-sleef-3.9.0          | 1.9 MB    | ########## | 100% [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-openblas-0.3.30      | 5.8 MB    | ########## | 100% [A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
- ... (more hidden) ...[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
- ... (more hidden) ...[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-numpy-2.2.6          | 7.5 MB    | ########## | 100% [A[A[A[A[A[A
-
-
-pandas-2.3.3         | 11.8 MB   | ########## | 100% [A[A[A
-
-
-pandas-2.3.3         | 11.8 MB   | ########## | 100% [A[A[Alibtorch-2.7.0       | 55.7 MB   | ########## | 100% 
-
-
-
-
-
-
-
-libopenblas-0.3.30   | 5.7 MB    | ########## | 100% [A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-openssl-3.6.0        | 3.0 MB    | ########## | 100% [A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-libprotobuf-6.33.0   | 3.6 MB    | ########## | 100% [A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-libprotobuf-6.33.0   | 3.6 MB    | ########## | 100% [A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-tokenizers-0.22.2    | 2.3 MB    | ########## | 100% [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-tokenizers-0.22.2    | 2.3 MB    | ########## | 100% [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-libgfortran5-15.2.0  | 2.4 MB    | ########## | 100% [A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-sympy-1.14.0         | 4.4 MB    | ########## | 100% [A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-hf-xet-1.2.1         | 2.6 MB    | ########## | 100% [A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-hf-xet-1.2.1         | 2.6 MB    | ########## | 100% [A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-krb5-1.21.3          | 1.3 MB    | ########## | 100% [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-libabseil-20250814.1 | 1.3 MB    | ########## | 100% [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-sleef-3.9.0          | 1.9 MB    | ########## | 100% [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-transformers-4.57.5  | 4.2 MB    | ########## | 100% [A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
- ... (more hidden) ...[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
- ... (more hidden) ...[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[Alibtorch-2.7.0       | 55.7 MB   | ########## | 100% 
-pytorch-2.7.0        | 38.5 MB   | ########## | 100% [A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-                      [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A                                                     
-                                                     [A
-
-                                                     [A[A
-
-
-                                                     [A[A[A
-
-
-
-                                                     [A[A[A[A
-
-
-
-
-                                                     [A[A[A[A[A
-
-
-
-
-
-                                                     [A[A[A[A[A[A
-
-
-
-
-
-
-                                                     [A[A[A[A[A[A[A
-
-
-
-
-
-
-
-                                                     [A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-                                                     [A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-                                                     [A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-                                                     [A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-                                                     [A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-                                                     [A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-                                                     [A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-                                                     [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-                                                     [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-                                                     [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-                                                     [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-[A
-
-[A[A
-
-
-[A[A[A
-
-
-
-[A[A[A[A
-
-
-
-
-[A[A[A[A[A
-
-
-
-
-
-[A[A[A[A[A[A
-
-
-
-
-
-
-[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-[A
-
-[A[A
-
-
-[A[A[A
-
-
-
-[A[A[A[A
-
-
-
-
-[A[A[A[A[A
-
-
-
-
-
-[A[A[A[A[A[A
-
-
-
-
-
-
-[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-[A
-
-[A[A
-
-
-[A[A[A
-
-
-
-[A[A[A[A
-
-
-
-
-[A[A[A[A[A
-
-
-
-
-
-[A[A[A[A[A[A
-
-
-
-
-
-
-[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-[A
-
-[A[A
-
-
-[A[A[A
-
-
-
-[A[A[A[A
-
-
-
-
-[A[A[A[A[A
-
-
-
-
-
-[A[A[A[A[A[A
-
-
-
-
-
-
-[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-[A
-
-[A[A
-
-
-[A[A[A
-
-
-
-[A[A[A[A
-
-
-
-
-[A[A[A[A[A
-
-
-
-
-
-[A[A[A[A[A[A
-
-
-
-
-
-
-[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-[A
-
-[A[A
-
-
-[A[A[A
-
-
-
-[A[A[A[A
-
-
-
-
-[A[A[A[A[A
-
-
-
-
-
-[A[A[A[A[A[A
-
-
-
-
-
-
-[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A done
-Preparing transaction: - \ | / - \ | / done
-Verifying transaction: \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | done
-Executing transaction: - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | done

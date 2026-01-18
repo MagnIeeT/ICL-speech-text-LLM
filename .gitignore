@@ -1,58 +1,7 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual Environment
-.env
-.venv
-venv/
-ENV/
-
-
-# Logs
-*.log
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Large files and models
+=*
 *.pt
-*.pth
-saved_dictionary.pkl
-BEATs_iter3_plus_AS2M_finetuned_on_AS2M_cpt2.pt
-salmonn_v1.pth
-
-# Misc
-.DS_Store
-.conda/
-.cache/
-.local/
-.keras/
-.nv/
-.pki/
-.mozilla/
-.vscode-server/
-.bash_history
-.python_history
-.viminfo
+*.ckpt
+results/
+logs/
+__pycache__/
+.env
