@@ -54,8 +54,11 @@
 #step change
 # checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/1701_1019_orchestrator_5e_10sce_bypass_mlp_sym_salmonn_hvb_meld_emotion/lora_step0_cycle0_epoch5_periodic.pt"
 # epoch change
-checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/1701_1017_orchestrator_5e_1sce_bypass_mlp_sym_salmonn_hvb_meld_emotion/lora_step0_cycle0_epoch1_periodic.pt"
-
+# checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/1701_1017_orchestrator_5e_1sce_bypass_mlp_sym_salmonn_hvb_meld_emotion/lora_step0_cycle0_epoch1_periodic.pt"
+# random
+# checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/1801_0903_orchestrator_5e_10sce_bypass_mlp_sym_salmonn_hvb_meld_emotion/lora_step0_cycle0_epoch5_periodic.pt"
+#original
+checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/1801_0906_orchestrator_5e_10sce_bypass_mlp_org_salmonn_hvb_meld_emotion/lora_step0_cycle0_epoch4_periodic.pt"
 
 dataset_type="hvb-voxceleb-voxpopuli-meld_emotion"  # Dataset type to evaluate on
 
@@ -63,16 +66,15 @@ dataset_type="hvb-voxceleb-voxpopuli-meld_emotion"  # Dataset type to evaluate o
 max_val_samples=0         # 0 = use all samples
 
 num_examples=0
-
 # Optional parameters
 device="cuda:0"
 output_dir="/home/neeraja/results/ICL-speech-text-LLM/"
 
 
-hostname="n6"
-cuda_device=0
+hostname="n8"
+cuda_device=1
 
-hold_job_id="4235.eehpc"
+hold_job_id="4294.eehpc"
 # ========================================
 # Validation and Setup
 # ========================================
