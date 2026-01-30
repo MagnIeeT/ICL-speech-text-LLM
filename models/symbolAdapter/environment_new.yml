@@ -24,3 +24,6 @@ dependencies:
       - datasets==3.3.2
       - fire
       - tqdm
+
+      #pip install sentencepiece --break-system-packages
+      #pip install torchaudio --break-system-packages

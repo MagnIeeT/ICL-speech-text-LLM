@@ -26,11 +26,11 @@ model_type="qwen"
 
 #meld-vop
 #random
-# checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0401_1209_orchestrator_5e_20sce_bypass_mlp_sym_salmonn_voxpopuli_meld_emotion/lora_step0_cycle0_epoch5_periodic.pt"
-# change every step
-# checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0401_1210_orchestrator_5e_20sce_bypass_mlp_sym_salmonn_voxpopuli_meld_emotion/lora_step0_cycle0_epoch3_periodic.pt"
+ #checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0401_1209_orchestrator_5e_20sce_bypass_mlp_sym_salmonn_voxpopuli_meld_emotion/lora_step0_cycle0_epoch5_periodic.pt"
+#change every step
+#checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0401_1210_orchestrator_5e_20sce_bypass_mlp_sym_salmonn_voxpopuli_meld_emotion/lora_step0_cycle0_epoch3_periodic.pt"
 #change every epoch
-# checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0501_0241_orchestrator_5e_1sce_bypass_mlp_sym_salmonn_voxpopuli_meld_emotion/lora_step0_cycle0_epoch5_periodic.pt"
+ #checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0501_0241_orchestrator_5e_1sce_bypass_mlp_sym_salmonn_voxpopuli_meld_emotion/lora_step0_cycle0_epoch5_periodic.pt"
 #original 
 # checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/1101_1357_orchestrator_5e_10sce_bypass_mlp_org_salmonn_voxpopuli_meld_emotion/lora_step0_cycle0_epoch3_periodic.pt"
 #swap interspeech
@@ -44,27 +44,69 @@ model_type="qwen"
 # checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/0601_1443_orchestrator_5e_20sce_bypass_mlp_sym_salmonn_voxpopuli_voxceleb/lora_step0_cycle0_epoch5_periodic.pt"
 #every epoch
 #checkpoint_path="/home/harinis/ICL_qwen_run/results/orchestrator_training/checkpoints/1701_1851_orchestrator_5e_10sce_bypass_mlp_org_qwen_hvb_voxceleb/lora_step0_cycle0_epoch5_periodic.pt"
-checkpoint_path="/home/harinis/ICL_qwen_run/results/orchestrator_training/checkpoints/1701_1851_orchestrator_5e_10sce_bypass_mlp_org_qwen_hvb_voxceleb/lora_step0_cycle0_epoch4_periodic.pt"
 # checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/1201_1327_orchestrator_5e_10sce_bypass_mlp_org_salmonn_voxpopuli_voxceleb/lora_step0_cycle0_epoch3_periodic.pt"
 #swap interspeech
 # checkpoint_path="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training/checkpoints/1201_2125_orchestrator_5e_10sce_bypass_mlp_org_salmonn_voxpopuli_swap_voxceleb_swap/lora_step0_cycle0_epoch5_periodic.pt"
 
 
+##### hvb-voceleb datatype
+## qwen orginal hvb-vox
+#checkpoint_path="/home/harinis/ICL_qwen_run/results/orchestrator_training/checkpoints/1701_1851_orchestrator_5e_10sce_bypass_mlp_org_qwen_hvb_voxceleb/lora_step0_cycle0_epoch4_periodic.pt"
+# epoch wise 
+#checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/2001_1714_orchestrator_5e_1sce_bypass_mlp_sym_qwen_hvb_voxceleb/lora_step0_cycle0_epoch5_periodic.pt"
+#mixed
+#checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/1901_1733_orchestrator_5e_10sce_bypass_mlp_sym_qwen_hvb_voxceleb/lora_step0_cycle0_epoch4_periodic.pt"
+#symbol
+#checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/1901_1718_orchestrator_5e_10sce_bypass_mlp_sym_qwen_hvb_voxceleb/lora_step0_cycle0_epoch4_periodic.pt"
+
+# qwen meld-vop
+# symbol
+#checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/2301_1222_orchestrator_5e_10sce_bypass_mlp_sym_qwen_voxpopuli_meld_emotion/lora_step0_cycle0_epoch5_periodic.pt"
+# epoch change
+#checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/2401_1102_orchestrator_5e_1sce_bypass_mlp_sym_qwen_voxpopuli_meld_emotion/lora_step0_cycle0_epoch5_periodic.pt"
+# mixed 
+#checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/2301_1549_orchestrator_5e_10sce_bypass_mlp_sym_qwen_voxpopuli_meld_emotion/lora_step0_cycle0_epoch5_periodic.pt"
+
+
+# zero shot salmonn
+# hvb-voxceleb
+#both text only and speech only:
+# symbol:
+#checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/2801_1141_orchestrator_5e_10sce_bypass_mlp_sym_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch4_periodic.pt"
+# epoch:
+#checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/2801_2141_orchestrator_5e_1sce_bypass_mlp_sym_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch4_periodic.pt"
+
+# voxceleb (salmonn)
+#epoch
+#checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/2901_1044_orchestrator_5e_1sce_bypass_mlp_sym_salmonn_voxceleb/lora_step0_cycle0_epoch2_periodic.pt"
+#mixed
+#checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/2901_1054_orchestrator_5e_10sce_bypass_mlp_sym_salmonn_voxceleb/lora_step0_cycle0_epoch3_periodic.pt"
+
+# qwen meld-vop( 0 shot)
+#(both text only and speech only):
+# symbol:
+#checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/2901_1614_orchestrator_5e_10sce_bypass_mlp_sym_qwen_voxpopuli_meld_emotion/lora_step0_cycle0_epoch4_periodic.pt"
+# epoch:
+checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/2901_1616_orchestrator_5e_1sce_bypass_mlp_sym_qwen_voxpopuli_meld_emotion/lora_step0_cycle0_epoch4_periodic.pt"
+
+
+
 
 dataset_type="hvb-voxceleb-voxpopuli-meld_emotion"  # Dataset type to evaluate on
+#dataset_type="hvb-voxpopuli"
 
 # dataset_type="voxpopuli"  # Dataset type to evaluate on
-max_val_samples=0       # 0 = use all samples
+max_val_samples=0     # 0 = use all samples
 
-num_examples=2
+num_examples=0
 
 # Optional parameters
 device="cuda:0"
 output_dir="/home/harinis/ICL_qwen_run/results"
 
 
-hostname="n6"
-cuda_device=2
+hostname="n10"
+cuda_device=1
 
 hold_job_id=""
 # ========================================
@@ -172,7 +214,7 @@ echo "=========================================="
 # ========================================
 qsub -q workq \
     $HOLD_FLAG \
-    -l select=1:num_gpus=1:gpu_mem=48GB:host=n6 \
+    -l select=1:num_gpus=1:gpu_mem=48GB:host=n10 \
     -l walltime=72:00:00 \
     -o /dev/null \
     -j oe \
@@ -200,24 +242,6 @@ echo "Running on host: $(hostname)"
 echo "Python path: $(which python)"
 echo "CUDA devices: $CUDA_VISIBLE_DEVICES"
 echo ""
-
-echo "Waiting for GPU to be fully free..."
-
-while true; do
-    # Check memory used on the assigned GPU
-    #USED_MEM=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | sed -n '1p')
-    USED_MEM=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | sed -n "$((cuda_device+1))p")
-
-    if [ "$USED_MEM" -lt 500 ]; then
-        echo "GPU memory is free: ${USED_MEM} MiB"
-        break
-    else
-        echo "GPU still in use (${USED_MEM} MiB). Waiting..."
-        sleep 15
-    fi
-done
-
-nvidia-smi
 
 
 

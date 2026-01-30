@@ -32,7 +32,12 @@ from data.dataset_factory import DatasetFactory
 from data.master_config import DatasetType, get_dataset_config
 from data.model_processors import get_processor
 from torch.utils.data import DataLoader
-from transformers import LlamaTokenizer, Qwen2AudioProcessor
+from transformers import LlamaTokenizer 
+
+try:
+    from transformers import Qwen2AudioProcessor
+except ImportError:
+    Qwen2AudioProcessor = None
 
 # --- NEW: Import CustomQwen to prevent crashes ---
 #from models.custom_qwen import CustomQwen
@@ -141,14 +146,10 @@ def create_combined_dataloader(datasets, processor, config: TrainingConfig, num_
     """Create combined dataloader from datasets"""
     dataset_types = list(datasets.keys())
     
-    # --- SAFETY FIX: Ensure SALMONN behaves EXACTLY like before ---
-    if config.model_type.value == "qwen":
-        # Qwen needs text instructions + audio
-        input_mode_setting = "speech_and_text"
-    else:
-        # SALMONN (Your Sir's Model) stays strictly "speech_only"
-        # This guarantees your results will NOT vary.
-        input_mode_setting = "speech_only"
+    # if config.model_type.value == "qwen":
+    #     input_mode_setting = "speech_and_text"
+    # else:
+    #     input_mode_setting = "speech_only"
     # -------------------------------------------------------------
     
     combined_dataset = DatasetFactory.create_dataset(
@@ -156,7 +157,7 @@ def create_combined_dataloader(datasets, processor, config: TrainingConfig, num_
         dataset=datasets,
         processor=processor,
         is_training=shuffle,
-        input_mode=input_mode_setting,  # <--- Uses the safe setting logic above
+        input_mode="text_only",  # Modified for symbol adapter
         fewshot_mode="text",
         num_examples=num_examples if num_examples is not None else config.data_config.num_examples,
         random_examples=False,
@@ -297,9 +298,11 @@ def main():
         
         train_datasets, val_datasets = load_datasets_for_config(config) 
         
-        train_dataloader = create_combined_dataloader(train_datasets, processor, config, shuffle=True)
-        val_dataloader = create_combined_dataloader(val_datasets, processor, config, shuffle=False)
+        train_dataloader = create_combined_dataloader(train_datasets, processor, config, num_examples=0, shuffle=True)
+        val_dataloader = create_combined_dataloader(val_datasets, processor, config, num_examples=0, shuffle=False)
         
+        # train_dataloader = create_combined_dataloader(train_datasets, processor, config, shuffle=True)
+        # val_dataloader = create_combined_dataloader(val_datasets, processor, config, shuffle=False)
         model = initialize_model(config, tokenizer, symbol_manager) 
         logging.info("✓ Model initialized")
         

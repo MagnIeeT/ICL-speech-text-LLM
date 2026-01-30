@@ -227,15 +227,15 @@ def create_audio_lookup_dataset(datasets, dataset_config, source_splits=["train"
 def main():
     # Choose dataset configuration
     # Options: "voxpopuli", "voxceleb", "hvb", "meld", "vp_nel"
-    DATASET_CONFIG = "meld" 
+    DATASET_CONFIG = "voxceleb" 
     
     # Define splits
     target_split = "test"      # Split to generate few-shots FOR
     source_splits = ["train"]  # Split to pick examples FROM
-    top_k = 5
+    top_k = 50
     
-    PROCESSED_BASE_PATH = "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data"
-    
+    PROCESSED_BASE_PATH = "/home/harinis/ICL_qwen_run/ICL-speech-text-LLM/data"# ✅ NEW (Change it to this)
+#PROCESSED_BASE_PATH = "/home/harinis/ICL_qwen_run/ICL-speech-text-LLM/data"
     # 1. Configure Dataset Metadata
     if DATASET_CONFIG == "voxpopuli":
         text_column, label_column = 'normalized_text', 'normalized_combined_ner'

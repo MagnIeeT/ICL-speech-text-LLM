@@ -15,8 +15,7 @@ HVB_CONFIG = DatasetConfig(
 
         DatasetSplit.TRAIN: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/asapp/slue-phase-2_hvb_train_5fewshots",
         DatasetSplit.VAL: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/asapp/slue-phase-2_hvb_validation_5fewshots",
-        DatasetSplit.TEST: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/asapp/slue-phase-2_hvb_test_5fewshots",
-        
+        DatasetSplit.TEST: "/home/harinis/ICL-speech-text-LLM/data/hvb_test_50fewshots",
 
         # DatasetSplit.TRAIN: "/data1/harshanj/data/new/random/hvb/asapp-slue-phase-2_hvb_train_random_topk10",
         # DatasetSplit.VAL: "/data1/harshanj/data/new/random/hvb/asapp-slue-phase-2_hvb_validation_random_topk10",
