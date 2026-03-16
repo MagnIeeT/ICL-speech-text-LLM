@@ -7,3 +7,4 @@ __pycache__/
 .env
 eval_qwen_and_salmonn/data/
 eval_qwen_and_salmonn/logs/
+eval_qwen_and_salmonn/*.json
