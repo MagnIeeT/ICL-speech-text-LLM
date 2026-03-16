@@ -64,8 +64,8 @@ class MLPConfig:
 @dataclass
 class LoRAConfig:
     """LoRA-specific configuration"""
-    rank: int = 8
-    alpha: int = 32
+    rank: int = 64
+    alpha: int = 128
     dropout: float = 0.1
     learning_rate: float = 1e-5
     weight_decay: float = 0.01
@@ -132,6 +132,8 @@ class TrainingConfig:
     # output_dir: str = "/data1/chandnia/neeraja/results/model_ICL"  # Default output directory
     run_name: str = "symbol_training_run"
     checkpoint_frequency: int = 1  # Save checkpoint every N epochs
+    ##################################
+    save_every_n_steps: int = 500   # ✅ ADD THIS
     
     # Device and performance
     device: str = "cuda:0"

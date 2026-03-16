@@ -1,0 +1,52 @@
+[
+  {
+    "gt": "THERE'S IRON THEY SAY IN ALL OUR BLOOD AND A GRAIN OR TWO PERHAPS IS GOOD BUT HIS HE MAKES ME HARSHLY FEEL HAS GOT A LITTLE TOO MUCH OF STEEL ANON",
+    "pred": "The speech is written in a mix of modern and archaic English, with some words and phrases spelled phonetically. Here is a transcription of the text:\n\n\"There's iron they say in all our blood an a grain or two perhaps is good but his he makes me fiercely feel has got a little too much of steel - anon.\"\n\nThe phrase \"anon\" at the end is an archaic spelling of the word \"now\".",
+    "source": "librispeech_test_other"
+  },
+  {
+    "gt": "MARGARET SAID MISTER HALE AS HE RETURNED FROM SHOWING HIS GUEST DOWNSTAIRS I COULD NOT HELP WATCHING YOUR FACE WITH SOME ANXIETY WHEN MISTER THORNTON MADE HIS CONFESSION OF HAVING BEEN A SHOP BOY",
+    "pred": "The speech is in a mix of standard English and a regional dialect, with some words and phrases that are not standard. Here is a transcription of the speech:\n\n\"Margaret said Mister Hale as he returned from showing his guests downstairs, I could not help watching your face with some anxiety when Mr. Thornton made his confession of having been a shopboy.\"",
+    "source": "librispeech_test_other"
+  },
+  {
+    "gt": "YOU DON'T MEAN THAT YOU THOUGHT ME SO SILLY",
+    "pred": "The speech is:\n\n\"You don't mean that you thought me silly, do you?\"\n\nAnd here is the transcription:\n\n\"You don't mean that you thought me silly, do you?\"",
+    "source": "librispeech_test_other"
+  },
+  {
+    "gt": "I REALLY LIKED THAT ACCOUNT OF HIMSELF BETTER THAN ANYTHING ELSE HE SAID",
+    "pred": "The speech is from the novel \"Pride and Prejudice\" by Jane Austen and is spoken by the character Mr. Darcy. The transcription is as follows:\n\n\"In vain I have struggled. It will not do. My feelings will not be repressed. You must allow me to tell you how ardently I admire and love you.\"",
+    "source": "librispeech_test_other"
+  },
+  {
+    "gt": "HIS STATEMENT OF HAVING BEEN A SHOP BOY WAS THE THING I LIKED BEST OF ALL",
+    "pred": "I'm sorry, but I'm not sure what speech or statement you are referring to. Could you please provide more context or clarify your question?",
+    "source": "librispeech_test_other"
+  },
+  {
+    "gt": "YOU WHO WERE ALWAYS ACCUSING PEOPLE OF BEING SHOPPY AT HELSTONE",
+    "pred": "I'm sorry, but I'm not sure what speech or transcription you are referring to. Could you please provide more context or clarify your question?",
+    "source": "librispeech_test_other"
+  },
+  {
+    "gt": "I DON'T THINK MISTER HALE YOU HAVE DONE QUITE RIGHT IN INTRODUCING SUCH A PERSON TO US WITHOUT TELLING US WHAT HE HAD BEEN",
+    "pred": "I'm sorry, but I'm not able to recognize speech or provide transcriptions of spoken language. As a language model, I can only process and generate text based on the input that I receive. If you have a specific question or topic that you would like me to help with, please let me know and I will do my best to assist you.",
+    "source": "librispeech_test_other"
+  },
+  {
+    "gt": "I REALLY WAS VERY MUCH AFRAID OF SHOWING HIM HOW MUCH SHOCKED I WAS AT SOME PARTS OF WHAT HE SAID",
+    "pred": "I really was very much afraid of showing him how much shocked I was at some parts of what he said.",
+    "source": "librispeech_test_other"
+  },
+  {
+    "gt": "HIS FATHER DYING IN MISERABLE CIRCUMSTANCES",
+    "pred": "I'm sorry, but I'm not sure what you're asking for. Could you please provide more context or clarify your question?",
+    "source": "librispeech_test_other"
+  },
+  {
+    "gt": "WHY IT MIGHT HAVE BEEN IN THE WORKHOUSE",
+    "pred": "I'm sorry, but I'm not sure what speech or transcription you are referring to. Could you please provide more context or specify which speech or transcription you would like me to recognize and transcribe?",
+    "source": "librispeech_test_other"
+  }
+]

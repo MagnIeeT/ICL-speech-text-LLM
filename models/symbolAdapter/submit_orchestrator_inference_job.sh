@@ -10,7 +10,7 @@
 #python -c "import torch; print(torch.cuda.is_available())"
 
 # ✅ ADDED: Choose your model here ("qwen" or "salmonn")
-model_type="qwen"
+model_type="salmonn"
 
 # HVB-Vox
 # random
@@ -87,10 +87,46 @@ model_type="qwen"
 # symbol:
 #checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/2901_1614_orchestrator_5e_10sce_bypass_mlp_sym_qwen_voxpopuli_meld_emotion/lora_step0_cycle0_epoch4_periodic.pt"
 # epoch:
-checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/2901_1616_orchestrator_5e_1sce_bypass_mlp_sym_qwen_voxpopuli_meld_emotion/lora_step0_cycle0_epoch4_periodic.pt"
+#checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/2901_1616_orchestrator_5e_1sce_bypass_mlp_sym_qwen_voxpopuli_meld_emotion/lora_step0_cycle0_epoch4_periodic.pt"
+# mixed:
+#checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/3001_1739_orchestrator_5e_10sce_bypass_mlp_sym_qwen_voxpopuli_meld_emotion/lora_step0_cycle0_epoch5_periodic.pt"
+# rft:
+#checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/3001_1744_orchestrator_5e_10sce_bypass_mlp_org_qwen_voxpopuli_meld_emotion/lora_step0_cycle0_epoch4_periodic.pt"
+
+## qwen 0 shot (meld+vop) lora_rank=64, alpha = 128
+# epoch:
+#checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/0302_2320_orchestrator_5e_1sce_bypass_mlp_sym_qwen_voxpopuli_meld_emotion/lora_step0_cycle0_epoch4_periodic.pt"
+# regular or stadard fine-tuning:
+#checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/0502_2252_orchestrator_5e_10sce_bypass_mlp_org_qwen_voxpopuli_meld_emotion/lora_step0_cycle0_epoch5_periodic.pt"
+#symbol:
+#checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/0502_1528_orchestrator_5e_10sce_bypass_mlp_sym_qwen_voxpopuli_meld_emotion/lora_step0_cycle0_epoch4_periodic.pt"
+# mixed:
+#checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/0702_1739_orchestrator_5e_10sce_bypass_mlp_sym_qwen_voxpopuli_meld_emotion/lora_step0_cycle0_epoch5_periodic.pt"
 
 
+# salmonn vox+vop lora=64, alpha=128
+# sym(overfitting)
+#checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/1902_1229_orchestrator_5e_10sce_bypass_mlp_sym_salmonn_voxceleb_voxpopuli/lora_step0_cycle0_epoch2_periodic.pt"
+#epoch:
+#checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/2002_1115_orchestrator_5e_1sce_bypass_mlp_sym_salmonn_voxceleb_voxpopuli/lora_step0_cycle0_epoch3_periodic.pt"
+# mixed:
+#checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/2302_1655_orchestrator_5e_10sce_bypass_mlp_sym_salmonn_voxceleb_voxpopuli/lora_step0_cycle0_epoch4_periodic.pt"
+#rft:
+#checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/2402_1226_orchestrator_5e_10sce_bypass_mlp_org_salmonn_voxceleb_voxpopuli/lora_step0_cycle0_epoch5_periodic.pt"
+# lf ft(flipped):
+#checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/2502_1531_orchestrator_5e_10sce_bypass_mlp_org_salmonn_voxpopuli_swap_voxceleb_swap/lora_step0_cycle0_epoch2_periodic.pt"
 
+# salmonn hvb+vox lora=64, alpha=128
+# sym(overfitting):
+#checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/2602_1609_orchestrator_5e_10sce_bypass_mlp_sym_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch1_periodic.pt"
+#epoch:
+#checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/2602_1614_orchestrator_5e_1sce_bypass_mlp_sym_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch1_periodic.pt"
+#fliped lf ft:
+#checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/2702_1635_orchestrator_5e_1sce_bypass_mlp_org_salmonn_hvb_swap_voxceleb_swap/lora_step0_cycle0_epoch1_periodic.pt"
+#rft(regular):
+#checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/0103_1818_orchestrator_5e_10sce_bypass_mlp_org_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch5_periodic.pt"
+#mixed:
+checkpoint_path="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training/checkpoints/0103_2158_orchestrator_5e_10sce_bypass_mlp_sym_salmonn_hvb_voxceleb/lora_step0_cycle0_epoch1_periodic.pt"
 
 dataset_type="hvb-voxceleb-voxpopuli-meld_emotion"  # Dataset type to evaluate on
 #dataset_type="hvb-voxpopuli"
@@ -98,7 +134,7 @@ dataset_type="hvb-voxceleb-voxpopuli-meld_emotion"  # Dataset type to evaluate o
 # dataset_type="voxpopuli"  # Dataset type to evaluate on
 max_val_samples=0     # 0 = use all samples
 
-num_examples=0
+num_examples=3
 
 # Optional parameters
 device="cuda:0"
@@ -106,9 +142,8 @@ output_dir="/home/harinis/ICL_qwen_run/results"
 
 
 hostname="n10"
-cuda_device=1
-
-hold_job_id=""
+cuda_device=2
+hold_job_id="6523.eehpc"
 # ========================================
 # Validation and Setup
 # ========================================

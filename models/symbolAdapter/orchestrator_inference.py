@@ -30,6 +30,8 @@ from models.symbolAdapter.training.validation import ValidationManager
 from models.symbolAdapter.orchestrator_training import load_datasets_for_config, create_combined_dataloader
 from utils.evaluation_utils import evaluate_predictions
 from data.master_config import DatasetType
+## added##################################
+from models.symbolAdapter.configs.training_configs import TrainingConfig, ModelType
 
 class InferenceOrchestrator:
     """Orchestrates comprehensive inference evaluation using ValidationManager"""
@@ -109,6 +111,13 @@ class InferenceOrchestrator:
         logging.info("=" * 80)
         
         try:
+            ## added ######################
+            if not self.checkpoint_path:
+                self.config = TrainingConfig()
+                self.config.data_config.dataset_type = self.dataset_type
+                self.config.data_config.max_samples = self.max_val_samples
+                self.config.model_type = ModelType(self.model_type)
+                return {}
             logging.info(f"Loading checkpoint: {self.checkpoint_path}")
             checkpoint = torch.load(self.checkpoint_path, map_location='cpu', weights_only=False)
             
@@ -166,6 +175,11 @@ class InferenceOrchestrator:
                 logging.info("📋 Restoring symbol mappings from checkpoint...")
                 current_mappings = symbol_data['current_epoch_mappings']
                 logging.info(f"✅ Restored symbol mappings: {current_mappings}")
+
+            ### added ################################################3
+            else:
+                current_mappings = {}
+                
             
             # ✅ FIX: Use both label types (same as your working code)
             self.symbol_manager = SymbolManager(
@@ -203,13 +217,19 @@ class InferenceOrchestrator:
             
             # ✅ FIX: Model initialization based on model_type
             logging.info(f"🤖 Initializing {self.model_type.upper()} model...")
-            
+
+            #### added ####### False if No FT, True if checkpoint #####3
+            apply_lora = bool(self.checkpoint_path)
+
+            ### added log 
+            logging.info(f"LoRA Enabled: {apply_lora}") 
+
             if self.model_type == "qwen":
                 from models.custom_qwen import CustomQwen
                 self.model = CustomQwen(
                     model_path="Qwen/Qwen2-Audio-7B-Instruct",
                     device=self.device,
-                    lora=True,
+                    lora=apply_lora,
                     lora_rank=self.config.lora_config.rank,
                     lora_alpha=self.config.lora_config.alpha,
                     lora_dropout=self.config.lora_config.dropout,
@@ -218,7 +238,7 @@ class InferenceOrchestrator:
                 from models.mlp_salmonn import MLPSalmonn
                 self.model = MLPSalmonn(
                     device=self.device,
-                    lora=True,
+                    lora=apply_lora,
                     lora_rank=self.config.lora_config.rank,
                     lora_alpha=self.config.lora_config.alpha,
                     lora_dropout=self.config.lora_config.dropout,
@@ -358,7 +378,7 @@ class InferenceOrchestrator:
 def main():
     """Main function for orchestrator inference"""
     parser = argparse.ArgumentParser(description="Orchestrator Inference Pipeline")
-    parser.add_argument("--checkpoint_path", type=str, required=True, 
+    parser.add_argument("--checkpoint_path", type=str, default="", 
                        help="Path to trained model checkpoint")
     parser.add_argument("--dataset_type", type=str, required=True,
                        help="Dataset type for evaluation (e.g., voxceleb, hvb)")
@@ -378,7 +398,7 @@ def main():
     args = parser.parse_args()
     
     # Validate checkpoint path
-    if not os.path.exists(args.checkpoint_path):
+    if args.checkpoint_path and not os.path.exists(args.checkpoint_path):
         print(f"❌ Checkpoint not found: {args.checkpoint_path}")
         return 1
     

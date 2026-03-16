@@ -2,14 +2,14 @@
 # filepath: /data2/neeraja/neeraja/code/ICL/models/symbolAdapter/submit_orchestrator_training_job.sh
 echo "CUDA_VISIBLE_DEVICES is set to: $CUDA_VISIBLE_DEVICES"
 # Configuration - Edit these values as needed
-model_type="qwen"  # Options: "salmonn" or "qwen2"
+model_type="salmonn"  # Options: "salmonn" or "qwen2"
 #dataset_type="hvb_swap-voxceleb_swap"  # Dataset type(s) to use
-dataset_type="voxpopuli-meld_emotion"
+#dataset_type="voxpopuli-meld_emotion"
 # dataset_type="voxpopuli_swap-meld_emotion_swap"
-#dataset_type="hvb-voxceleb"
+dataset_type="hvb-voxceleb"
 #dataset_type="voxceleb"
 #dataset_type="voxpopuli_swap-voxceleb_swap"
-# dataset_type="voxceleb-voxpopuli"  # Dataset type(s) to use
+#dataset_type="voxceleb-voxpopuli"  # Dataset type(s) to use
 device="cuda:0"  # GPU device
 
 #hold_job_id="3761.eehpc"
@@ -22,10 +22,7 @@ lora_lr=1e-5
 lora_epochs=5
 symbol_change_epochs=10
 
-
-
 dynamic_symbols_per_epoch=True # Generate new symbols each epoch
-
 
 gradient_accumulation_steps=8   
 max_grad_norm=1
@@ -138,7 +135,7 @@ echo "=========================================="
 # Submit job
 qsub -q workq \
     $HOLD_FLAG \
-    -l select=1:num_gpus=1:gpu_mem=48GB:host=n10 \
+    -l select=1:num_gpus=1:gpu_mem=48GB:host=n6 \
     -l walltime=72:00:00 \
     -o /dev/null \
     -j oe \

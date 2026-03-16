@@ -31,7 +31,7 @@ VOXCELEB_CONFIG = DatasetConfig(
 
         DatasetSplit.TRAIN: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/asapp/slue_voxceleb_train_5fewshots",
         DatasetSplit.VAL: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/asapp/slue_voxceleb_validation_5fewshots",
-        DatasetSplit.TEST: "/home/harinis/ICL-speech-text-LLM/data/voxceleb_test_50fewshots",
+        DatasetSplit.TEST: "/home/leapers/weights/harinis/ICL-speech-text-LLM/data/voxceleb_test_50fewshots",
     },
     prompt_template="""You are a sentiment analysis expert. Based on the input, respond with EXACTLY ONE WORD from these options: positive, negative, or neutral.
 

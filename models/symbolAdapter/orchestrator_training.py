@@ -157,7 +157,7 @@ def create_combined_dataloader(datasets, processor, config: TrainingConfig, num_
         dataset=datasets,
         processor=processor,
         is_training=shuffle,
-        input_mode="text_only",  # Modified for symbol adapter
+        input_mode="speech_only",  # Modified for symbol adapter
         fewshot_mode="text",
         num_examples=num_examples if num_examples is not None else config.data_config.num_examples,
         random_examples=False,
@@ -298,11 +298,11 @@ def main():
         
         train_datasets, val_datasets = load_datasets_for_config(config) 
         
-        train_dataloader = create_combined_dataloader(train_datasets, processor, config, num_examples=0, shuffle=True)
-        val_dataloader = create_combined_dataloader(val_datasets, processor, config, num_examples=0, shuffle=False)
+        #train_dataloader = create_combined_dataloader(train_datasets, processor, config, num_examples=0, shuffle=True)
+        #val_dataloader = create_combined_dataloader(val_datasets, processor, config, num_examples=0, shuffle=False)
         
-        # train_dataloader = create_combined_dataloader(train_datasets, processor, config, shuffle=True)
-        # val_dataloader = create_combined_dataloader(val_datasets, processor, config, shuffle=False)
+        train_dataloader = create_combined_dataloader(train_datasets, processor, config, shuffle=True)
+        val_dataloader = create_combined_dataloader(val_datasets, processor, config, shuffle=False)
         model = initialize_model(config, tokenizer, symbol_manager) 
         logging.info("✓ Model initialized")
         
@@ -317,7 +317,7 @@ def main():
                 tokenizer=tokenizer,
                 symbol_manager=symbol_manager
             )
-            
+              
             orchestrator.run_complete_training()
             logging.info("✅ Training completed successfully!")  
             
