@@ -4,7 +4,7 @@
 #
 #    Licensed under the Apache License, Version 2.0 (the "License");
 #    you may not use this file except in compliance with the License.
-#    You may obtain a copy of the License at
+#    you may obtain a copy of the License at
 #
 #        http://www.apache.org/licenses/LICENSE-2.0
 #
@@ -26,6 +26,17 @@ import torch
 
 import transformers
 import tokenizers
+
+# --- SPRInT MODIFICATION: IMPORT ---
+import sys
+# Path points to your main sprint_vision folder inside llava
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sprint_vision"))) 
+try:
+    from models.symbolAdapter.symbol_manager import SymbolManager
+except ImportError:
+    logging.warning("SymbolManager not found in sprint_vision/models/symbolAdapter/. Please check folder structure.")
+    SymbolManager = None
+# -----------------------------------
 
 from llava.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 from torch.utils.data import Dataset
@@ -110,6 +121,8 @@ class TrainingArguments(transformers.TrainingArguments):
     lora_bias: str = "none"
     mm_projector_lr: Optional[float] = None
     group_by_modality_length: bool = field(default=False)
+    # --- SPRInT MODIFICATION: STRATEGY FLAG ---
+    sprint_strategy: str = field(default="regular")
 
 
 def maybe_zero_3(param, ignore_status=False, name=None):
@@ -134,18 +147,9 @@ def get_peft_state_maybe_zero_3(named_params, bias):
         to_return = {k: t for k, t in named_params if "lora_" in k or "bias" in k}
     elif bias == "lora_only":
         to_return = {}
-        maybe_lora_bias = {}
-        lora_bias_names = set()
         for k, t in named_params:
             if "lora_" in k:
                 to_return[k] = t
-                bias_name = k.split("lora_")[0] + "bias"
-                lora_bias_names.add(bias_name)
-            elif "bias" in k:
-                maybe_lora_bias[k] = t
-        for k, t in maybe_lora_bias:
-            if bias_name in lora_bias_names:
-                to_return[bias_name] = t
     else:
         raise NotImplementedError
     to_return = {k: maybe_zero_3(v, ignore_status=True) for k, v in to_return.items()}
@@ -226,10 +230,7 @@ def smart_tokenizer_and_embedding_resize(
     tokenizer: transformers.PreTrainedTokenizer,
     model: transformers.PreTrainedModel,
 ):
-    """Resize tokenizer and embedding.
-
-    Note: This is the unoptimized version that may make your embedding size not be divisible by 64.
-    """
+    """Resize tokenizer and embedding."""
     num_new_tokens = tokenizer.add_special_tokens(special_tokens_dict)
     model.resize_token_embeddings(len(tokenizer))
 
@@ -274,7 +275,6 @@ def _tokenize_fn(strings: Sequence[str],
 
 
 def _mask_targets(target, tokenized_lens, speakers):
-    # cur_idx = 0
     cur_idx = tokenized_lens[0]
     tokenized_lens = tokenized_lens[1:]
     target[:cur_idx] = IGNORE_INDEX
@@ -341,7 +341,6 @@ def preprocess_llama_2(
     conversations = []
     for i, source in enumerate(sources):
         if roles[source[0]["from"]] != conv.roles[0]:
-            # Skip the first one if it is not from human
             source = source[1:]
 
         conv.messages = []
@@ -414,8 +413,21 @@ def preprocess_llama_2(
 def preprocess_v1(
     sources,
     tokenizer: transformers.PreTrainedTokenizer,
-    has_image: bool = False
+    has_image: bool = False,
+    symbol_manager: Optional[SymbolManager] = None # --- SPRInT MODIFICATION ---
 ) -> Dict:
+    # --- SPRInT MODIFICATION: SYMBOLIC SWAP ---
+    if symbol_manager is not None:
+        mappings = symbol_manager.get_current_symbols()
+        for source in sources:
+            for sentence in source:
+                if sentence["from"] == "gpt":
+                    # Exact replacement logic to handle labels strictly
+                    current_val = sentence["value"].strip()
+                    if current_val in mappings:
+                        sentence["value"] = mappings[current_val]
+    # ------------------------------------------
+
     conv = conversation_lib.default_conversation.copy()
     roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
 
@@ -610,7 +622,8 @@ def preprocess_plain(
 def preprocess(
     sources: Sequence[str],
     tokenizer: transformers.PreTrainedTokenizer,
-    has_image: bool = False
+    has_image: bool = False,
+    symbol_manager: Optional[SymbolManager] = None # --- SPRInT MODIFICATION ---
 ) -> Dict:
     """
     Given a list of sources, each is a conversation list. This transform:
@@ -624,16 +637,17 @@ def preprocess(
     if conversation_lib.default_conversation.sep_style == conversation_lib.SeparatorStyle.LLAMA_2:
         return preprocess_llama_2(sources, tokenizer, has_image=has_image)
     if conversation_lib.default_conversation.version.startswith("v1"):
-        return preprocess_v1(sources, tokenizer, has_image=has_image)
+        return preprocess_v1(sources, tokenizer, has_image=has_image, symbol_manager=symbol_manager)
     if conversation_lib.default_conversation.version == "mpt":
         return preprocess_mpt(sources, tokenizer, has_image=has_image)
-    # add end signal and concatenate together
+    
+    # Default LLaVA logic
     conversations = []
     for source in sources:
         header = f"{conversation_lib.default_conversation.system}\n\n"
         conversation = _add_speaker_and_signal(header, source)
         conversations.append(conversation)
-    # tokenize conversations
+    
     def get_tokenize_len(prompts):
         return [len(tokenizer_image_token(prompt, tokenizer)) for prompt in prompts]
 
@@ -660,7 +674,8 @@ class LazySupervisedDataset(Dataset):
 
     def __init__(self, data_path: str,
                  tokenizer: transformers.PreTrainedTokenizer,
-                 data_args: DataArguments):
+                 data_args: DataArguments,
+                 symbol_manager: Optional[SymbolManager] = None): # --- SPRInT MODIFICATION ---
         super(LazySupervisedDataset, self).__init__()
         list_data_dict = json.load(open(data_path, "r"))
 
@@ -668,6 +683,7 @@ class LazySupervisedDataset(Dataset):
         self.tokenizer = tokenizer
         self.list_data_dict = list_data_dict
         self.data_args = data_args
+        self.symbol_manager = symbol_manager # --- SPRInT MODIFICATION ---
 
     def __len__(self):
         return len(self.list_data_dict)
@@ -721,10 +737,15 @@ class LazySupervisedDataset(Dataset):
                 self.data_args)
         else:
             sources = copy.deepcopy([e["conversations"] for e in sources])
+        
+        # --- SPRInT MODIFICATION: PASS SYMBOL MANAGER ---
         data_dict = preprocess(
             sources,
             self.tokenizer,
-            has_image=('image' in self.list_data_dict[i]))
+            has_image=('image' in self.list_data_dict[i]),
+            symbol_manager=self.symbol_manager)
+        # ------------------------------------------------
+        
         if isinstance(i, int):
             data_dict = dict(input_ids=data_dict["input_ids"][0],
                              labels=data_dict["labels"][0])
@@ -774,11 +795,13 @@ class DataCollatorForSupervisedDataset(object):
 
 
 def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer,
-                                data_args) -> Dict:
+                                data_args,
+                                symbol_manager: Optional[SymbolManager] = None) -> Dict: # --- SPRInT MODIFICATION ---
     """Make dataset and collator for supervised fine-tuning."""
     train_dataset = LazySupervisedDataset(tokenizer=tokenizer,
                                 data_path=data_args.data_path,
-                                data_args=data_args)
+                                data_args=data_args,
+                                symbol_manager=symbol_manager) # --- SPRInT MODIFICATION ---
     data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
     return dict(train_dataset=train_dataset,
                 eval_dataset=None,
@@ -956,8 +979,23 @@ def train(attn_implementation=None):
                     if training_args.bf16 and module.weight.dtype == torch.float32:
                         module = module.to(torch.bfloat16)
 
+    # --- SPRInT MODIFICATION: INITIALIZE SYMBOL MANAGER ---
+    sprint_manager = None
+    if SymbolManager is not None:
+        # Fixed scoping by using training_args.sprint_strategy
+        sprint_manager = SymbolManager(
+            original_labels=["0", "1"],
+            tokenizer=tokenizer,
+            dynamic_per_epoch=False, 
+            symbol_type=training_args.sprint_strategy
+        )
+        rank0_print(f"SPRInT SymbolManager Initialized with labels: {sprint_manager.get_current_symbols()}")
+    # -----------------------------------------------------
+
     data_module = make_supervised_data_module(tokenizer=tokenizer,
-                                              data_args=data_args)
+                                              data_args=data_args,
+                                              symbol_manager=sprint_manager) # --- SPRInT MODIFICATION ---
+    
     trainer = LLaVATrainer(model=model,
                     tokenizer=tokenizer,
                     args=training_args,
