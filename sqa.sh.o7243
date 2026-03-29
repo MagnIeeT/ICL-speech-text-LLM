@@ -1,7 +1,0 @@
-===================================
-NUM_SAMPLES set to: 10
-===================================
-Total available samples: 4241
-Running on FIRST 10 samples
-Subset file created!
-[2026-03-18 06:23:25,089] [INFO] [real_accelerator.py:161:get_accelerator] Setting ds_accelerator to cuda (auto detect)
