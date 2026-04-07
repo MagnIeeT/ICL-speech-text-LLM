@@ -128,3 +128,4 @@ echo "Monitor with:"
 echo "  tail -f ${LOG_FILE}"
 echo "  qstat | grep harinis"
 echo "=========================================="
+git clone https://huggingface.co/liuhaotian/llava-v1.5-7b ~/.cache/huggingface/hub/llava-v1.5-7b

@@ -1,35 +1,32 @@
 #!/bin/bash
 # ============================================================
 # LLaVA General Inference Script
+# Strategy, dataset, and paths are set in vision_orchestrator.py.
+# Edit ONLY the job settings below (num_samples, hostname, etc.).
 # ============================================================
 
 # ========================================
 # Configuration - Edit these values
 # ========================================
 model_type="llava-v1.5-13b"
-checkpoint_path="liuhaotian/llava-v1.5-13b" 
-dataset_type="colon"              
 
-num_samples=10               # Number of samples to infer (0 = ALL)
+num_samples=0                # Number of samples to infer (0 = ALL) — passed to orchestrator
 batch_size=1                    # Inference batch size
 gradient_accumulation_steps=8   # Kept for template consistency
 
 hostname="n6"
 cuda_device=2
-output_dir="/home/harinis/LLaVA/logs"
-script_path="/home/harinis/LLaVA/sprint_vision/sprint_eval.py" 
-hold_job_id=""
 
-# --- SPRInT MODIFICATION: ADDED NECESSARY PATHS ---
-strategy="regular"               # "regular" or "two_token"
-image_folder="/home/harinis/MedFM/data/MedFMC"
-question_file="/home/harinis/LLaVA/sprint_vision/data/colon_test.json"
-# --------------------------------------------------
+# Paths — override via env vars or edit here
+LLAVA_DIR="${LLAVA_DIR:-/home/harinis/LLaVA}"
+output_dir="${LLAVA_DIR}/logs"
+orchestrator_path="${LLAVA_DIR}/sprint_vision/vision_orchestrator.py"
+hold_job_id=""
 
 # ========================================
 # Auto Setup & Logging Validation
 # ========================================
-source /home/leapers/anaconda3/etc/profile.d/conda.sh
+eval "$(conda shell.bash hook)"
 conda activate llava
 
 if [ -n "$hold_job_id" ]; then
@@ -41,10 +38,8 @@ fi
 # Dynamic Run Naming
 CURRENT_DATETIME=$(date +"%d%m_%H%M")
 TODAY=$(date +"%Y-%m-%d")
-CHECKPOINT_NAME=$(basename "$checkpoint_path")
-CLEAN_DATASET=$(echo $dataset_type | tr '_' '-')
 
-RUN_NAME="${CURRENT_DATETIME}_infer_${model_type}_${CHECKPOINT_NAME}_samples${num_samples}"
+RUN_NAME="${CURRENT_DATETIME}_infer_${model_type}_samples${num_samples}"
 LOG_DIR="${output_dir}/${TODAY}"
 
 mkdir -p "$LOG_DIR"
@@ -56,13 +51,12 @@ echo "LLaVA Inference Configuration"
 echo "=========================================="
 echo "Run Name:    ${RUN_NAME}"
 echo "Model:       ${model_type}"
-echo "Dataset:     ${dataset_type}"
 echo "Samples:     ${num_samples} (0 = ALL)"
 echo "Batch Size:  ${batch_size}"
-echo "Grad Accum:  ${gradient_accumulation_steps}"
 echo "Hostname:    ${hostname}"
 echo "CUDA Device: ${cuda_device}"
 echo "Log File:    ${LOG_FILE}"
+echo "NOTE: Strategy/dataset/paths are set in vision_orchestrator.py"
 echo "=========================================="
 
 # ========================================
@@ -70,7 +64,6 @@ echo "=========================================="
 # ========================================
 TMPJOB=$(mktemp /tmp/llava_infer_XXXX.sh)
 
-# FIX: Use EOF without quotes to allow variable expansion in the temp file
 cat << EOF > ${TMPJOB}
 #!/bin/bash
 set -e
@@ -88,9 +81,9 @@ echo "CUDA devices: ${cuda_device}"
 echo "=========================================="
 
 # Environment Activation
-source /home/leapers/anaconda3/etc/profile.d/conda.sh
+eval "\$(conda shell.bash hook)"
 conda activate llava
-cd /home/harinis/LLaVA
+cd ${LLAVA_DIR}
 echo "Working directory: \$(pwd)"
 
 echo "=========================================="
@@ -99,16 +92,12 @@ echo "=========================================="
 nvidia-smi
 
 echo "=========================================="
-echo "Running LLaVA Inference Python Script..."
+echo "Running LLaVA Inference via vision_orchestrator.py..."
 echo "=========================================="
 
-# stdbuf ensures output is written to the log immediately, not held in memory
-# MODIFIED: Passing specific arguments to sprint_eval.py
-stdbuf -oL -eL python -u "${script_path}" \\
-    --model-path "${checkpoint_path}" \\
-    --image-folder "${image_folder}" \\
-    --question-file "${question_file}" \\
-    --strategy "${strategy}"
+stdbuf -oL -eL python -u "${orchestrator_path}" \\
+    --mode inference \\
+    --num-samples "${num_samples}"
 
 echo "=========================================="
 echo "Job completed at: \$(date)"

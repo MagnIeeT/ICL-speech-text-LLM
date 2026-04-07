@@ -30,7 +30,7 @@ import tokenizers
 # --- SPRInT MODIFICATION: IMPORT ---
 import sys
 # Path points to your main sprint_vision folder inside llava
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sprint_vision"))) 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "sprint_vision")))
 try:
     from models.symbolAdapter.symbol_manager import SymbolManager
 except ImportError:
@@ -981,15 +981,18 @@ def train(attn_implementation=None):
 
     # --- SPRInT MODIFICATION: INITIALIZE SYMBOL MANAGER ---
     sprint_manager = None
-    if SymbolManager is not None:
-        # Fixed scoping by using training_args.sprint_strategy
+    if SymbolManager is not None and training_args.sprint_strategy != "regular":
+        # Only create SymbolManager when using symbol strategy.
+        # symbol_type is always "two_token"; "regular" means no symbol replacement.
         sprint_manager = SymbolManager(
             original_labels=["0", "1"],
             tokenizer=tokenizer,
-            dynamic_per_epoch=False, 
-            symbol_type=training_args.sprint_strategy
+            dynamic_per_epoch=False,
+            symbol_type="two_token"
         )
-        rank0_print(f"SPRInT SymbolManager Initialized with labels: {sprint_manager.get_current_symbols()}")
+        rank0_print(f"SPRInT SymbolManager Initialized. Mappings: {sprint_manager.get_current_symbols()}")
+    else:
+        rank0_print(f"SPRInT: strategy='{training_args.sprint_strategy}' — using original labels, no symbol replacement.")
     # -----------------------------------------------------
 
     data_module = make_supervised_data_module(tokenizer=tokenizer,
@@ -1006,6 +1009,13 @@ def train(attn_implementation=None):
     else:
         trainer.train()
     trainer.save_state()
+
+    # --- SPRInT MODIFICATION: SAVE SYMBOL MAPPINGS ---
+    if sprint_manager is not None and (training_args.local_rank == 0 or training_args.local_rank == -1):
+        mappings_path = os.path.join(training_args.output_dir, "symbol_mappings.json")
+        sprint_manager.save_mappings(mappings_path)
+        rank0_print(f"✅ SPRInT: Saved symbol mappings to {mappings_path}")
+    # --------------------------------------------------
 
     model.config.use_cache = True
 
