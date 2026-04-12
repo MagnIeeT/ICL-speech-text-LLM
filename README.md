@@ -12,6 +12,8 @@ Legacy code is retained under `archive/` and is not part of the active runtime.
 
 ```text
 ICL-speech-text-LLM/
+├── training.sh                      # Local training runner (no qsub)
+├── inference.sh                     # Local inference runner (no qsub)
 ├── train.py                         # Active training entrypoint
 ├── inference.py                     # Active inference entrypoint
 ├── config/
@@ -166,6 +168,35 @@ python inference.py \
   --output_dir ./results \
   --run_name my_infer_run
 ```
+
+## Local Runner Scripts (No qsub)
+
+### Training (`training.sh`)
+
+```bash
+MODEL_TYPE=salmonn \
+DATASET_TYPE=hvb-meld_emotion \
+VAL_DATASET_TYPE=hvb-meld_emotion \
+NO_SYMBOLS=false \
+DYNAMIC_SYMBOLS=true \
+OUTPUT_DIR=./results/symbol_training \
+./training.sh
+```
+
+### Inference (`inference.sh`)
+
+```bash
+MODEL_TYPE=salmonn \
+CHECKPOINT_PATH=/path/to/checkpoint.pt \
+DATASET_TYPE=hvb-voxceleb-voxpopuli-meld_emotion \
+NO_SYMBOLS=true \
+OUTPUT_DIR=./results \
+./inference.sh
+```
+
+Notes:
+- These wrappers do not submit to queue; they run python directly on the current machine.
+- Use `./training.sh --help` and `./inference.sh --help` to view all env options.
 
 ## HPC Submit Scripts
 
