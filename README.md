@@ -91,6 +91,20 @@ Update these keys as needed:
 - `valid_labels`
 - `text_key`, `completion_key`
 
+### 3) Adding a new model
+To add a new model backend, update all of the following:
+- Add the new `model_type` in `config/train_config/training_configs.py` (enum + CLI choices).
+- Extend `setup_tokenizer_and_processor()` in `train.py`.
+- Add or update processor wiring in `dataload/model_processors.py`.
+- Create a dedicated processor implementation in `dataload/` (for example like `qwen_processor.py` or `salmon_processor.py`).
+- Add backend model initialization in `initialize_model()` in `train.py` and in `InferenceOrchestrator.setup_model_and_data()` in `inference.py`.
+
+### 4) Adding a new dataset
+To add a new dataset, update all of the following:
+- Create a dataset config file under `config/data_config/` (paths, prompt template, labels, keys).
+- Register the dataset type in `config/data_config/master_config.py` (`DatasetType` and config mapping).
+- Make sure dataset loading hooks resolve correctly in `dataload/data_utils.py` and `dataload/multi_task_dataset.py` if special handling is needed.
+
 ## Environment Setup
 
 Use one of:

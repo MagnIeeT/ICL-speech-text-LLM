@@ -59,6 +59,8 @@ class DataConfig:
 @dataclass
 class TrainingConfig:
     model_type: ModelType = ModelType.SALMONN
+    salmonn_tokenizer_name: str = "lmsys/vicuna-13b-v1.1"
+    qwen_model_name: str = "Qwen/Qwen2-Audio-7B-Instruct"
     lora_config: LoRAConfig = field(default_factory=LoRAConfig)
     symbol_config: SymbolConfig = field(default_factory=SymbolConfig)
     data_config: DataConfig = field(default_factory=DataConfig)
@@ -90,6 +92,8 @@ class TrainingConfig:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "model_type": self.model_type.value,
+            "salmonn_tokenizer_name": self.salmonn_tokenizer_name,
+            "qwen_model_name": self.qwen_model_name,
             "lora_config": {
                 "rank": self.lora_config.rank,
                 "alpha": self.lora_config.alpha,
@@ -148,6 +152,8 @@ class TrainingConfig:
 
         return cls(
             model_type=ModelType(args.model_type),
+            salmonn_tokenizer_name=getattr(args, "salmonn_tokenizer_name", "lmsys/vicuna-13b-v1.1"),
+            qwen_model_name=getattr(args, "qwen_model_name", "Qwen/Qwen2-Audio-7B-Instruct"),
             lora_config=lora_config,
             symbol_config=symbol_config,
             data_config=data_config,
@@ -172,6 +178,8 @@ def parse_training_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Symbol Adapter Training (LoRA-only)")
 
     parser.add_argument("--model_type", type=str, default="salmonn", choices=["salmonn", "llama", "qwen"])
+    parser.add_argument("--salmonn_tokenizer_name", type=str, default="lmsys/vicuna-13b-v1.1")
+    parser.add_argument("--qwen_model_name", type=str, default="Qwen/Qwen2-Audio-7B-Instruct")
     parser.add_argument("--dataset_type", type=str, default="voxceleb")
     parser.add_argument("--val_dataset_type", type=str, default=None)
     parser.add_argument("--device", type=str, default="cuda:0")

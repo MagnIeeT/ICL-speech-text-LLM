@@ -21,7 +21,8 @@ class SymbolManager:
         original_labels: List[str],
         tokenizer: PreTrainedTokenizer,
         dynamic_per_epoch: bool = False,
-        symbol_type: str = "two_token"
+        symbol_type: str = "two_token",
+        no_symbols: bool = False
     ):
         """
         Initialize Symbol Manager
@@ -36,7 +37,8 @@ class SymbolManager:
         self.tokenizer = tokenizer
         self.dynamic_per_epoch = dynamic_per_epoch
         self.symbol_type = symbol_type
-        
+        self.no_symbols = no_symbols
+
         # Fixed symbols (used when dynamic_per_epoch=False)
         self.fixed_mappings = {}
         
@@ -45,7 +47,10 @@ class SymbolManager:
         self.current_epoch = 0
         
         # Generate initial symbols
-        if not self.dynamic_per_epoch:
+        if self.no_symbols:
+            self.list_of_symbols = []
+            logging.info("No-symbol mode enabled - symbol replacement is disabled")
+        elif not self.dynamic_per_epoch:
             self.fixed_mappings = self._generate_symbol_mappings()
             self.list_of_symbols = list(self.fixed_mappings.values())
             logging.info(f"Generated fixed symbol mappings: {self.fixed_mappings}")
@@ -63,6 +68,9 @@ class SymbolManager:
         Returns:
             Dictionary mapping original labels to symbols
         """
+        if self.no_symbols:
+            return {}
+
         if not self.dynamic_per_epoch:
             # Return fixed symbols
             return self.fixed_mappings
@@ -131,6 +139,9 @@ class SymbolManager:
     
     def _generate_symbol_mappings(self) -> Dict[str, str]:
         """Generate symbol mappings based on symbol_type"""
+        if self.no_symbols:
+            return {}
+
         # return dict(zip(self.original_labels, self.original_labels))
         if self.symbol_type == "two_token":
             symbols = self._generate_two_token_symbols(len(self.original_labels))
@@ -195,6 +206,9 @@ class SymbolManager:
         Returns:
             Updated batch with symbols replaced
         """
+        if self.no_symbols:
+            return batch
+
         # Use custom mappings if provided, otherwise get epoch-based mappings
         if mappings is not None:
             symbol_mappings = mappings
@@ -242,15 +256,18 @@ class SymbolManager:
     def convert_symbols_back(self, text: str, epoch: Optional[int] = None, mappings: Optional[Dict[str, str]] = None) -> str:
         """
         Convert symbols back to original labels in text
-        
+
         Args:
             text: Text with symbols to convert
             epoch: Specific epoch mappings to use (if None, uses current)
             mappings: Custom mappings to use (if provided, overrides epoch-based mappings)
-            
+
         Returns:
             Text with symbols converted back to original labels
         """
+        if self.no_symbols:
+            return text
+
         # Use custom mappings if provided, otherwise get epoch-based mappings
         if mappings is not None:
             # Create reverse mappings from custom mappings

@@ -14,7 +14,6 @@ from config.train_config.training_configs import TrainingConfig, parse_training_
 from dataload.model_processors import get_processor
 from dataload.multi_task_dataset import BaseMultiTaskDataset, MultiTaskInferenceDataset, MultiTaskTrainingDataset
 from models.symbolAdapter.symbol_manager import SymbolManager
-from models.symbolAdapter.no_symbol_manager import NoSymbolManager
 from models.symbolAdapter.symbol_training import SymbolTrainingOrchestrator
 from dataload.data_utils import load_dataset
 
@@ -38,14 +37,14 @@ def setup_tokenizer_and_processor(config):
     logging.info("Setting up tokenizer and processor for model type: %s", model_type)
 
     if model_type == "salmonn":
-        tokenizer = LlamaTokenizer.from_pretrained("lmsys/vicuna-13b-v1.1", use_fast=False)
+        tokenizer = LlamaTokenizer.from_pretrained(config.salmonn_tokenizer_name, use_fast=False)
         tokenizer.add_special_tokens({"pad_token": "[PAD]"})
         tokenizer.padding_side = "right"
         processor = get_processor(config.model_type.value, tokenizer=tokenizer)
         return tokenizer, processor
 
     if model_type == "qwen":
-        input_processor = Qwen2AudioProcessor.from_pretrained("Qwen/Qwen2-Audio-7B-Instruct", trust_remote_code=True)
+        input_processor = Qwen2AudioProcessor.from_pretrained(config.qwen_model_name, trust_remote_code=True)
         processor = get_processor(config.model_type.value, processor=input_processor)
         tokenizer = input_processor.tokenizer
         tokenizer.add_special_tokens({"pad_token": "[PAD]"})
@@ -216,7 +215,7 @@ def initialize_model(config: TrainingConfig, tokenizer, symbol_manager) -> torch
         from models.backends.custom_qwen import CustomQwen
 
         return CustomQwen(
-            model_path="Qwen/Qwen2-Audio-7B-Instruct",
+            model_path=config.qwen_model_name,
             device=config.device,
             lora=True,
             lora_rank=config.lora_config.rank,
@@ -246,16 +245,13 @@ def main():
 
         tokenizer, processor = setup_tokenizer_and_processor(config)
         dataset_labels = extract_dataset_labels(config)
-
-        if config.symbol_config.no_symbols:
-            symbol_manager = NoSymbolManager(original_labels=dataset_labels, tokenizer=tokenizer)
-        else:
-            symbol_manager = SymbolManager(
-                original_labels=dataset_labels,
-                tokenizer=tokenizer,
-                dynamic_per_epoch=config.symbol_config.dynamic_symbols,
-                symbol_type=config.symbol_config.symbol_type,
-            )
+        symbol_manager = SymbolManager(
+            original_labels=dataset_labels,
+            tokenizer=tokenizer,
+            dynamic_per_epoch=config.symbol_config.dynamic_symbols,
+            symbol_type=config.symbol_config.symbol_type,
+            no_symbols=config.symbol_config.no_symbols,
+        )
 
         train_datasets, val_datasets = load_datasets_for_config(config)
         train_dataloader = create_combined_dataloader(train_datasets, processor, config, shuffle=True)

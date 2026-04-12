@@ -11,7 +11,6 @@ from typing import Any, Dict, List, Optional, Tuple
 import torch
 
 from config.train_config.training_configs import ModelType, TrainingConfig
-from models.symbolAdapter.no_symbol_manager import NoSymbolManager
 from models.symbolAdapter.symbol_manager import SymbolManager
 from models.symbolAdapter.validation import ValidationManager
 from train import (
@@ -113,18 +112,14 @@ class InferenceOrchestrator:
                 current_mappings = checkpoint["symbol_mappings"].get("current_epoch_mappings", {})
             else:
                 current_mappings = {}
-
-            if self.config.symbol_config.no_symbols:
-                self.symbol_manager = NoSymbolManager(original_labels=dataset_labels, tokenizer=tokenizer)
-                self.current_mappings = {}
-            else:
-                self.symbol_manager = SymbolManager(
-                    original_labels=dataset_labels,
-                    tokenizer=tokenizer,
-                    dynamic_per_epoch=False,
-                    symbol_type=self.config.symbol_config.symbol_type,
-                )
-                self.current_mappings = current_mappings
+            self.symbol_manager = SymbolManager(
+                original_labels=dataset_labels,
+                tokenizer=tokenizer,
+                dynamic_per_epoch=False,
+                symbol_type=self.config.symbol_config.symbol_type,
+                no_symbols=self.config.symbol_config.no_symbols,
+            )
+            self.current_mappings = {} if self.config.symbol_config.no_symbols else current_mappings
 
             self.config.data_config.split = "test"
             self.config.data_config.max_samples = self.max_val_samples
@@ -143,7 +138,7 @@ class InferenceOrchestrator:
                 from models.backends.custom_qwen import CustomQwen
 
                 self.model = CustomQwen(
-                    model_path="Qwen/Qwen2-Audio-7B-Instruct",
+                    model_path=getattr(self.config, "qwen_model_name", "Qwen/Qwen2-Audio-7B-Instruct"),
                     device=self.device,
                     lora=apply_lora,
                     lora_rank=self.config.lora_config.rank,
@@ -256,3 +251,13 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+
+# 1. See you are passing symbol manager in initialise model, get_symbolfor epcoh is not there in symbol_mamanger and that should we called when no symbol is true
+# 1. swap otpion in symbol manager, it basically mean jumble the labme positve means negative and negative means postive, this can we possible for fixed symbols and no symbole
+# 2. validation.py optimise.
+# 3. remove unnnecessaary function/metho from symbol manager
+# 4. If during validation i just want to do inference on original symbols or both or new symbols. should I add that in config and update validatin.py accordingly
+# 5. you can move load dataset for config and dataloader functin in data_utils
+# need to remove hardcoded path while pushing code to repo. (put placeholder)
