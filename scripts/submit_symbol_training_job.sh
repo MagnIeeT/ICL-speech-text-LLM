@@ -11,6 +11,8 @@ Usage:
     DATASET_TYPE=hvb-meld_emotion \
     VAL_DATASET_TYPE=hvb-meld_emotion \
     NO_SYMBOLS=true \
+    SWAP_LABELS=false \
+    VALIDATION_MODES=fixed,original \
     OUTPUT_DIR=/path/to/results/symbol_training \
     ./scripts/submit_symbol_training_job.sh
 
@@ -21,13 +23,16 @@ Available options (env vars):
   VAL_DATASET_TYPE         : same format as DATASET_TYPE
 
   NO_SYMBOLS               : true | false
-                             - true  => disable all symbol replacement entirely
+                             - true  => disable symbol replacement
                              - false => use symbol-based flow
+  SWAP_LABELS              : true | false
+                             - true  => swap labels (e.g., positive<->negative)
 
   DYNAMIC_SYMBOLS          : true | false
-                             - true  => pass --dynamic_symbols (refresh symbols dynamically)
-                             - false => no --dynamic_symbols flag (fixed/static symbols)
+                             - true  => pass --dynamic_symbols
+                             - false => fixed mappings
   SYMBOL_UPDATE_STRATEGY   : per_epoch | per_instance
+  VALIDATION_MODES         : comma-separated: fixed,original,fresh (aliases: both,all,new)
 
   LORA_LR                  : float (default 1e-5)
   LORA_EPOCHS              : int   (default 5)
@@ -67,8 +72,10 @@ MAX_GRAD_NORM="${MAX_GRAD_NORM:-1}"
 MAX_SAMPLES="${MAX_SAMPLES:-0}"
 
 NO_SYMBOLS="${NO_SYMBOLS:-false}"
+SWAP_LABELS="${SWAP_LABELS:-false}"
 DYNAMIC_SYMBOLS="${DYNAMIC_SYMBOLS:-false}"
 SYMBOL_UPDATE_STRATEGY="${SYMBOL_UPDATE_STRATEGY:-per_epoch}"
+VALIDATION_MODES="${VALIDATION_MODES:-fixed,original,fresh}"
 
 QUEUE_NAME="${QUEUE_NAME:-workq}"
 HOSTNAME_FILTER="${HOSTNAME_FILTER:-n10}"
@@ -104,15 +111,12 @@ if [[ "${SYMBOL_UPDATE_STRATEGY}" != "per_epoch" && "${SYMBOL_UPDATE_STRATEGY}" 
   exit 1
 fi
 
-if [[ "${NO_SYMBOLS}" != "true" && "${NO_SYMBOLS}" != "false" && "${NO_SYMBOLS}" != "True" && "${NO_SYMBOLS}" != "False" ]]; then
-  echo "ERROR: NO_SYMBOLS must be true or false"
-  exit 1
-fi
-
-if [[ "${DYNAMIC_SYMBOLS}" != "true" && "${DYNAMIC_SYMBOLS}" != "false" && "${DYNAMIC_SYMBOLS}" != "True" && "${DYNAMIC_SYMBOLS}" != "False" ]]; then
-  echo "ERROR: DYNAMIC_SYMBOLS must be true or false"
-  exit 1
-fi
+for b in "${NO_SYMBOLS}" "${SWAP_LABELS}" "${DYNAMIC_SYMBOLS}"; do
+  if [[ "${b}" != "true" && "${b}" != "false" && "${b}" != "True" && "${b}" != "False" ]]; then
+    echo "ERROR: Boolean flags (NO_SYMBOLS, SWAP_LABELS, DYNAMIC_SYMBOLS) must be true or false"
+    exit 1
+  fi
+done
 
 validate_dataset_list "${DATASET_TYPE}"
 validate_dataset_list "${VAL_DATASET_TYPE}"
@@ -164,7 +168,9 @@ max_grad_norm="${MAX_GRAD_NORM}",\
 max_samples="${MAX_SAMPLES}",\
 dynamic_symbols="${DYNAMIC_SYMBOLS}",\
 no_symbols="${NO_SYMBOLS}",\
+swap_labels="${SWAP_LABELS}",\
 symbol_update_strategy="${SYMBOL_UPDATE_STRATEGY}",\
+validation_modes="${VALIDATION_MODES}",\
 OUTPUT_DIR="${OUTPUT_DIR}" \
   -S /bin/bash << 'QSUB_EOF'
 #!/bin/bash
@@ -188,12 +194,17 @@ CMD=(python "${SCRIPT_PATH}" \
   --max_samples "${max_samples}" \
   --output_dir "${OUTPUT_DIR}" \
   --run_name "${RUN_NAME}" \
-  --symbol_update_strategy "${symbol_update_strategy}")
+  --symbol_update_strategy "${symbol_update_strategy}" \
+  --validation_modes "${validation_modes}")
 
 if [[ "${no_symbols}" == "True" || "${no_symbols}" == "true" ]]; then
   CMD+=(--no_symbols)
 elif [[ "${dynamic_symbols}" == "True" || "${dynamic_symbols}" == "true" ]]; then
   CMD+=(--dynamic_symbols)
+fi
+
+if [[ "${swap_labels}" == "True" || "${swap_labels}" == "true" ]]; then
+  CMD+=(--swap_labels)
 fi
 
 "${CMD[@]}" 2>&1 | tee "${LOG_FILE}"

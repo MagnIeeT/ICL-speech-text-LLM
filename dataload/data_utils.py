@@ -2,8 +2,11 @@ import logging
 from typing import Dict
 
 from datasets import load_from_disk
+from torch.utils.data import DataLoader
 
 from config.data_config.master_config import DatasetSplit, DatasetType, get_dataset_config
+from config.train_config.training_configs import TrainingConfig
+from dataload.multi_task_dataset import BaseMultiTaskDataset, MultiTaskInferenceDataset, MultiTaskTrainingDataset
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +29,106 @@ def load_dataset(dataset_type: DatasetType, split: str = "train", use_cache: boo
     if use_cache:
         _DATASET_CACHE[cache_key] = data
     return data
+
+
+def load_datasets_for_config(config: TrainingConfig, inference_mode: bool = False):
+    """Load train/validation (or test) datasets from config."""
+    dataset_type_str = config.data_config.dataset_type
+    dataset_names = dataset_type_str.split("-") if "-" in dataset_type_str else [dataset_type_str]
+
+    train_datasets = {}
+    val_datasets = {}
+
+    for dataset_name in dataset_names:
+        try:
+            dataset_type = DatasetType(dataset_name)
+            if inference_mode:
+                logger.info("Loading test split for %s", dataset_name)
+                full_test_dataset = load_dataset(dataset_type, split="test")
+                if config.data_config.max_samples > 0:
+                    test_samples = min(config.data_config.max_samples, len(full_test_dataset))
+                    val_datasets[dataset_type] = full_test_dataset.select(range(test_samples))
+                else:
+                    val_datasets[dataset_type] = full_test_dataset
+                train_datasets[dataset_type] = None
+                logger.info("Loaded %s TEST: %d samples", dataset_name, len(val_datasets[dataset_type]))
+            else:
+                logger.info("Loading train split for %s", dataset_name)
+                full_train_dataset = load_dataset(dataset_type, split="train")
+                if config.data_config.max_samples > 0:
+                    train_datasets[dataset_type] = full_train_dataset.select(range(config.data_config.max_samples))
+                else:
+                    train_datasets[dataset_type] = full_train_dataset
+                logger.info("Loaded %s TRAIN: %d samples", dataset_name, len(train_datasets[dataset_type]))
+        except Exception as exc:
+            logger.error("Failed to load dataset %s: %s", dataset_name, exc)
+            continue
+
+    val_dataset_str = config.data_config.val_dataset_type
+    val_dataset_names = val_dataset_str.split("-") if "-" in val_dataset_str else [val_dataset_str]
+
+    for dataset_name in val_dataset_names:
+        dataset_type = DatasetType(dataset_name)
+        if not inference_mode:
+            try:
+                full_val_dataset = load_dataset(dataset_type, split="validation")
+                if config.data_config.val_max_samples > 0:
+                    val_samples = min(config.data_config.val_max_samples, len(full_val_dataset))
+                    val_datasets[dataset_type] = full_val_dataset.select(range(val_samples))
+                else:
+                    val_datasets[dataset_type] = full_val_dataset
+            except Exception as exc:
+                logger.error("Failed to load validation dataset %s: %s", dataset_name, exc)
+                continue
+
+    return train_datasets, val_datasets
+
+
+def create_combined_dataloader(datasets, processor, config: TrainingConfig, num_examples=5, shuffle=False):
+    """Create a combined dataloader from per-task datasets."""
+    per_task_datasets = {}
+    for dataset_type, task_dataset in datasets.items():
+        per_task_datasets[dataset_type] = BaseMultiTaskDataset(
+            dataset_type=dataset_type,
+            dataset=task_dataset,
+            processor=processor,
+            input_mode="speech_only",
+            fewshot_mode="text",
+            num_examples=num_examples if num_examples is not None else config.data_config.num_examples,
+            random_examples=False,
+            split=DatasetSplit.TRAIN if shuffle else DatasetSplit.TEST,
+            model_type=config.model_type.value,
+            run_name=config.run_name,
+            randomize_swap=False,
+        )
+
+    if shuffle:
+        combined_dataset = MultiTaskTrainingDataset(
+            datasets=per_task_datasets,
+            processor=processor,
+            balance_datasets=False,
+            interleave=False,
+        )
+        batch_size = config.data_config.batch_size
+    else:
+        combined_dataset = MultiTaskInferenceDataset(
+            datasets=per_task_datasets,
+            processor=processor,
+            balance_datasets=False,
+            interleave=False,
+        )
+        batch_size = config.data_config.val_batch_size
+
+    dataloader = DataLoader(
+        combined_dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        collate_fn=processor.collate_batch,
+        num_workers=2,
+        pin_memory=True,
+        drop_last=True,
+    )
+    return dataloader
 
 
 def clear_dataset_cache() -> int:

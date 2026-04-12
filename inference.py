@@ -13,11 +13,10 @@ import torch
 from config.train_config.training_configs import ModelType, TrainingConfig
 from models.symbolAdapter.symbol_manager import SymbolManager
 from models.symbolAdapter.validation import ValidationManager
+from dataload.data_utils import create_combined_dataloader, load_datasets_for_config
 from train import (
-    create_combined_dataloader,
     extract_dataset_labels,
     extract_dataset_labels_dict,
-    load_datasets_for_config,
     setup_tokenizer_and_processor,
 )
 
@@ -36,6 +35,8 @@ class InferenceOrchestrator:
         run_name: str = "",
         output_dir: Optional[str] = None,
         no_symbols: bool = False,
+        validation_modes: Optional[str] = None,
+        swap_labels: bool = False,
     ):
         self.checkpoint_path = checkpoint_path
         self.dataset_type = dataset_type
@@ -44,6 +45,8 @@ class InferenceOrchestrator:
         self.max_val_samples = max_val_samples
         self.num_examples = num_examples
         self.no_symbols = no_symbols
+        self.validation_modes = validation_modes
+        self.swap_labels = swap_labels
 
         self.results_base = output_dir or os.path.join(os.getcwd(), "results")
         self.metrics_dir = os.path.join(self.results_base, "orchestrator_metrics")
@@ -95,6 +98,9 @@ class InferenceOrchestrator:
             self.config.symbol_config.no_symbols = self.no_symbols
             if self.no_symbols:
                 self.config.symbol_config.dynamic_symbols = False
+            if self.validation_modes:
+                self.config.symbol_config.validation_modes = self.validation_modes
+            self.config.symbol_config.swap_labels = self.swap_labels
 
             return checkpoint
 
@@ -118,8 +124,9 @@ class InferenceOrchestrator:
                 dynamic_per_epoch=False,
                 symbol_type=self.config.symbol_config.symbol_type,
                 no_symbols=self.config.symbol_config.no_symbols,
+                swap_labels=self.config.symbol_config.swap_labels,
             )
-            self.current_mappings = {} if self.config.symbol_config.no_symbols else current_mappings
+            self.current_mappings = {} if (self.config.symbol_config.no_symbols and not self.config.symbol_config.swap_labels) else current_mappings
 
             self.config.data_config.split = "test"
             self.config.data_config.max_samples = self.max_val_samples
@@ -220,6 +227,13 @@ def main():
     parser.add_argument("--output_dir", type=str, default=None, help="Output directory for results")
     parser.add_argument("--run_name", type=str, required=True)
     parser.add_argument("--no_symbols", action="store_true")
+    parser.add_argument("--swap_labels", action="store_true", help="Swap labels (e.g., positive<->negative) during validation")
+    parser.add_argument(
+        "--validation_modes",
+        type=str,
+        default=None,
+        help="Comma-separated validation symbol modes: fixed,original,fresh (aliases: both,all,new)",
+    )
 
     args = parser.parse_args()
 
@@ -238,6 +252,8 @@ def main():
             run_name=args.run_name,
             output_dir=args.output_dir,
             no_symbols=args.no_symbols,
+            validation_modes=args.validation_modes,
+            swap_labels=args.swap_labels,
         )
         results = orchestrator.run_complete_inference()
         print("Inference completed successfully")
@@ -254,10 +270,4 @@ if __name__ == "__main__":
 
 
 
-# 1. See you are passing symbol manager in initialise model, get_symbolfor epcoh is not there in symbol_mamanger and that should we called when no symbol is true
-# 1. swap otpion in symbol manager, it basically mean jumble the labme positve means negative and negative means postive, this can we possible for fixed symbols and no symbole
-# 2. validation.py optimise.
-# 3. remove unnnecessaary function/metho from symbol manager
-# 4. If during validation i just want to do inference on original symbols or both or new symbols. should I add that in config and update validatin.py accordingly
-# 5. you can move load dataset for config and dataloader functin in data_utils
-# need to remove hardcoded path while pushing code to repo. (put placeholder)
+

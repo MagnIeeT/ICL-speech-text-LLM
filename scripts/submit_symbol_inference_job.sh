@@ -13,6 +13,8 @@ Usage:
     MAX_VAL_SAMPLES=0 \
     NUM_EXAMPLES=0 \
     NO_SYMBOLS=true \
+    SWAP_LABELS=false \
+    VALIDATION_MODES=fixed,original \
     OUTPUT_DIR=/path/to/results \
     ./scripts/submit_symbol_inference_job.sh
 
@@ -25,6 +27,8 @@ Available options (env vars):
   MAX_VAL_SAMPLES          : int (default 0 means all)
   NUM_EXAMPLES             : int (few-shot example count for inference pipeline)
   NO_SYMBOLS               : true | false
+  SWAP_LABELS              : true | false
+  VALIDATION_MODES         : comma-separated: fixed,original,fresh (aliases: both,all,new)
   DEVICE                   : cuda:0, cuda:1, cpu, ...
 
   OUTPUT_DIR               : output base directory
@@ -50,6 +54,8 @@ DATASET_TYPE="${DATASET_TYPE:-hvb-voxceleb-voxpopuli-meld_emotion}"
 MAX_VAL_SAMPLES="${MAX_VAL_SAMPLES:-0}"
 NUM_EXAMPLES="${NUM_EXAMPLES:-0}"
 NO_SYMBOLS="${NO_SYMBOLS:-false}"
+SWAP_LABELS="${SWAP_LABELS:-false}"
+VALIDATION_MODES="${VALIDATION_MODES:-fixed,original,fresh}"
 DEVICE="${DEVICE:-cuda:0}"
 
 QUEUE_NAME="${QUEUE_NAME:-workq}"
@@ -81,10 +87,12 @@ if [[ "${MODEL_TYPE}" != "salmonn" && "${MODEL_TYPE}" != "qwen" ]]; then
   exit 1
 fi
 
-if [[ "${NO_SYMBOLS}" != "true" && "${NO_SYMBOLS}" != "false" && "${NO_SYMBOLS}" != "True" && "${NO_SYMBOLS}" != "False" ]]; then
-  echo "ERROR: NO_SYMBOLS must be true or false"
-  exit 1
-fi
+for b in "${NO_SYMBOLS}" "${SWAP_LABELS}"; do
+  if [[ "${b}" != "true" && "${b}" != "false" && "${b}" != "True" && "${b}" != "False" ]]; then
+    echo "ERROR: Boolean flags (NO_SYMBOLS, SWAP_LABELS) must be true or false"
+    exit 1
+  fi
+done
 
 validate_dataset_list "${DATASET_TYPE}"
 
@@ -126,6 +134,8 @@ model_type="${MODEL_TYPE}",\
 max_val_samples="${MAX_VAL_SAMPLES}",\
 num_examples="${NUM_EXAMPLES}",\
 no_symbols="${NO_SYMBOLS}",\
+swap_labels="${SWAP_LABELS}",\
+validation_modes="${VALIDATION_MODES}",\
 device="${DEVICE}",\
 output_dir="${OUTPUT_DIR}" \
   -S /bin/bash << 'QSUB_EOF'
@@ -140,10 +150,15 @@ CMD=(python "${SCRIPT_PATH}" \
   --max_val_samples "${max_val_samples}" \
   --num_examples "${num_examples}" \
   --output_dir "${output_dir}" \
-  --run_name "${RUN_NAME}")
+  --run_name "${RUN_NAME}" \
+  --validation_modes "${validation_modes}")
 
 if [[ "${no_symbols}" == "True" || "${no_symbols}" == "true" ]]; then
   CMD+=(--no_symbols)
+fi
+
+if [[ "${swap_labels}" == "True" || "${swap_labels}" == "true" ]]; then
+  CMD+=(--swap_labels)
 fi
 
 "${CMD[@]}" 2>&1 | tee "${LOG_FILE}"

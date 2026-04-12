@@ -14,6 +14,14 @@ class SymbolUpdateStrategy(Enum):
     PER_INSTANCE = "per_instance"
 
 
+class ValidationSymbolMode(Enum):
+    """Validation symbol modes."""
+
+    FIXED = "fixed"
+    ORIGINAL = "original"
+    FRESH = "fresh"
+
+
 class ModelType(Enum):
     """Supported model types."""
 
@@ -41,6 +49,8 @@ class SymbolConfig:
     update_strategy: SymbolUpdateStrategy = SymbolUpdateStrategy.PER_EPOCH
     symbol_type: str = "two_token"
     seed: Optional[int] = None
+    validation_modes: str = "fixed,original,fresh"
+    swap_labels: bool = False
 
 
 @dataclass
@@ -109,6 +119,8 @@ class TrainingConfig:
                 "no_symbols": self.symbol_config.no_symbols,
                 "update_strategy": self.symbol_config.update_strategy.value,
                 "symbol_type": self.symbol_config.symbol_type,
+                  "validation_modes": self.symbol_config.validation_modes,
+                  "swap_labels": self.symbol_config.swap_labels,
             },
             "data_config": {
                 "dataset_type": self.data_config.dataset_type,
@@ -137,6 +149,8 @@ class TrainingConfig:
             no_symbols=getattr(args, "no_symbols", False),
             update_strategy=SymbolUpdateStrategy(getattr(args, "symbol_update_strategy", "per_epoch")),
             symbol_type="two_token",
+              validation_modes=getattr(args, "validation_modes", "fixed,original,fresh"),
+              swap_labels=getattr(args, "swap_labels", False),
         )
         if symbol_config.no_symbols:
             symbol_config.dynamic_symbols = False
@@ -193,6 +207,13 @@ def parse_training_args() -> argparse.Namespace:
 
     parser.add_argument("--dynamic_symbols", action="store_true")
     parser.add_argument("--no_symbols", action="store_true")
+    parser.add_argument("--swap_labels", action="store_true", help="Swap labels (e.g., positive<->negative) during prompt/completion rewriting")
+    parser.add_argument(
+        "--validation_modes",
+        type=str,
+        default="fixed,original,fresh",
+        help="Comma-separated validation symbol modes: fixed,original,fresh (aliases: both,all,new)",
+    )
     parser.add_argument(
         "--symbol_update_strategy",
         type=str,
