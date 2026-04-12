@@ -212,3 +212,7 @@ QSUB_EOF
 
 echo "Submitted symbol training job: ${RUN_NAME}"
 echo "Monitor with: tail -f ${LOG_DIR}/${RUN_NAME}.log"
+
+
+
+## remove hardcoded value from config hvb path and from slamon beats weight etc. need to add that in readme.
