@@ -78,13 +78,8 @@ class TrainingConfig:
     output_dir: str = "/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training"
     run_name: str = "symbol_training_run"
     checkpoint_frequency: int = 1
-    save_every_n_steps: int = 500
 
     device: str = "cuda:0"
-    mixed_precision: bool = False
-    compile_model: bool = False
-    log_level: str = "INFO"
-    log_frequency: int = 10
 
     inference_mode: bool = False
 
