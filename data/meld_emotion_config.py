@@ -6,8 +6,7 @@ MELD_EMOTION_CONFIG = DatasetConfig(
     paths={
         DatasetSplit.TRAIN: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/meld_train_5fewshots",
         DatasetSplit.VAL: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/meld_validation_5fewshots",
-        DatasetSplit.TEST: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/meld_test_5fewshots",
-
+        DatasetSplit.TEST: "/home/leapers/weights/harinis/ICL-speech-text-LLM/data/meld_test_50fewshots",
     },
     prompt_template="""You are an emotion recognition expert. Based on the input, respond with EXACTLY ONE WORD from these options: neutral, joy, sadness, anger, fear, disgust, or surprise.
 

@@ -1,0 +1,89 @@
+==================================
+Qwen ASR Baseline Job
+Host: n10
+CUDA_VISIBLE_DEVICES: 2
+Date: Tue Mar  3 11:23:02 IST 2026
+==================================
+Tue Mar  3 11:23:02 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 575.57.08              Driver Version: 575.57.08      CUDA Version: 12.9     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA RTX A6000               Off |   00000000:18:00.0 Off |                  Off |
+| 86%   89C    P2            253W /  300W |   44695MiB /  49140MiB |    100%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+|   1  NVIDIA RTX A6000               Off |   00000000:3B:00.0 Off |                  Off |
+| 30%   34C    P8             14W /  300W |       0MiB /  49140MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+|   2  NVIDIA RTX A6000               Off |   00000000:86:00.0 Off |                  Off |
+| 30%   35C    P8             17W /  300W |       0MiB /  49140MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|    0   N/A  N/A         1570472      C   python                                44686MiB |
++-----------------------------------------------------------------------------------------+
+/home/harinis/.conda/envs/qwen2_new/lib/python3.11/site-packages/torch/cuda/__init__.py:129: UserWarning: CUDA initialization: CUDA driver initialization failed, you might not have a CUDA gpu. (Triggered internally at ../c10/cuda/CUDAFunctions.cpp:108.)
+  return torch._C._cuda_getDeviceCount() > 0
+Torch CUDA Available: False
+/home/harinis/.conda/envs/qwen2_new/lib/python3.11/site-packages/zhconv/zhconv.py:33: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  from pkg_resources import resource_stream
+[W303 11:23:51.848648494 CUDAFunctions.cpp:108] Warning: CUDA initialization: CUDA driver initialization failed, you might not have a CUDA gpu. (function operator())
+Traceback (most recent call last):
+  File "/home/harinis/ICL_qwen_run/qwen_asr_eval/evaluate_asr.py", line 175, in <module>
+    torch.distributed.init_process_group(
+  File "/home/harinis/.conda/envs/qwen2_new/lib/python3.11/site-packages/torch/distributed/c10d_logger.py", line 83, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/harinis/.conda/envs/qwen2_new/lib/python3.11/site-packages/torch/distributed/c10d_logger.py", line 97, in wrapper
+    func_return = func(*args, **kwargs)
+                  ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/harinis/.conda/envs/qwen2_new/lib/python3.11/site-packages/torch/distributed/distributed_c10d.py", line 1527, in init_process_group
+    default_pg, _ = _new_process_group_helper(
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/harinis/.conda/envs/qwen2_new/lib/python3.11/site-packages/torch/distributed/distributed_c10d.py", line 1771, in _new_process_group_helper
+    backend_class = ProcessGroupNCCL(
+                    ^^^^^^^^^^^^^^^^^
+ValueError: ProcessGroupNCCL is only supported with GPUs, no GPUs found!
+E0303 11:23:52.311000 2076175 site-packages/torch/distributed/elastic/multiprocessing/api.py:869] failed (exitcode: 1) local_rank: 0 (pid: 2076180) of binary: /home/harinis/.conda/envs/qwen2_new/bin/python3.11
+Traceback (most recent call last):
+  File "/home/harinis/.conda/envs/qwen2_new/bin/torchrun", line 7, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/home/harinis/.conda/envs/qwen2_new/lib/python3.11/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 355, in wrapper
+    return f(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^
+  File "/home/harinis/.conda/envs/qwen2_new/lib/python3.11/site-packages/torch/distributed/run.py", line 919, in main
+    run(args)
+  File "/home/harinis/.conda/envs/qwen2_new/lib/python3.11/site-packages/torch/distributed/run.py", line 910, in run
+    elastic_launch(
+  File "/home/harinis/.conda/envs/qwen2_new/lib/python3.11/site-packages/torch/distributed/launcher/api.py", line 138, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/harinis/.conda/envs/qwen2_new/lib/python3.11/site-packages/torch/distributed/launcher/api.py", line 269, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+evaluate_asr.py FAILED
+------------------------------------------------------------
+Failures:
+  <NO_OTHER_FAILURES>
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2026-03-03_11:23:52
+  host      : n10.localdomain
+  rank      : 0 (local_rank: 0)
+  exitcode  : 1 (pid: 2076180)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================

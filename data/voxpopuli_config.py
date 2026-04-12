@@ -13,8 +13,7 @@ VOXPOPULI_CONFIG = DatasetConfig(
 
         DatasetSplit.TRAIN: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/asapp/slue_voxpopuli_train_5fewshots",
         DatasetSplit.VAL: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/asapp/slue_voxpopuli_validation_5fewshots",
-        DatasetSplit.TEST: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/asapp/slue_voxpopuli_test_5fewshots",
-
+        DatasetSplit.TEST:"/home/leapers/weights/harinis/ICL-speech-text-LLM/data/voxpopuli_test_50fewshots",
         # DatasetSplit.TRAIN: "/data1/harshanj/data/new/random/voxpopuli/asapp-slue_voxpopuli_train_random_topk10",
         # DatasetSplit.VAL: "/data1/harshanj/data/new/random/voxpopuli/asapp-slue_voxpopuli_validation_random_topk10",
         # DatasetSplit.TEST: "/data1/harshanj/data/new/random/voxpopuli/asapp-slue_voxpopuli_test_random_topk10",

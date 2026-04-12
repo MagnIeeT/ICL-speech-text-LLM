@@ -1,10 +1,10 @@
 #!/bin/bash
 # filepath: /data2/neeraja/neeraja/code/ICL/models/symbolAdapter/submit_orchestrator_training_job.sh
-
+echo "CUDA_VISIBLE_DEVICES is set to: $CUDA_VISIBLE_DEVICES"
 # Configuration - Edit these values as needed
 model_type="salmonn"  # Options: "salmonn" or "qwen2"
-# dataset_type="hvb_swap-voxceleb_swap"  # Dataset type(s) to use
-# dataset_type="voxpopuli-meld_emotion"
+#dataset_type="hvb_swap-voxceleb_swap"  # Dataset type(s) to use
+#dataset_type="voxpopuli-meld_emotion"
 # dataset_type="voxpopuli_swap-meld_emotion_swap"
 # dataset_type="voxpopuli-voxceleb"
 # dataset_type="voxpopuli_swap-voxceleb_swap"
@@ -18,17 +18,14 @@ hold_job_id=""
 
 batch_size=1
 
-# Training parameters
+# Training parameters 
 lora_lr=1e-5
 lora_epochs=5
 symbol_change_epochs=10
 
+dynamic_symbols_per_epoch=True # Generate new symbols each epoch
 
-
-dynamic_symbols_per_epoch=False  # Generate new symbols each epoch
-
-
-gradient_accumulation_steps=8
+gradient_accumulation_steps=8   
 max_grad_norm=1
 max_samples=0 # Set reasonable default
 
@@ -44,10 +41,11 @@ mlp_lr=1e-5
 use_output_mlp=False  # Enable/disable output MLP
 bypass_mlp=True 
 hidden_dim=32
+use_fp16=False
 
 
 # Set conda environment
-export CONDA_ENV="salmonn"
+export CONDA_ENV="qwen2_new"
 echo "Set conda environment to: $CONDA_ENV"
 source /home/leapers/anaconda3/etc/profile.d/conda.sh   
 conda deactivate
@@ -81,13 +79,17 @@ fi
 RUN_NAME="${CURRENT_DATETIME}_orchestrator_${lora_epochs}e_${symbol_change_epochs}sce_${MLP_SUFFIX}_${model_type}_${CLEAN_DATASET_TYPE}"
 
 # Set script path
-SCRIPT_PATH="/home/neeraja/code/ICL-speech-text-LLM/models/symbolAdapter/orchestrator_training.py"
+SCRIPT_PATH="/home/harinis/ICL_qwen_run/ICL-speech-text-LLM/models/symbolAdapter/orchestrator_training.py"
 TODAY=$(date +"%Y-%m-%d")
 
 # Directory setup
-OUTPUT_DIR="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training"
+#OUTPUT_DIR="/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training"
+#OUTPUT_DIR="/home/harinis/ICL_qwen_run/results/orchestrator_training"
+OUTPUT_DIR="/home/leapers/weights/harinis/ICL-speech-text-LLM/orchestrator_training"
 
-LOG_DIR="/home/neeraja/results/ICL-speech-text-LLM/orchestrator_training/logs/${TODAY}"
+
+#LOG_DIR="/home/neeraja/results/ICL-speech-text-LLM/orchestrator_training/logs/${TODAY}"
+LOG_DIR="${OUTPUT_DIR}/logs/${TODAY}"
 
 # Create directories
 for dir in "$LOG_DIR" "$OUTPUT_DIR"; do
@@ -141,6 +143,7 @@ qsub -q workq \
     -v CUDA_VISIBLE_DEVICES=1,\
 LOG_FILE="${LOG_DIR}/${RUN_NAME}.log",\
 HF_HOME=/home/leapers/common_cache/huggingface,\
+use_fp16=${use_fp16},\
 TODAY=${TODAY},\
 PYTHONUNBUFFERED=1,\
 RUN_NAME=${RUN_NAME},\
@@ -165,7 +168,9 @@ schedule_type=${schedule_type},\
 dynamic_symbols_per_epoch=${dynamic_symbols_per_epoch},\
 symbol_change_epochs=${symbol_change_epochs},\
 OUTPUT_DIR=${OUTPUT_DIR} \
-    /home/neeraja/code/ICL-speech-text-LLM/models/symbolAdapter/orchestrator_training.sh
+    /home/harinis/ICL_qwen_run/ICL-speech-text-LLM/models/symbolAdapter/orchestrator_training.sh
+
+    #/home/neeraja/code/ICL-speech-text-LLM/models/symbolAdapter/orchestrator_training.sh
 
 echo "Submitted orchestrator symbol training job: ${RUN_NAME}"
 echo "Monitor with: tail -f ${LOG_DIR}/${RUN_NAME}.log"

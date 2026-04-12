@@ -24,13 +24,14 @@ sys.path.append(project_root)
 sys.path.append(os.path.join(project_root, "models"))
 
 # Import required modules
-from models.mlp_salmonn import MLPSalmonn
 from models.symbolAdapter.configs.training_configs import TrainingConfig,SymbolMode
 from models.symbolAdapter.symbol_manager import SymbolManager
 from models.symbolAdapter.training.validation import ValidationManager
 from models.symbolAdapter.orchestrator_training import load_datasets_for_config, create_combined_dataloader
 from utils.evaluation_utils import evaluate_predictions
 from data.master_config import DatasetType
+## added##################################
+from models.symbolAdapter.configs.training_configs import TrainingConfig, ModelType
 
 class InferenceOrchestrator:
     """Orchestrates comprehensive inference evaluation using ValidationManager"""
@@ -39,14 +40,16 @@ class InferenceOrchestrator:
         self,
         checkpoint_path: str,
         dataset_type: str,
+        model_type: str,            # ✅ ADDED
         device: str = "cuda:0",
-        max_val_samples: int = 0,  # 0 = all samples
+        max_val_samples: int = 0,
         num_examples: int = 5,
         run_name: str = "",
         output_dir: Optional[str] = None
     ):
         self.checkpoint_path = checkpoint_path
         self.dataset_type = dataset_type
+        self.model_type = model_type.lower()  # ✅ STORE THIS
         self.device = device
         self.max_val_samples = max_val_samples
         self.num_examples = num_examples
@@ -63,10 +66,6 @@ class InferenceOrchestrator:
         os.makedirs(self.metrics_output_dir, exist_ok=True)
         os.makedirs(self.logs_output_dir, exist_ok=True)
         
-        # Generate run name
-        # timestamp = datetime.now().strftime("%d%m_%H%M")
-        # checkpoint_name = os.path.basename(checkpoint_path).replace('.pt', '').replace('.pth', '')
-        # self.run_name = f"{timestamp}_inference_{checkpoint_name}_{dataset_type}"
         self.run_name = run_name
 
         # Setup logging
@@ -80,6 +79,7 @@ class InferenceOrchestrator:
         self.val_dataloader = None
         
         logging.info(f"🚀 Initializing Inference Orchestrator")
+        logging.info(f"🤖 Model Type: {self.model_type}")  # ✅ SHOW MODEL TYPE
         logging.info(f"📁 Checkpoint: {checkpoint_path}")
         logging.info(f"📊 Dataset: {dataset_type}")
         logging.info(f"🔧 Device: {device}")
@@ -98,7 +98,6 @@ class InferenceOrchestrator:
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s',
             handlers=[
-                # logging.FileHandler(log_file),  
                 logging.StreamHandler()
             ]
         )
@@ -112,11 +111,16 @@ class InferenceOrchestrator:
         logging.info("=" * 80)
         
         try:
-            # Load checkpoint
+            ## added ######################
+            if not self.checkpoint_path:
+                self.config = TrainingConfig()
+                self.config.data_config.dataset_type = self.dataset_type
+                self.config.data_config.max_samples = self.max_val_samples
+                self.config.model_type = ModelType(self.model_type)
+                return {}
             logging.info(f"Loading checkpoint: {self.checkpoint_path}")
-            checkpoint = torch.load(self.checkpoint_path, map_location='cpu',weights_only=False)
+            checkpoint = torch.load(self.checkpoint_path, map_location='cpu', weights_only=False)
             
-            # Extract configuration
             if 'config' in checkpoint:
                 self.config = checkpoint['config']
                 logging.info("✅ Configuration loaded from checkpoint")
@@ -124,7 +128,6 @@ class InferenceOrchestrator:
                 logging.error("❌ No configuration found in checkpoint")
                 raise ValueError("Checkpoint missing configuration")
             
-            # Log checkpoint info
             if 'step_info' in checkpoint:
                 step_info = checkpoint['step_info']
                 logging.info(f"📋 Checkpoint Info:")
@@ -136,7 +139,6 @@ class InferenceOrchestrator:
             
             # Update config for inference
             self.config.data_config.dataset_type = self.dataset_type
-
             self.config.data_config.max_samples = self.max_val_samples
             
             return checkpoint
@@ -152,91 +154,60 @@ class InferenceOrchestrator:
         logging.info("=" * 80)
         
         try:
-            # Setup tokenizer and other components
+            # ✅ FIX: Use the SAME function as training (guarantees consistency)
             from models.symbolAdapter.orchestrator_training import (
-                setup_tokenizer,
-                extract_dataset_labels
+                setup_tokenizer_and_processor,  # ✅ UNIFIED FUNCTION
+                extract_dataset_labels,
+                extract_dataset_labels_dict  # ✅ ADDED
             )
             
-            # Setup tokenizer (same as training)
-            tokenizer = setup_tokenizer()
-            logging.info("✅ Tokenizer setup complete")
+            # ✅ FIX: Use unified setup (same as training)
+            tokenizer, processor = setup_tokenizer_and_processor(self.config)
+            logging.info(f"✅ Tokenizer and Processor setup complete for {self.model_type}")
             
-            # Extract dataset labels (same as training)
+            # Extract dataset labels
             dataset_labels = extract_dataset_labels(self.config)
+            dataset_labels_dict = extract_dataset_labels_dict(self.config)  # ✅ ADDED
             
-            # Setup symbol manager (same as training)
+            # Setup symbol manager
             if 'symbol_mappings' in checkpoint:
                 symbol_data = checkpoint['symbol_mappings']
                 logging.info("📋 Restoring symbol mappings from checkpoint...")
                 current_mappings = symbol_data['current_epoch_mappings']
                 logging.info(f"✅ Restored symbol mappings: {current_mappings}")
-            # else:
-            #     logging.warning("⚠️ No symbol mappings found in checkpoint, using default setup")
-            #     # current_mappings = {
-            #     #         'acknowledge': 'augc', 'anger': 'zugi', 'answer_agree': 'acke',
-            #     #         'answer_dis': 'annj', 'answer_general': 'sbia', 'apology': 'pukh',
-            #     #         'backchannel': 'jsfd', 'disfluency': 'nrzy', 'disgust': 'cuurs',
-            #     #         'fear': 'phin', 'joy': 'pgky', 'law': 'dxzk',
-            #     #         'negative': 'mmoo', 'neutral': 'njtf', 'noemotion': 'wyzte',
-            #     #         'norp': 'vact', 'org': 'sejb', 'other': 'ouat',
-            #     #         'person': 'whij', 'place': 'bctx', 'positive': 'guzo',
-            #     #         'quant': 'zmzd', 'question_check': 'banx', 'question_general': 'ngtd',
-            #     #         'question_repeat': 'nrnb', 'sadness': 'sfwe', 'self': 'afux',
-            #     #         'statement_close': 'xlig', 'statement_general': 'ukng', 
-            #     #         'statement_instruct': 'israi', 'statement_open': 'dtwo',
-            #     #         'statement_problem': 'mvfw', 'surprise': 'fago', 'thanks': 'puhe',
-            #     #         'when': 'secd'
-            #     #     }
 
-            #     current_mappings = {
-            #         'acknowledge': 'azqq', 'anger': 'qloy', 'answer_agree': 'xsno',
-            #         'answer_dis': 'uibr', 'answer_general': 'runfn', 'apology': 'eesz',
-            #         'backchannel': 'onbr', 'disfluency': 'busox', 'disgust': 'zwpy',
-            #         'fear': 'skwt', 'joy': 'ptma', 'law': 'rcov',
-            #         'negative': 'ajsp', 'neutral': 'vbkt', 'noemotion': 'ifig',
-            #         'norp': 'punxf', 'org': 'elazu', 'other': 'edfs',
-            #         'person': 'flnt', 'place': 'imamd', 'positive': 'xzem',
-            #         'quant': 'dosh', 'question_check': 'brua', 'question_general': 'pkin',
-            #         'question_repeat': 'zuka', 'sadness': 'oftam', 'self': 'tkfw',
-            #         'statement_close': 'ngkm', 'statement_general': 'pezy', 
-            #         'statement_instruct': 'oamt', 'statement_open': 'hayc',
-            #         'statement_problem': 'bedr', 'surprise': 'jkil', 'thanks': 'odih',
-            #         'when': 'exuj'
-            #     }
-
-            #     logging.info(f"symbol mappings: {current_mappings}")
+            ### added ################################################3
+            else:
+                current_mappings = {}
                 
             
+            # ✅ FIX: Use both label types (same as your working code)
             self.symbol_manager = SymbolManager(
-                    original_labels=dataset_labels,
-                    tokenizer=tokenizer,
-                    dynamic_per_epoch=False,
-                    symbol_type=self.config.symbol_config.symbol_type
-                )
+                original_labels=dataset_labels,
+                #original_labels_dict=dataset_labels_dict,  # ✅ ADDED
+                tokenizer=tokenizer,
+                dynamic_per_epoch=False,
+                symbol_type=self.config.symbol_config.symbol_type
+            )
             self.current_mappings = current_mappings
-            # ✅ FIX: Update config for TEST split inference
-            self.config.data_config.split = 'test'  # Force test split for inference
-
+            
+            # Update config for TEST split
+            self.config.data_config.split = 'test'
             self.config.data_config.max_samples = self.max_val_samples
             
-            # Load datasets (same as training orchestrator)
+            # Load datasets
             logging.info(f"📊 Loading datasets for: {self.dataset_type} (TEST split)")
             train_datasets, test_datasets = load_datasets_for_config(self.config, inference_mode=True)
             
-            
-            # ✅ FIX: Create processor with correct model type
-            from data.model_processors import get_processor
-            processor = get_processor(self.config.model_type.value, tokenizer=tokenizer)  # ✅ Use model_type.value
             logging.info("✅ Processor initialized")
             
-            # ✅ FIX: Create test dataloader (not validation)
+            # Create test dataloader
             self.val_dataloader = create_combined_dataloader(
                 test_datasets, 
                 processor,
                 self.config, 
                 shuffle=False,
-                num_examples=self.num_examples  # ✅ Use num_examples from args
+                num_examples=self.num_examples
             )
             
             logging.info(f"✅ Test dataloader created: {len(self.val_dataloader)} batches")
@@ -244,21 +215,37 @@ class InferenceOrchestrator:
             # Get initial symbol mappings
             initial_symbol_mappings = self.symbol_manager.get_symbols_for_epoch(0)
             
-            # ✅ FIX: Initialize model with correct config attributes
-            logging.info("🤖 Initializing model...")
-            self.model = MLPSalmonn(
-                device=self.device,
-                # label_tokens=list(initial_symbol_mappings.values()),
-                # hidden_dim=self.config.mlp_config.hidden_dim,  # ✅ mlp_config.hidden_dim
-                # dropout=self.config.mlp_config.dropout,        # ✅ mlp_config.dropout
-                lora=True,
-                lora_rank=self.config.lora_config.rank,        # ✅ lora_config.rank
-                lora_alpha=self.config.lora_config.alpha,      # ✅ lora_config.alpha
-                lora_dropout=self.config.lora_config.dropout,  # ✅ lora_config.dropout
-                low_resource=False,
-                # use_output_mlp=self.config.mlp_config.use_output_mlp,  # ✅ mlp_config.use_output_mlp
-                # bypass_mlp=not self.config.mlp_config.use_input_mlp    # ✅ NOT use_input_mlp = bypass_mlp
-            )
+            # ✅ FIX: Model initialization based on model_type
+            logging.info(f"🤖 Initializing {self.model_type.upper()} model...")
+
+            #### added ####### False if No FT, True if checkpoint #####3
+            apply_lora = bool(self.checkpoint_path)
+
+            ### added log 
+            logging.info(f"LoRA Enabled: {apply_lora}") 
+
+            if self.model_type == "qwen":
+                from models.custom_qwen import CustomQwen
+                self.model = CustomQwen(
+                    model_path="Qwen/Qwen2-Audio-7B-Instruct",
+                    device=self.device,
+                    lora=apply_lora,
+                    lora_rank=self.config.lora_config.rank,
+                    lora_alpha=self.config.lora_config.alpha,
+                    lora_dropout=self.config.lora_config.dropout,
+                )
+            elif self.model_type == "salmonn":
+                from models.mlp_salmonn import MLPSalmonn
+                self.model = MLPSalmonn(
+                    device=self.device,
+                    lora=apply_lora,
+                    lora_rank=self.config.lora_config.rank,
+                    lora_alpha=self.config.lora_config.alpha,
+                    lora_dropout=self.config.lora_config.dropout,
+                    low_resource=False,
+                )
+            else:
+                raise ValueError(f"Unknown model_type: {self.model_type}")
             
             # Load model state from checkpoint
             logging.info("📥 Loading model state from checkpoint...")
@@ -283,11 +270,11 @@ class InferenceOrchestrator:
             else:
                 logging.warning("⚠️ No model state found in checkpoint")
         
-        # Move model to device and set eval mode
+            # Move model to device and set eval mode
             self.model.to(self.device)
             self.model.eval()
             
-            # ✅ FIX: Setup ValidationManager with correct config attribute
+            # Setup ValidationManager
             self.validator = ValidationManager(
                 config=self.config,
                 symbol_manager=self.symbol_manager,
@@ -308,20 +295,17 @@ class InferenceOrchestrator:
         
         # Enable inference mode
         self.config.inference_mode = True
-        # self.config.only_original = True
         
         # Run validation
         results = self.validator.run_comprehensive_validation(
             model=self.model,
             val_dataloader=self.val_dataloader,
             epoch=0,
-            phase='lora',  # Use 'joint' for comprehensive inference
-            symbol_mappings = self.current_mappings,
+            phase='lora',
+            symbol_mappings=self.current_mappings,
         )
         
-        # Extract and return (ValidationManager did all the work)
         return results['validation_scores'], results['detailed_metrics'], results['all_predictions']
-
 
     def save_results(self, detailed_metrics: Dict[str, Any], all_predictions: List[Dict[str, Any]]):
         """Save detailed metrics and predictions to files"""
@@ -343,13 +327,11 @@ class InferenceOrchestrator:
                 json.dump(all_predictions, f, indent=2, default=str)
             
             logging.info(f"✅ Predictions saved: {predictions_file}")
-            
             logging.info("=" * 80)
             
         except Exception as e:
             logging.error(f"❌ Failed to save results: {str(e)}")
             raise
-    
     
     def run_complete_inference(self):
         """Run complete inference pipeline"""
@@ -368,7 +350,7 @@ class InferenceOrchestrator:
             # 4. Save results
             self.save_results(detailed_metrics, all_predictions)
             
-            # 5. Simple final logging (inline)
+            # 5. Simple final logging
             logging.info("=" * 60)
             logging.info("FINAL INFERENCE RESULTS")
             logging.info("=" * 60)
@@ -396,27 +378,27 @@ class InferenceOrchestrator:
 def main():
     """Main function for orchestrator inference"""
     parser = argparse.ArgumentParser(description="Orchestrator Inference Pipeline")
-    parser.add_argument("--checkpoint_path", type=str, required=True, 
+    parser.add_argument("--checkpoint_path", type=str, default="", 
                        help="Path to trained model checkpoint")
     parser.add_argument("--dataset_type", type=str, required=True,
                        help="Dataset type for evaluation (e.g., voxceleb, hvb)")
+    parser.add_argument("--model_type", type=str, required=True,  # ✅ ADDED
+                       choices=["salmonn", "qwen"],
+                       help="Model type (salmonn or qwen)")
     parser.add_argument("--device", type=str, default="cuda:0",
                        help="Device to use for inference")
     parser.add_argument("--max_val_samples", type=int, default=0,
                        help="Maximum validation samples (0 = all)")
-    parser.add_argument("--num_examples", type=int, default=5,  # ✅ NEW
+    parser.add_argument("--num_examples", type=int, default=5,
                        help="Number of few-shot examples (default: 5)")
     parser.add_argument("--output_dir", type=str, default=None,
                        help="Output directory for results")
     parser.add_argument("--run_name", type=str, required=True) 
 
-
-    
     args = parser.parse_args()
-    run_name = args.run_name
     
     # Validate checkpoint path
-    if not os.path.exists(args.checkpoint_path):
+    if args.checkpoint_path and not os.path.exists(args.checkpoint_path):
         print(f"❌ Checkpoint not found: {args.checkpoint_path}")
         return 1
     
@@ -425,10 +407,11 @@ def main():
         orchestrator = InferenceOrchestrator(
             checkpoint_path=args.checkpoint_path,
             dataset_type=args.dataset_type,
+            model_type=args.model_type,  # ✅ PASS THIS
             device=args.device,
             max_val_samples=args.max_val_samples,
             num_examples=args.num_examples,
-            run_name=run_name,  # Pass run_name
+            run_name=args.run_name,
             output_dir=args.output_dir
         )
         

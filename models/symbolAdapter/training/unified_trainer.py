@@ -39,6 +39,7 @@ class UnifiedTrainer:
         self.current_epoch = 0
         self.optimizer = None
         self.scheduler = None
+        self.global_step = 0  # ✅ ADD
         
         # Initialize validator
         self.validator = ValidationManager(
@@ -402,8 +403,14 @@ class UnifiedTrainer:
                         self.optimizer.zero_grad(set_to_none=True)
                         if hasattr(self, 'scheduler') and self.scheduler:
                             self.scheduler.step()  # ✅ ADD THIS LINE
-
-                    
+                        self.global_step += 1  # ✅ ADD
+                        if (
+                            hasattr(self.config, "save_every_n_steps")
+                            and self.config.save_every_n_steps > 0
+                            and self.global_step % self.config.save_every_n_steps == 0
+                       ):
+                            self._save_checkpoint(step=step,epoch=epoch,checkpoint_type=f"step{self.global_step}" )
+                              
                     # Update metrics
                     total_loss += loss.item() * accumulation_steps
                     num_batches += 1
