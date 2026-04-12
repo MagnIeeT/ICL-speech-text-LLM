@@ -14,6 +14,7 @@ from config.train_config.training_configs import TrainingConfig, parse_training_
 from dataload.model_processors import get_processor
 from dataload.multi_task_dataset import BaseMultiTaskDataset, MultiTaskInferenceDataset, MultiTaskTrainingDataset
 from models.symbolAdapter.symbol_manager import SymbolManager
+from models.symbolAdapter.no_symbol_manager import NoSymbolManager
 from models.symbolAdapter.symbol_training import SymbolTrainingOrchestrator
 from dataload.data_utils import load_dataset
 
@@ -246,12 +247,15 @@ def main():
         tokenizer, processor = setup_tokenizer_and_processor(config)
         dataset_labels = extract_dataset_labels(config)
 
-        symbol_manager = SymbolManager(
-            original_labels=dataset_labels,
-            tokenizer=tokenizer,
-            dynamic_per_epoch=config.symbol_config.dynamic_symbols,
-            symbol_type=config.symbol_config.symbol_type,
-        )
+        if config.symbol_config.no_symbols:
+            symbol_manager = NoSymbolManager(original_labels=dataset_labels, tokenizer=tokenizer)
+        else:
+            symbol_manager = SymbolManager(
+                original_labels=dataset_labels,
+                tokenizer=tokenizer,
+                dynamic_per_epoch=config.symbol_config.dynamic_symbols,
+                symbol_type=config.symbol_config.symbol_type,
+            )
 
         train_datasets, val_datasets = load_datasets_for_config(config)
         train_dataloader = create_combined_dataloader(train_datasets, processor, config, shuffle=True)

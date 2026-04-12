@@ -9,12 +9,14 @@ from typing import Any, Dict, Optional
 
 class SymbolUpdateStrategy(Enum):
     """How dynamic symbols are refreshed."""
+
     PER_EPOCH = "per_epoch"
     PER_INSTANCE = "per_instance"
 
 
 class ModelType(Enum):
     """Supported model types."""
+
     SALMONN = "salmonn"
     LLAMA = "llama"
     QWEN = "qwen"
@@ -35,6 +37,7 @@ class LoRAConfig:
 @dataclass
 class SymbolConfig:
     dynamic_symbols: bool = False
+    no_symbols: bool = False
     update_strategy: SymbolUpdateStrategy = SymbolUpdateStrategy.PER_EPOCH
     symbol_type: str = "two_token"
     seed: Optional[int] = None
@@ -99,6 +102,7 @@ class TrainingConfig:
             },
             "symbol_config": {
                 "dynamic_symbols": self.symbol_config.dynamic_symbols,
+                "no_symbols": self.symbol_config.no_symbols,
                 "update_strategy": self.symbol_config.update_strategy.value,
                 "symbol_type": self.symbol_config.symbol_type,
             },
@@ -126,9 +130,12 @@ class TrainingConfig:
 
         symbol_config = SymbolConfig(
             dynamic_symbols=getattr(args, "dynamic_symbols", False),
+            no_symbols=getattr(args, "no_symbols", False),
             update_strategy=SymbolUpdateStrategy(getattr(args, "symbol_update_strategy", "per_epoch")),
             symbol_type="two_token",
         )
+        if symbol_config.no_symbols:
+            symbol_config.dynamic_symbols = False
 
         data_config = DataConfig(
             dataset_type=args.dataset_type,
@@ -177,6 +184,7 @@ def parse_training_args() -> argparse.Namespace:
     parser.add_argument("--max_grad_norm", type=float, default=1.0)
 
     parser.add_argument("--dynamic_symbols", action="store_true")
+    parser.add_argument("--no_symbols", action="store_true")
     parser.add_argument(
         "--symbol_update_strategy",
         type=str,

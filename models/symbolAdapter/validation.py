@@ -357,7 +357,7 @@ class ValidationManager:
         self.is_inference_mode = is_inference_mode  # Store for later use
 
         # self.only_original = getattr(self.config, 'only_original', False)
-        self.only_original = False
+        self.only_original = getattr(self.config.symbol_config, "no_symbols", False)
 
 
         if self.is_inference_mode:

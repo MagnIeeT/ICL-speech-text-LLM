@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import torch
 
 from config.train_config.training_configs import ModelType, TrainingConfig
+from models.symbolAdapter.no_symbol_manager import NoSymbolManager
 from models.symbolAdapter.symbol_manager import SymbolManager
 from models.symbolAdapter.validation import ValidationManager
 from train import (
@@ -35,6 +36,7 @@ class InferenceOrchestrator:
         num_examples: int = 5,
         run_name: str = "",
         output_dir: Optional[str] = None,
+        no_symbols: bool = False,
     ):
         self.checkpoint_path = checkpoint_path
         self.dataset_type = dataset_type
@@ -42,8 +44,9 @@ class InferenceOrchestrator:
         self.device = device
         self.max_val_samples = max_val_samples
         self.num_examples = num_examples
+        self.no_symbols = no_symbols
 
-        self.results_base = output_dir
+        self.results_base = output_dir or os.path.join(os.getcwd(), "results")
         self.metrics_dir = os.path.join(self.results_base, "orchestrator_metrics")
         self.logs_dir = os.path.join(self.results_base, "orchestrator_logs")
 
@@ -76,22 +79,24 @@ class InferenceOrchestrator:
 
     def load_checkpoint_and_config(self):
         try:
-            if not self.checkpoint_path:
+            checkpoint: Dict[str, Any] = {}
+            if self.checkpoint_path:
+                logging.info("Loading checkpoint: %s", self.checkpoint_path)
+                checkpoint = torch.load(self.checkpoint_path, map_location="cpu", weights_only=False)
+
+                if "config" not in checkpoint:
+                    raise ValueError("Checkpoint missing configuration")
+                self.config = checkpoint["config"]
+            else:
                 self.config = TrainingConfig()
-                self.config.data_config.dataset_type = self.dataset_type
-                self.config.data_config.max_samples = self.max_val_samples
                 self.config.model_type = ModelType(self.model_type)
-                return {}
 
-            logging.info("Loading checkpoint: %s", self.checkpoint_path)
-            checkpoint = torch.load(self.checkpoint_path, map_location="cpu", weights_only=False)
-
-            if "config" not in checkpoint:
-                raise ValueError("Checkpoint missing configuration")
-
-            self.config = checkpoint["config"]
             self.config.data_config.dataset_type = self.dataset_type
             self.config.data_config.max_samples = self.max_val_samples
+            self.config.symbol_config.no_symbols = self.no_symbols
+            if self.no_symbols:
+                self.config.symbol_config.dynamic_symbols = False
+
             return checkpoint
 
         except Exception as exc:
@@ -105,17 +110,21 @@ class InferenceOrchestrator:
             _ = extract_dataset_labels_dict(self.config)
 
             if "symbol_mappings" in checkpoint:
-                current_mappings = checkpoint["symbol_mappings"]["current_epoch_mappings"]
+                current_mappings = checkpoint["symbol_mappings"].get("current_epoch_mappings", {})
             else:
                 current_mappings = {}
 
-            self.symbol_manager = SymbolManager(
-                original_labels=dataset_labels,
-                tokenizer=tokenizer,
-                dynamic_per_epoch=False,
-                symbol_type=self.config.symbol_config.symbol_type,
-            )
-            self.current_mappings = current_mappings
+            if self.config.symbol_config.no_symbols:
+                self.symbol_manager = NoSymbolManager(original_labels=dataset_labels, tokenizer=tokenizer)
+                self.current_mappings = {}
+            else:
+                self.symbol_manager = SymbolManager(
+                    original_labels=dataset_labels,
+                    tokenizer=tokenizer,
+                    dynamic_per_epoch=False,
+                    symbol_type=self.config.symbol_config.symbol_type,
+                )
+                self.current_mappings = current_mappings
 
             self.config.data_config.split = "test"
             self.config.data_config.max_samples = self.max_val_samples
@@ -215,6 +224,7 @@ def main():
     parser.add_argument("--num_examples", type=int, default=5, help="Number of few-shot examples")
     parser.add_argument("--output_dir", type=str, default=None, help="Output directory for results")
     parser.add_argument("--run_name", type=str, required=True)
+    parser.add_argument("--no_symbols", action="store_true")
 
     args = parser.parse_args()
 
@@ -232,6 +242,7 @@ def main():
             num_examples=args.num_examples,
             run_name=args.run_name,
             output_dir=args.output_dir,
+            no_symbols=args.no_symbols,
         )
         results = orchestrator.run_complete_inference()
         print("Inference completed successfully")

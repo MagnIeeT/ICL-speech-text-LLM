@@ -1,6 +1,59 @@
 #!/bin/bash
 set -euo pipefail
 
+show_help() {
+  cat << 'USAGE'
+Usage:
+  Environment-variable driven submit script.
+
+  Example:
+    MODEL_TYPE=salmonn \
+    DATASET_TYPE=hvb-meld_emotion \
+    VAL_DATASET_TYPE=hvb-meld_emotion \
+    NO_SYMBOLS=true \
+    OUTPUT_DIR=/path/to/results/symbol_training \
+    ./scripts/submit_symbol_training_job.sh
+
+Available options (env vars):
+  MODEL_TYPE               : salmonn | qwen
+  DATASET_TYPE             : hyphen-joined list from {voxceleb,hvb,voxpopuli,meld_emotion}
+                             examples: voxceleb | hvb-meld_emotion | hvb-voxceleb-voxpopuli-meld_emotion
+  VAL_DATASET_TYPE         : same format as DATASET_TYPE
+
+  NO_SYMBOLS               : true | false
+                             - true  => disable all symbol replacement entirely
+                             - false => use symbol-based flow
+
+  DYNAMIC_SYMBOLS          : true | false
+                             - true  => pass --dynamic_symbols (refresh symbols dynamically)
+                             - false => no --dynamic_symbols flag (fixed/static symbols)
+  SYMBOL_UPDATE_STRATEGY   : per_epoch | per_instance
+
+  LORA_LR                  : float (default 1e-5)
+  LORA_EPOCHS              : int   (default 5)
+  BATCH_SIZE               : int   (default 1)
+  GRADIENT_ACCUMULATION_STEPS: int (default 8)
+  MAX_GRAD_NORM            : float (default 1)
+  MAX_SAMPLES              : int   (default 0 means all)
+
+  DEVICE                   : cuda:0, cuda:1, cpu, ...
+  OUTPUT_DIR               : output base directory
+  RUN_NAME                 : run identifier
+
+HPC / queue settings:
+  QUEUE_NAME, HOSTNAME_FILTER, CUDA_DEVICE, WALLTIME, HOLD_JOB_ID, CONDA_ENV
+
+Notes:
+  1) This script submits qsub and runs PROJECT_ROOT/train.py.
+  2) If NO_SYMBOLS=true, --no_symbols is passed and --dynamic_symbols is ignored.
+USAGE
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  show_help
+  exit 0
+fi
+
 MODEL_TYPE="${MODEL_TYPE:-salmonn}"
 DATASET_TYPE="${DATASET_TYPE:-hvb-meld_emotion}"
 VAL_DATASET_TYPE="${VAL_DATASET_TYPE:-${DATASET_TYPE}}"
@@ -13,7 +66,8 @@ GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-8}"
 MAX_GRAD_NORM="${MAX_GRAD_NORM:-1}"
 MAX_SAMPLES="${MAX_SAMPLES:-0}"
 
-DYNAMIC_SYMBOLS="${DYNAMIC_SYMBOLS:-true}"
+NO_SYMBOLS="${NO_SYMBOLS:-false}"
+DYNAMIC_SYMBOLS="${DYNAMIC_SYMBOLS:-false}"
 SYMBOL_UPDATE_STRATEGY="${SYMBOL_UPDATE_STRATEGY:-per_epoch}"
 
 QUEUE_NAME="${QUEUE_NAME:-workq}"
@@ -25,6 +79,43 @@ HOLD_JOB_ID="${HOLD_JOB_ID:-}"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT_PATH="${SCRIPT_PATH:-${PROJECT_ROOT}/train.py}"
 OUTPUT_DIR="${OUTPUT_DIR:-${PROJECT_ROOT}/results/symbol_training}"
+
+VALID_DATASETS="voxceleb hvb voxpopuli meld_emotion"
+
+validate_dataset_list() {
+  local list="$1"
+  IFS='-' read -ra parts <<< "$list"
+  for d in "${parts[@]}"; do
+    if [[ ! " ${VALID_DATASETS} " =~ " ${d} " ]]; then
+      echo "ERROR: Unsupported dataset '${d}' in '${list}'."
+      echo "Allowed values: voxceleb, hvb, voxpopuli, meld_emotion"
+      exit 1
+    fi
+  done
+}
+
+if [[ "${MODEL_TYPE}" != "salmonn" && "${MODEL_TYPE}" != "qwen" ]]; then
+  echo "ERROR: MODEL_TYPE must be one of: salmonn, qwen"
+  exit 1
+fi
+
+if [[ "${SYMBOL_UPDATE_STRATEGY}" != "per_epoch" && "${SYMBOL_UPDATE_STRATEGY}" != "per_instance" ]]; then
+  echo "ERROR: SYMBOL_UPDATE_STRATEGY must be one of: per_epoch, per_instance"
+  exit 1
+fi
+
+if [[ "${NO_SYMBOLS}" != "true" && "${NO_SYMBOLS}" != "false" && "${NO_SYMBOLS}" != "True" && "${NO_SYMBOLS}" != "False" ]]; then
+  echo "ERROR: NO_SYMBOLS must be true or false"
+  exit 1
+fi
+
+if [[ "${DYNAMIC_SYMBOLS}" != "true" && "${DYNAMIC_SYMBOLS}" != "false" && "${DYNAMIC_SYMBOLS}" != "True" && "${DYNAMIC_SYMBOLS}" != "False" ]]; then
+  echo "ERROR: DYNAMIC_SYMBOLS must be true or false"
+  exit 1
+fi
+
+validate_dataset_list "${DATASET_TYPE}"
+validate_dataset_list "${VAL_DATASET_TYPE}"
 
 CURRENT_DATETIME="$(date +"%d%m_%H%M")"
 TODAY="$(date +"%Y-%m-%d")"
@@ -72,6 +163,7 @@ gradient_accumulation_steps="${GRADIENT_ACCUMULATION_STEPS}",\
 max_grad_norm="${MAX_GRAD_NORM}",\
 max_samples="${MAX_SAMPLES}",\
 dynamic_symbols="${DYNAMIC_SYMBOLS}",\
+no_symbols="${NO_SYMBOLS}",\
 symbol_update_strategy="${SYMBOL_UPDATE_STRATEGY}",\
 OUTPUT_DIR="${OUTPUT_DIR}" \
   -S /bin/bash << 'QSUB_EOF'
@@ -83,25 +175,28 @@ export TRANSFORMERS_CACHE=/home/leapers/common_cache/huggingface
 unset LD_LIBRARY_PATH
 export LD_LIBRARY_PATH=/usr/local/cuda-11.8/lib64:$LD_LIBRARY_PATH
 
-COMMON_ARGS="--model_type \"${model_type}\" \
-  --dataset_type \"${dataset_type}\" \
-  --val_dataset_type \"${val_dataset_type}\" \
-  --device \"${device}\" \
-  --lora_lr ${lora_lr} \
-  --lora_epochs ${lora_epochs} \
-  --batch_size ${batch_size} \
-  --gradient_accumulation_steps ${gradient_accumulation_steps} \
-  --max_grad_norm ${max_grad_norm} \
-  --max_samples ${max_samples} \
-  --output_dir \"${OUTPUT_DIR}\" \
-  --run_name \"${RUN_NAME}\" \
-  --symbol_update_strategy \"${symbol_update_strategy}\""
+CMD=(python "${SCRIPT_PATH}" \
+  --model_type "${model_type}" \
+  --dataset_type "${dataset_type}" \
+  --val_dataset_type "${val_dataset_type}" \
+  --device "${device}" \
+  --lora_lr "${lora_lr}" \
+  --lora_epochs "${lora_epochs}" \
+  --batch_size "${batch_size}" \
+  --gradient_accumulation_steps "${gradient_accumulation_steps}" \
+  --max_grad_norm "${max_grad_norm}" \
+  --max_samples "${max_samples}" \
+  --output_dir "${OUTPUT_DIR}" \
+  --run_name "${RUN_NAME}" \
+  --symbol_update_strategy "${symbol_update_strategy}")
 
-if [[ "${dynamic_symbols}" == "True" || "${dynamic_symbols}" == "true" ]]; then
-  COMMON_ARGS="${COMMON_ARGS} --dynamic_symbols"
+if [[ "${no_symbols}" == "True" || "${no_symbols}" == "true" ]]; then
+  CMD+=(--no_symbols)
+elif [[ "${dynamic_symbols}" == "True" || "${dynamic_symbols}" == "true" ]]; then
+  CMD+=(--dynamic_symbols)
 fi
 
-eval "python ${SCRIPT_PATH} ${COMMON_ARGS} 2>&1 | tee ${LOG_FILE}"
+"${CMD[@]}" 2>&1 | tee "${LOG_FILE}"
 QSUB_EOF
 
 echo "Submitted symbol training job: ${RUN_NAME}"
