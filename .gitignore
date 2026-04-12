@@ -10,4 +10,4 @@ eval_tasks/logs/
 eval_tasks/*.json
 
 # Local legacy stash
-archive/legacy/
+archive/
