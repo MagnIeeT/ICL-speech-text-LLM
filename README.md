@@ -1,177 +1,207 @@
-# ICL Framework
+# ICL Speech-Text LLM (Strict Active Pipeline)
 
-A high-performance framework for In-Context Learning (ICL) with audio and text models.
+This repository now uses a strict active structure centered on:
+- top-level training/inference entrypoints
+- a LoRA-only symbol-adapter training flow
+- four active datasets
+- minimal active utility surface
 
-## Overview
+Legacy code is retained under `archive/` and is not part of the active runtime.
 
-This framework provides tools for training and evaluating ICL models on various audio and text datasets. It supports both single-task and multi-task learning, with a focus on performance and scalability.
+## Active Project Structure
 
-## Features
-
-- **Multi-modal Support**: Process both audio and text inputs
-- **Multi-task Learning**: Train on multiple datasets simultaneously
-- **High Performance**: Optimized for speed and memory efficiency
-- **Flexible Architecture**: Support for different model types (SALMONN, Qwen2)
-- **Distributed Training**: Scale across multiple GPUs
-- **Comprehensive Evaluation**: Detailed metrics and result analysis
-
-## Directory Structure
-
+```text
+ICL-speech-text-LLM/
+├── train.py                         # Active training entrypoint
+├── inference.py                     # Active inference entrypoint
+├── config/
+│   ├── train_config/
+│   │   └── training_configs.py      # CLI + dataclass training config
+│   └── data_config/
+│       ├── master_config.py         # DatasetType, DatasetSplit, registry
+│       ├── voxceleb_config.py       # Dataset paths/prompts/labels
+│       ├── hvb_config.py
+│       ├── voxpopuli_config.py
+│       └── meld_emotion_config.py
+├── dataload/
+│   ├── data_utils.py                # Active dataset loading + cache
+│   ├── multi_task_dataset.py        # Unified dataset pipeline
+│   ├── model_processors.py          # Processor base + get_processor()
+│   ├── qwen_processor.py            # Qwen-specific processor
+│   └── salmon_processor.py          # SALMONN-specific processor
+├── models/
+│   ├── backends/
+│   │   ├── custom_qwen.py
+│   │   └── custom_salmonn.py
+│   └── symbolAdapter/
+│       ├── symbol_manager.py
+│       ├── symbol_training.py
+│       └── validation.py
+├── scripts/
+│   ├── submit_symbol_training_job.sh
+│   └── submit_symbol_inference_job.sh
+├── utils/
+│   ├── generate_fewshots.py         # One-time few-shot dataset generation utility
+│   ├── evaluation_utils.py
+│   ├── reprocess_metrics.py
+│   └── training_utils.py            # Minimal checkpoint utility
+├── eval_tasks/                      # Renamed from eval_qwen_and_salmonn
+├── requirements/
+│   ├── environment.yml
+│   └── environment_qwen.yml
+└── archive/                         # Legacy code and references
 ```
-code/ICL/
-├── config/                 # Configuration files
-├── data/                   # Dataset handling
-├── models/                 # Model implementations
-├── train/                  # Training scripts
-├── inference/              # Inference scripts
-├── utils/                  # Utility functions
-├── scripts/                # Job submission scripts
-├── OPTIMIZATIONS.md        # Performance optimization details
-└── README.md               # This file
+
+## Active Datasets
+
+Current active dataset types:
+- `voxceleb`
+- `hvb`
+- `voxpopuli`
+- `meld_emotion`
+
+These are defined in `config/data_config/master_config.py`.
+
+## Where To Update Config
+
+### 1) Training/inference runtime config
+Edit defaults and argument behavior in:
+- `config/train_config/training_configs.py`
+
+Important fields:
+- `DataConfig.dataset_type`
+- `DataConfig.val_dataset_type`
+- `DataConfig.batch_size`, `DataConfig.max_samples`
+- `LoRAConfig.learning_rate`, `LoRAConfig.epochs`
+- `SymbolConfig.dynamic_symbols`, `SymbolConfig.update_strategy`
+
+### 2) Dataset paths/prompts/labels
+Edit per-dataset files:
+- `config/data_config/voxceleb_config.py`
+- `config/data_config/hvb_config.py`
+- `config/data_config/voxpopuli_config.py`
+- `config/data_config/meld_emotion_config.py`
+
+Update these keys as needed:
+- `paths` (train/validation/test)
+- `audio_lookup_paths`
+- `prompt_template`
+- `valid_labels`
+- `text_key`, `completion_key`
+
+## Environment Setup
+
+Use one of:
+- `requirements/environment.yml` (SALMONN-focused)
+- `requirements/environment_qwen.yml` (Qwen-focused)
+
+Example:
+
+```bash
+conda env create -f requirements/environment.yml
+conda activate salmonn
 ```
 
-## Quick Start
+Or for Qwen:
+
+```bash
+conda env create -f requirements/environment_qwen.yml
+conda activate qwen2_new
+```
+
+## How To Generate Few-Shot Datasets (One-Time)
+
+Use:
+- `utils/generate_fewshots.py`
+
+Before running, update inside that file:
+- `DATASET_CONFIG`
+- `target_split`
+- `source_splits`
+- `top_k`
+- `PROCESSED_BASE_PATH`
+
+Then run:
+
+```bash
+python utils/generate_fewshots.py
+```
+
+Outputs:
+- augmented dataset with `few_shot_examples`
+- audio lookup dataset for speech few-shot mode
+
+## Local Run Commands
 
 ### Training
 
 ```bash
-# Single-task training
-python train/train.py \
-  --model_path /path/to/model \
-  --output_dir ./output \
-  --log_file ./logs/train.log \
-  --dataset_type VOXCELEB \
-  --input_mode speech_only \
-  --fewshot_mode text \
-  --num_examples 5 \
-  --batch_size 8 \
-  --fp16
-
-# Multi-task training
-python train/train.py \
-  --model_path /path/to/model \
-  --output_dir ./output \
-  --log_file ./logs/train.log \
-  --dataset_type VOXCELEB,HVB \
-  --input_mode speech_only \
-  --fewshot_mode text \
-  --num_examples 5 \
-  --batch_size 8 \
-  --fp16
+python train.py \
+  --model_type salmonn \
+  --dataset_type hvb-meld_emotion \
+  --val_dataset_type hvb-meld_emotion \
+  --device cuda:0 \
+  --batch_size 1 \
+  --max_samples 0 \
+  --lora_lr 1e-5 \
+  --lora_epochs 5 \
+  --gradient_accumulation_steps 8 \
+  --max_grad_norm 1.0 \
+  --dynamic_symbols \
+  --symbol_update_strategy per_epoch \
+  --output_dir ./results/symbol_training \
+  --run_name my_train_run
 ```
 
 ### Inference
 
 ```bash
-# Single-task inference
-python inference/inference.py \
-  --base_model_path /path/to/base_model \
-  --peft_model_path /path/to/fine_tuned_model \
-  --run_name test_run \
-  --today 2023-03-03 \
-  --dataset_type VOXCELEB \
-  --input_mode speech_only \
-  --fewshot_mode text \
-  --num_examples 5 \
-  --optimize_batch_size \
-  --fp16
-
-# Multi-task inference
-python inference/inference.py \
-  --base_model_path /path/to/base_model \
-  --peft_model_path /path/to/fine_tuned_model \
-  --run_name test_run \
-  --today 2023-03-03 \
-  --dataset_type VOXCELEB,HVB \
-  --input_mode speech_only \
-  --fewshot_mode text \
-  --num_examples 5 \
-  --optimize_batch_size \
-  --fp16 \
-  --save_per_dataset
+python inference.py \
+  --model_type salmonn \
+  --checkpoint_path /path/to/checkpoint.pt \
+  --dataset_type hvb-voxceleb-voxpopuli-meld_emotion \
+  --device cuda:0 \
+  --max_val_samples 0 \
+  --num_examples 0 \
+  --output_dir ./results \
+  --run_name my_infer_run
 ```
 
-### Using Job Submission Scripts
+## HPC Submit Scripts
+
+### Submit training
 
 ```bash
-# Submit a training job
-./scripts/submit_train_job.sh
-
-# Submit an inference job
-./scripts/submit_inference_job.sh
-
-# Submit a multi-task training job
-./scripts/submit_multi_task_job.sh
-
-# Submit a multi-task inference job
-./scripts/submit_multi_task_inference_job.sh
+MODEL_TYPE=salmonn \
+DATASET_TYPE=hvb-meld_emotion \
+VAL_DATASET_TYPE=hvb-meld_emotion \
+OUTPUT_DIR=/path/to/results/symbol_training \
+./scripts/submit_symbol_training_job.sh
 ```
 
-## Performance Optimizations
+### Submit inference
 
-This framework includes numerous optimizations for faster training and inference:
-
-- **Mixed Precision Training**: FP16/BF16 support for faster computation
-- **Gradient Checkpointing**: Reduced memory usage for large models
-- **Dataset Caching**: Faster data loading with in-memory caching
-- **Automatic Batch Size Optimization**: Find the optimal batch size for your hardware
-- **Model Caching**: Avoid reloading the same model multiple times
-- **Optimized Data Loading**: Parallel processing and efficient memory usage
-- **Performance Monitoring**: Track training speed, memory usage, and throughput
-
-For detailed information about performance optimizations, see [OPTIMIZATIONS.md](OPTIMIZATIONS.md).
-
-## Configuration
-
-### Training Configuration
-
-Training parameters can be configured in `config/training_config.py`. Key parameters include:
-
-- Learning rate and scheduler settings
-- Optimizer parameters
-- Model-specific configurations
-- Dataset-specific settings
-
-### Inference Configuration
-
-Inference parameters can be configured in `config/inference_config.py`. Key parameters include:
-
-- Generation parameters
-- Model-specific configurations
-- Dataset-specific settings
-
-## Supported Models
-
-- **SALMONN**: Speech Audio Language Music Open Neural Network
-- **Qwen2**: Qwen2 language model
-
-## Supported Datasets
-
-- **VOXCELEB**: Speaker verification dataset
-- **HVB**: Human Voice Bank dataset
-- **VOXPOPULI**: Multi-lingual speech dataset
-
-## Requirements
-
-- Python 3.8+
-- PyTorch 1.12+
-- Transformers 4.25+
-- CUDA 11.6+ (for GPU acceleration)
-
-## License
-
-[MIT License](LICENSE)
-
-## Citation
-
-If you use this framework in your research, please cite:
-
+```bash
+MODEL_TYPE=salmonn \
+CHECKPOINT_PATH=/path/to/checkpoint.pt \
+DATASET_TYPE=hvb-voxceleb-voxpopuli-meld_emotion \
+OUTPUT_DIR=/path/to/results \
+./scripts/submit_symbol_inference_job.sh
 ```
-@misc{icl-framework,
-  author = {Your Name},
-  title = {ICL Framework: A High-Performance Framework for In-Context Learning},
-  year = {2023},
-  publisher = {GitHub},
-  url = {https://github.com/yourusername/icl-framework}
-}
-``` 
+
+## Outputs
+
+Training writes under:
+- `<output_dir>/checkpoints/<run_name>/...`
+- `<output_dir>/logs/<date>/<run_name>.log`
+
+Inference writes under:
+- `<output_dir>/orchestrator_metrics/<date>/<run_name>_metrics.json`
+- `<output_dir>/orchestrator_metrics/<date>/<run_name>_predictions.json`
+- `<output_dir>/orchestrator_logs/<date>/<run_name>.log`
+
+## Evaluation Folder
+
+`eval_qwen_and_salmonn/` has been renamed to `eval_tasks/`.
+
+We can work through and simplify files in `eval_tasks/` in a separate pass.

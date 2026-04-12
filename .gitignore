@@ -5,6 +5,9 @@ results/
 logs/
 __pycache__/
 .env
-eval_qwen_and_salmonn/data/
-eval_qwen_and_salmonn/logs/
-eval_qwen_and_salmonn/*.json
+eval_tasks/data/
+eval_tasks/logs/
+eval_tasks/*.json
+
+# Local legacy stash
+archive/legacy/
