@@ -4,10 +4,17 @@
 results/
 logs/
 __pycache__/
+
+# Private Configuration
 .env
+GEMINI.md
+
+# Private/Local Folders
+archive/
+hpc/
+eval_tasks/
+
+# Evaluation junk
 eval_tasks/data/
 eval_tasks/logs/
 eval_tasks/*.json
-
-# Local legacy stash
-archive/

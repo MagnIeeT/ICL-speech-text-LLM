@@ -45,3 +45,4 @@ dependencies:
   - pip:
     - numpy<2              # Fixes the NumPy crash
     - bitsandbytes         # MUST be here (Not available in Conda)
+    - python-dotenv

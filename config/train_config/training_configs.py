@@ -66,16 +66,20 @@ class DataConfig:
     num_examples: int = 0
 
 
+from utils.environment import setup_environment, get_env_path
+
+setup_environment()
+
 @dataclass
 class TrainingConfig:
     model_type: ModelType = ModelType.SALMONN
-    salmonn_tokenizer_name: str = "lmsys/vicuna-13b-v1.1"
-    qwen_model_name: str = "Qwen/Qwen2-Audio-7B-Instruct"
+    salmonn_tokenizer_name: str = field(default_factory=lambda: get_env_path("SALMONN_TOKENIZER_NAME"))
+    qwen_model_name: str = field(default_factory=lambda: get_env_path("QWEN_MODEL_NAME"))
     lora_config: LoRAConfig = field(default_factory=LoRAConfig)
     symbol_config: SymbolConfig = field(default_factory=SymbolConfig)
     data_config: DataConfig = field(default_factory=DataConfig)
 
-    output_dir: str = "/home/leapers/weights/neeraja/ICL-speech-text-LLM/orchestrator_training"
+    output_dir: str = field(default_factory=lambda: get_env_path("BASE_OUTPUT_DIR"))
     run_name: str = "symbol_training_run"
     checkpoint_frequency: int = 1
 

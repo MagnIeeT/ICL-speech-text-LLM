@@ -1,11 +1,12 @@
+from utils.environment import get_env_path
 from .master_config import DatasetType, DatasetSplit, DatasetConfig
 
 HVB_CONFIG = DatasetConfig(
     name=DatasetType.HVB,
     paths={
-        DatasetSplit.TRAIN: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/asapp/slue-phase-2_hvb_train_5fewshots",
-        DatasetSplit.VAL: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/asapp/slue-phase-2_hvb_validation_5fewshots",
-        DatasetSplit.TEST: "/home/leapers/weights/harinis/ICL-speech-text-LLM/data/hvb_test_50fewshots",
+        DatasetSplit.TRAIN: get_env_path("HVB_TRAIN_PATH"),
+        DatasetSplit.VAL: get_env_path("HVB_VAL_PATH"),
+        DatasetSplit.TEST: get_env_path("HVB_TEST_PATH"),
     },
     prompt_template="""You are a dialogue analysis expert for banking conversations. Based on the statement below, identify all applicable dialogue actions from the following options:
 
@@ -45,8 +46,8 @@ Guidelines:
     completion_key="dialog_acts",
     text_key="text",
     audio_lookup_paths={
-        DatasetSplit.TRAIN: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/asapp/slue-phase-2_hvb_train_audio_lookup",
-        DatasetSplit.VAL: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/asapp/slue-phase-2_hvb_validation_audio_lookup",
-        DatasetSplit.TEST: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/asapp/slue-phase-2_hvb_test_audio_lookup",
+        DatasetSplit.TRAIN: get_env_path("HVB_TRAIN_LOOKUP"),
+        DatasetSplit.VAL: get_env_path("HVB_VAL_LOOKUP"),
+        DatasetSplit.TEST: get_env_path("HVB_TEST_LOOKUP"),
     },
 )

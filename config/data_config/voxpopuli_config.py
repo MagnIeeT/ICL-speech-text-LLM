@@ -1,11 +1,12 @@
+from utils.environment import get_env_path
 from .master_config import DatasetType, DatasetSplit, DatasetConfig
 
 VOXPOPULI_CONFIG = DatasetConfig(
     name=DatasetType.VOXPOPULI,
     paths={
-        DatasetSplit.TRAIN: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/asapp/slue_voxpopuli_train_5fewshots",
-        DatasetSplit.VAL: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/asapp/slue_voxpopuli_validation_5fewshots",
-        DatasetSplit.TEST: "/home/leapers/weights/harinis/ICL-speech-text-LLM/data/voxpopuli_test_50fewshots",
+        DatasetSplit.TRAIN: get_env_path("VOXPOPULI_TRAIN_PATH"),
+        DatasetSplit.VAL: get_env_path("VOXPOPULI_VAL_PATH"),
+        DatasetSplit.TEST: get_env_path("VOXPOPULI_TEST_PATH"),
     },
     prompt_template="""You are an Entity Type Classification system. For the given input, identify which of the following entity types are present:
 
@@ -25,8 +26,8 @@ Guidelines:
     completion_key="normalized_combined_ner",
     text_key="normalized_text",
     audio_lookup_paths={
-        DatasetSplit.TRAIN: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/asapp/slue_voxpopuli_train_audio_lookup",
-        DatasetSplit.VAL: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/asapp/slue_voxpopuli_validation_audio_lookup",
-        DatasetSplit.TEST: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/asapp/slue_voxpopuli_test_audio_lookup",
+        DatasetSplit.TRAIN: get_env_path("VOXPOPULI_TRAIN_LOOKUP"),
+        DatasetSplit.VAL: get_env_path("VOXPOPULI_VAL_LOOKUP"),
+        DatasetSplit.TEST: get_env_path("VOXPOPULI_TEST_LOOKUP"),
     },
 )

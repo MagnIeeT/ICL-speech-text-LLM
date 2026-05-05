@@ -224,6 +224,8 @@ def create_audio_lookup_dataset(datasets, dataset_config, source_splits=["train"
         'index': combined_indices
     }
 
+from .environment import get_env_path
+
 def main():
     # Choose dataset configuration
     # Options: "voxpopuli", "voxceleb", "hvb", "meld", "vp_nel"
@@ -234,8 +236,7 @@ def main():
     source_splits = ["train"]  # Split to pick examples FROM
     top_k = 50
     
-    PROCESSED_BASE_PATH = "/home/harinis/ICL_qwen_run/ICL-speech-text-LLM/data"# ✅ NEW (Change it to this)
-#PROCESSED_BASE_PATH = "/home/harinis/ICL_qwen_run/ICL-speech-text-LLM/data"
+    PROCESSED_BASE_PATH = get_env_path("BASE_DATA_DIR")
     # 1. Configure Dataset Metadata
     if DATASET_CONFIG == "voxpopuli":
         text_column, label_column = 'normalized_text', 'normalized_combined_ner'

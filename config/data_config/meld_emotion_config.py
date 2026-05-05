@@ -1,11 +1,12 @@
+from utils.environment import get_env_path
 from .master_config import DatasetType, DatasetSplit, DatasetConfig
 
 MELD_EMOTION_CONFIG = DatasetConfig(
     name=DatasetType.MELD_EMOTION,
     paths={
-        DatasetSplit.TRAIN: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/meld_train_5fewshots",
-        DatasetSplit.VAL: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/meld_validation_5fewshots",
-        DatasetSplit.TEST: "/home/leapers/weights/harinis/ICL-speech-text-LLM/data/meld_test_50fewshots",
+        DatasetSplit.TRAIN: get_env_path("MELD_TRAIN_PATH"),
+        DatasetSplit.VAL: get_env_path("MELD_VAL_PATH"),
+        DatasetSplit.TEST: get_env_path("MELD_TEST_PATH"),
     },
     prompt_template="""You are an emotion recognition expert. Based on the input, respond with EXACTLY ONE WORD from these options: neutral, joy, sadness, anger, fear, disgust, or surprise.
 
@@ -21,8 +22,8 @@ Guidelines:
     completion_key="emotion_label",
     text_key="text",
     audio_lookup_paths={
-        DatasetSplit.TRAIN: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/meld_train_audio_lookup",
-        DatasetSplit.VAL: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/meld_validation_audio_lookup",
-        DatasetSplit.TEST: "/home/leapers/weights/neeraja/ICL-speech-text-LLM/data/meld_test_audio_lookup",
+        DatasetSplit.TRAIN: get_env_path("MELD_TRAIN_LOOKUP"),
+        DatasetSplit.VAL: get_env_path("MELD_VAL_LOOKUP"),
+        DatasetSplit.TEST: get_env_path("MELD_TEST_LOOKUP"),
     },
 )

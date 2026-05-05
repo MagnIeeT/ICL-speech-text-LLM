@@ -7,6 +7,7 @@ import torch.nn.functional as F
 import time
 from typing import Dict, List, Optional, Tuple, Union, Any
 from contextlib import nullcontext
+from utils.environment import get_env_path
 import sys
 
 # Import PEFT for LoRA
@@ -24,9 +25,9 @@ class CustomSalmonn(nn.Module):
     
     def __init__(
         self,
-        llama_path="lmsys/vicuna-13b-v1.1",
-        whisper_path="openai/whisper-large-v2",
-        beats_path="/home/leapers/weights/SALMONN/BEATs_iter3_plus_AS2M_finetuned_on_AS2M_cpt2.pt",
+        llama_path=None,
+        whisper_path=None,
+        beats_path=None,
         lora=True,
         lora_rank=8,
         lora_alpha=32,
@@ -36,14 +37,17 @@ class CustomSalmonn(nn.Module):
     ):
         super().__init__()
         
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        llama_path = llama_path or get_env_path("LLAMA_MODEL_NAME")
+        whisper_path = whisper_path or get_env_path("WHISPER_MODEL_NAME")
+        beats_path = beats_path or get_env_path("BEATS_CKPT_PATH")
+        salmonn_ckpt = get_env_path("SALMONN_CKPT_PATH")
         # self.use_fp16 = torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7.0
         self.use_fp16 = False
         # SALMONN config
         salmonn_config = {
             "llama_path": llama_path,
             "whisper_path": whisper_path,
-            "beats_path": beats_path,
+            "beats_path": get_env_path("BEATS_CKPT_PATH"),
             "lora": True,
             "lora_rank": lora_rank,
             "lora_alpha": lora_alpha,
@@ -59,7 +63,7 @@ class CustomSalmonn(nn.Module):
             "second_stride": 0.333333,
             "speech_llama_proj_model": "",
             "freeze_speech_llama_proj": False,
-            "ckpt": "/home/leapers/weights/SALMONN/salmonn_v1.pth"
+            "ckpt": get_env_path("SALMONN_CKPT_PATH")
         }
         logging.info("=" * 80)
         logging.info("🔧 INITIALIZING CUSTOM-SALMONN MODEL")

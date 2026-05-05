@@ -12,6 +12,8 @@ from peft import LoraConfig, get_peft_model, TaskType
 
 from utils.training_utils import load_checkpoint
 
+from utils.environment import get_env_path
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -24,7 +26,7 @@ class CustomQwen(nn.Module):
     Provides a standardized interface for training and inference.
     """
     def __init__(self, 
-                 model_path: str = "Qwen/Qwen2-Audio-7B-Instruct",
+                 model_path: str = None,
                  lora: bool = True,
                  low_resource: bool = True,
                  lora_rank: int = 8,
@@ -40,6 +42,9 @@ class CustomQwen(nn.Module):
         """
         # Initialize model base
         super().__init__()
+        
+        model_path = model_path or get_env_path("QWEN_MODEL_NAME")
+        
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.use_fp16 = use_fp16
         
