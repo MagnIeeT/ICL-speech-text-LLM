@@ -45,10 +45,18 @@ class ValidationManager:
             ValidationSymbolMode.FRESH.value,
         }
 
+        is_baseline = getattr(self.config.symbol_config, "no_symbols", False) and not getattr(self.config.symbol_config, "swap_labels", False)
+
         ordered_unique: List[str] = []
         for token in tokens:
-            if token in valid and token not in ordered_unique:
-                ordered_unique.append(token)
+            if token in valid:
+                effective_token = token
+                # For baseline models, 'fixed' (training mappings) is the same as 'original' (no mappings)
+                if is_baseline and token == ValidationSymbolMode.FIXED.value:
+                    effective_token = ValidationSymbolMode.ORIGINAL.value
+                
+                if effective_token not in ordered_unique:
+                    ordered_unique.append(effective_token)
 
         if not ordered_unique:
             ordered_unique = [ValidationSymbolMode.FIXED.value]
