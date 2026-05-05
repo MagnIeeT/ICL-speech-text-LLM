@@ -12,9 +12,10 @@ GEMINI.md
 # Private/Local Folders
 archive/
 hpc/
-eval_tasks/
+eval_asr_tasks/
 
 # Evaluation junk
-eval_tasks/data/
-eval_tasks/logs/
-eval_tasks/*.json
+eval_asr_tasks/data/
+eval_asr_tasks/logs/
+eval_asr_tasks/*.json
+eval_asr_tasks/*.log
