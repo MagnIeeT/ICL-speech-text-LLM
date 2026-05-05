@@ -14,8 +14,7 @@ from utils import prepare_one_sample
 from transformers import WhisperFeatureExtractor
 
 # Attempt to load .env for paths
-from utils.environment import setup_environment, get_env_path
-setup_environment()
+from utils.environment import get_env_path
 
 def run_test():
     parser = argparse.ArgumentParser()

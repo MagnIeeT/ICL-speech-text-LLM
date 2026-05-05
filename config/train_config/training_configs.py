@@ -67,9 +67,7 @@ class DataConfig:
     num_workers: int = 2
 
 
-from utils.environment import setup_environment, get_env_path
-
-setup_environment()
+from utils.environment import get_env_path
 
 @dataclass
 class TrainingConfig:

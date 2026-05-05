@@ -8,14 +8,8 @@ import time
 from typing import Dict, List, Optional, Tuple, Union, Any
 from contextlib import nullcontext
 from utils.environment import get_env_path
-import sys
 
 # Import PEFT for LoRA
-from peft import LoraConfig, TaskType, get_peft_model
-from transformers import WhisperFeatureExtractor
-
-# Path setup for SALMONN import
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from SALMONN.models.salmonn_org import SALMONN
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', stream=sys.stdout, force=True)

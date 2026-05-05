@@ -142,6 +142,9 @@ class InferenceOrchestrator:
             self.config.data_config.max_samples = self.max_val_samples
 
             _, test_datasets = load_datasets_for_config(self.config, inference_mode=True)
+            if not test_datasets:
+                raise ValueError(f"No test datasets were loaded for {self.dataset_type}. Check environment variables and dataset paths.")
+
             self.val_dataloader = create_combined_dataloader(
                 test_datasets,
                 processor,

@@ -136,6 +136,11 @@ def main():
         )
 
         train_datasets, val_datasets = load_datasets_for_config(config)
+        if not train_datasets:
+            raise ValueError("No training datasets were loaded. Check environment variables and dataset paths.")
+        if not val_datasets:
+            logging.warning("No validation datasets were loaded.")
+
         train_dataloader = create_combined_dataloader(train_datasets, processor, config, shuffle=True)
         val_dataloader = create_combined_dataloader(val_datasets, processor, config, shuffle=False)
 
