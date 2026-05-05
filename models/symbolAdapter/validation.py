@@ -36,23 +36,8 @@ class ValidationManager:
         Resolve validation modes from config.
         Returns list of tuples: (mode_key_suffix, use_original_labels, use_dynamic_symbols)
         """
-        # Rule: If no_symbols is True, we ONLY test original labels.
-        if getattr(self.config.symbol_config, "no_symbols", False):
-            return [("original", True, False)]
-
         raw = getattr(self.config.symbol_config, "validation_modes", "fixed,original,fresh")
         tokens = [token.strip().lower() for token in raw.split(",") if token.strip()]
-
-        aliases = {
-            "both": ["fixed", "original"],
-            "all": ["fixed", "original", "fresh"],
-            "new": ["fresh"],
-            "symbols": ["fixed"],
-        }
-
-        expanded: List[str] = []
-        for token in tokens:
-            expanded.extend(aliases.get(token, [token]))
 
         valid = {
             ValidationSymbolMode.FIXED.value,
@@ -61,7 +46,7 @@ class ValidationManager:
         }
 
         ordered_unique: List[str] = []
-        for token in expanded:
+        for token in tokens:
             if token in valid and token not in ordered_unique:
                 ordered_unique.append(token)
 

@@ -260,7 +260,7 @@ def main():
         "--validation_modes",
         type=str,
         default=None,
-        help="Comma-separated validation symbol modes: fixed,original,fresh (aliases: both,all,new)",
+        help="Comma-separated validation symbol modes: fixed,original,fresh",
     )
 
     args = parser.parse_args()

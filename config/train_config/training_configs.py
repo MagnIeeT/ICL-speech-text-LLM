@@ -243,7 +243,7 @@ def parse_training_args() -> argparse.Namespace:
         "--validation_modes",
         type=str,
         default="fixed,original,fresh",
-        help="Comma-separated validation symbol modes: fixed,original,fresh (aliases: both,all,new)",
+        help="Comma-separated validation symbol modes: fixed,original,fresh",
     )
     parser.add_argument(
         "--symbol_update_strategy",

@@ -100,6 +100,20 @@ The pipeline is highly configurable via CLI arguments or the `.env` file. Below 
 - `--lora_epochs`: Number of training epochs.
 - `--gradient_accumulation_steps`: Steps to accumulate gradients before an optimizer update.
 
+### Validation Modes & Robustness Testing
+
+The pipeline supports three distinct validation modes to thoroughly evaluate the robustness of the Symbol Adapter:
+
+1.  **Fixed-Symbols (`fixed`)**: Uses the same label-to-symbol mappings that the model was trained on during the current epoch. This measures how well the model learned the specific symbols provided during training.
+2.  **Original Labels (`original`)**: Bypasses the symbol manager entirely and uses the natural language labels (e.g., "positive", "negative"). This provides a baseline to see if symbol training degraded the model's original language understanding.
+3.  **Fresh-Symbols (`fresh`)**: Generates brand new, randomized symbols never seen during training. This is the **ultimate robustness test**, measuring if the model has learned the *concept* of in-context mapping rather than just memorizing specific symbols.
+
+#### Using Label Swapping (`--swap_labels`)
+You can combine symbols with the label swapping feature to further test robustness. 
+- When `swap_labels` is enabled, the system flips the semantics of the original labels (e.g., "positive" becomes "negative").
+- In `fixed` or `fresh` symbol modes, the model must learn this flipped mapping from the provided few-shot examples.
+- **Note**: If `no_symbols` is active, the `original` validation mode will skip the swap. To test swapped labels without random symbols, ensure `fixed` is included in your validation modes.
+
 ## Active Datasets
 
 Current active dataset types: `voxceleb`, `hvb`, `voxpopuli`, `meld_emotion`. These are defined and registered in `config/data_config/master_config.py`.

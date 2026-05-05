@@ -182,7 +182,8 @@ class SymbolManager:
         random_mask: bool = False,
         force_new_symbols: bool = False,
     ) -> Dict[str, Any]:
-        if self.no_symbols and not self.swap_labels:
+        # If no specific mapping/epoch requested AND manager is in no_symbols mode, return original batch
+        if mappings is None and epoch is None and self.no_symbols and not self.swap_labels:
             return batch
 
         if mappings is not None:
@@ -192,6 +193,7 @@ class SymbolManager:
         else:
             symbol_mappings = self.get_current_symbols()
 
+        # If we still have no mappings (e.g. baseline requested current symbols), return batch
         if not symbol_mappings:
             return batch
 
@@ -222,7 +224,8 @@ class SymbolManager:
         epoch: Optional[int] = None,
         mappings: Optional[Dict[str, str]] = None,
     ) -> str:
-        if self.no_symbols and not self.swap_labels:
+        # If no specific mapping/epoch provided AND manager is in no_symbols mode, return original text
+        if mappings is None and epoch is None and self.no_symbols and not self.swap_labels:
             return text
 
         if mappings is not None:
