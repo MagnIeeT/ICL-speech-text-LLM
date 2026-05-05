@@ -124,7 +124,7 @@ def create_combined_dataloader(datasets, processor, config: TrainingConfig, num_
         batch_size=batch_size,
         shuffle=shuffle,
         collate_fn=processor.collate_batch,
-        num_workers=2,
+        num_workers=config.data_config.num_workers,
         pin_memory=True,
         drop_last=True,
     )

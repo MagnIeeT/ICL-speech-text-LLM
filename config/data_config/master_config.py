@@ -24,6 +24,7 @@ class DatasetConfig:
     valid_labels: Optional[List[str]]
     completion_key: str
     text_key: str
+    is_multi_label: bool = False
     audio_lookup_paths: Dict[DatasetSplit, str] = None
     label_mapping: Dict[str, str] = None
 

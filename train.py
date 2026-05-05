@@ -21,14 +21,6 @@ except ImportError:
     Qwen2AudioProcessor = None
 
 
-def setup_tokenizer(model_type: str = "salmonn"):
-    """Legacy tokenizer helper."""
-    llama_tokenizer = LlamaTokenizer.from_pretrained("lmsys/vicuna-13b-v1.1", use_fast=False)
-    llama_tokenizer.add_special_tokens({"pad_token": "[PAD]"})
-    llama_tokenizer.padding_side = "right"
-    return llama_tokenizer
-
-
 def setup_tokenizer_and_processor(config):
     """Build tokenizer + processor for the selected backend."""
     model_type = config.model_type.value

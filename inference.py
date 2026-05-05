@@ -37,6 +37,7 @@ class InferenceOrchestrator:
         no_symbols: bool = False,
         validation_modes: Optional[str] = None,
         swap_labels: bool = False,
+        num_workers: int = 2,
     ):
         self.checkpoint_path = checkpoint_path
         self.dataset_type = dataset_type
@@ -47,35 +48,36 @@ class InferenceOrchestrator:
         self.no_symbols = no_symbols
         self.validation_modes = validation_modes
         self.swap_labels = swap_labels
-
-        self.results_base = output_dir or os.path.join(os.getcwd(), "results")
-        self.metrics_dir = os.path.join(self.results_base, "orchestrator_metrics")
-        self.logs_dir = os.path.join(self.results_base, "orchestrator_logs")
-
-        current_date = datetime.now().strftime("%Y-%m-%d")
-        self.metrics_output_dir = os.path.join(self.metrics_dir, current_date)
-        self.logs_output_dir = os.path.join(self.logs_dir, current_date)
-        os.makedirs(self.metrics_output_dir, exist_ok=True)
-        os.makedirs(self.logs_output_dir, exist_ok=True)
-
         self.run_name = run_name
+        self.num_workers = num_workers
+
+        # Initial config setup
+        self.config = TrainingConfig()
+        if output_dir:
+            self.config.output_dir = output_dir
+        if run_name:
+            self.config.run_name = run_name
+        self.config.data_config.num_workers = num_workers
+
         self._setup_logging()
 
         self.model = None
-        self.config = None
         self.symbol_manager = None
         self.validator = None
         self.val_dataloader = None
 
     def _setup_logging(self):
-        log_file = os.path.join(self.logs_output_dir, f"{self.run_name}.log")
+        logs_dir = self.config.get_logs_dir()
+        os.makedirs(logs_dir, exist_ok=True)
+        log_file = os.path.join(logs_dir, f"{self.run_name}.log")
+        
         for handler in logging.root.handlers[:]:
             logging.root.removeHandler(handler)
 
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s - %(levelname)s - %(message)s",
-            handlers=[logging.StreamHandler()],
+            handlers=[logging.StreamHandler(), logging.FileHandler(log_file)],
         )
         logging.info("Logging setup complete: %s", log_file)
 
@@ -88,9 +90,17 @@ class InferenceOrchestrator:
 
                 if "config" not in checkpoint:
                     raise ValueError("Checkpoint missing configuration")
-                self.config = checkpoint["config"]
+                
+                # Merge checkpoint config with current run-specific settings
+                old_config = checkpoint["config"]
+                # Keep output paths and run name from current run if provided
+                output_dir = self.config.output_dir
+                run_name = self.config.run_name
+                
+                self.config = old_config
+                self.config.output_dir = output_dir
+                self.config.run_name = run_name
             else:
-                self.config = TrainingConfig()
                 self.config.model_type = ModelType(self.model_type)
 
             self.config.data_config.dataset_type = self.dataset_type
@@ -194,11 +204,14 @@ class InferenceOrchestrator:
         return results["validation_scores"], results["detailed_metrics"], results["all_predictions"]
 
     def save_results(self, detailed_metrics: Dict[str, Any], all_predictions: List[Dict[str, Any]]):
-        metrics_file = os.path.join(self.metrics_output_dir, f"{self.run_name}_metrics.json")
+        metrics_dir = self.config.get_metrics_dir()
+        os.makedirs(metrics_dir, exist_ok=True)
+        
+        metrics_file = os.path.join(metrics_dir, f"{self.run_name}_metrics.json")
         with open(metrics_file, "w") as handle:
             json.dump(detailed_metrics, handle, indent=2, default=str)
 
-        predictions_file = os.path.join(self.metrics_output_dir, f"{self.run_name}_predictions.json")
+        predictions_file = os.path.join(metrics_dir, f"{self.run_name}_predictions.json")
         with open(predictions_file, "w") as handle:
             json.dump(all_predictions, handle, indent=2, default=str)
 
@@ -224,6 +237,7 @@ def main():
     parser.add_argument("--device", type=str, default="cuda:0", help="Device to use for inference")
     parser.add_argument("--max_val_samples", type=int, default=0, help="Maximum validation samples (0 = all)")
     parser.add_argument("--num_examples", type=int, default=5, help="Number of few-shot examples")
+    parser.add_argument("--num_workers", type=int, default=2, help="Number of data loading workers")
     parser.add_argument("--output_dir", type=str, default=None, help="Output directory for results")
     parser.add_argument("--run_name", type=str, required=True)
     parser.add_argument("--no_symbols", action="store_true")
@@ -254,6 +268,7 @@ def main():
             no_symbols=args.no_symbols,
             validation_modes=args.validation_modes,
             swap_labels=args.swap_labels,
+            num_workers=args.num_workers,
         )
         results = orchestrator.run_complete_inference()
         print("Inference completed successfully")

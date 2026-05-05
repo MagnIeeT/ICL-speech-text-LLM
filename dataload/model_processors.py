@@ -12,7 +12,15 @@ class ModelProcessor(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def format_prompt(self, template: str, text: str, examples: Optional[List[Dict]] = None) -> str:
+    def format_prompt(
+        self,
+        template: str,
+        text: str,
+        examples: Optional[List[Dict]] = None,
+        input_mode: str = "speech_only",
+        fewshot_mode: str = "text",
+        dataset_type: Optional[Any] = None,
+    ) -> str:
         pass
 
     @abc.abstractmethod

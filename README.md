@@ -26,42 +26,79 @@ ICL-speech-text-LLM/
     conda activate salmonn
     ```
 
-2.  **Configuration:**
-    Copy the `.env.example` file to `.env` and fill in your local paths and model identifiers.
+2.  **Configuration (.env):**
+    Copy `.env.example` to `.env` and configure your local paths. This is **required** as the code uses these variables to avoid hardcoded paths.
     ```bash
     cp .env.example .env
-    # Edit .env to set your data, checkpoint, and base model paths
     ```
-
-## Base Models
-
-The pipeline supports the following base models by default (configurable in `.env`):
-- **SALMONN:** Uses `lmsys/vicuna-13b-v1.1` as the LLM and `openai/whisper-large-v2` for audio features.
-- **Qwen2-Audio:** Uses `Qwen/Qwen2-Audio-7B-Instruct`.
-
-Ensure you have the necessary permissions to access these models on HuggingFace if you are downloading them for the first time.
+    Key variables to set:
+    - `SALMONN_CKPT_PATH`: Path to the `salmonn_v1.pth` file.
+    - `BEATS_CKPT_PATH`: Path to the `BEATs_iter3_plus_AS2M_finetuned_on_AS2M_cpt2.pt` file.
+    - `WHISPER_MODEL_NAME`: e.g., `openai/whisper-large-v2`.
+    - `LLAMA_MODEL_NAME`: e.g., `lmsys/vicuna-13b-v1.1`.
+    - `VOXCELEB_TRAIN_PATH`, etc.: Paths to your local dataset splits.
 
 ## Usage
 
-### Training
-
+### Training (HPC)
+The HPC scripts are now self-contained. You can edit the "Job Configuration" block at the top of the script and run it without passing external environment variables.
 ```bash
-python train.py \
-  --model_type salmonn \
-  --dataset_type voxceleb \
-  --output_dir ./results/symbol_training \
-  --run_name my_train_run
+# 1. Edit the config block in hpc/submit_symbol_training_job.sh
+# 2. Run the script
+./hpc/submit_symbol_training_job.sh
 ```
 
-### Inference
-
+### Inference (HPC)
+Similarly for inference:
 ```bash
-python inference.py \
-  --model_type salmonn \
-  --checkpoint_path /path/to/checkpoint.pt \
-  --dataset_type voxceleb \
-  --run_name my_infer_run
+# 1. Edit CHECKPOINT_PATH and other values in hpc/submit_symbol_inference_job.sh
+# 2. Run the script
+./hpc/submit_symbol_inference_job.sh
 ```
+
+### ASR Evaluation (HPC)
+For ASR tasks:
+```bash
+./eval_asr_tasks/submit_eval.sh
+```
+
+### Local Execution
+You can still run the scripts directly. They will automatically load paths from your `.env` file.
+```bash
+python train.py --model_type salmonn --dataset_type hvb --run_name my_test
+```
+
+## Configuration Parameters
+
+The pipeline is highly configurable via CLI arguments or the `.env` file. Below are the key parameters:
+
+### Core Settings
+- `--model_type`: Choose between `salmonn` or `qwen` (default: `salmonn`).
+- `--device`: Target device, e.g., `cuda:0` or `cpu`.
+- `--run_name`: A unique identifier for the run (used for logging and checkpoints).
+
+### Symbol Adapter Strategy
+- `--no_symbols`: (Boolean) If set, disables symbol replacement and uses original labels (Baseline mode).
+- `--dynamic_symbols`: (Boolean) If set, generates new symbol-to-label mappings for every epoch.
+- `--symbol_update_strategy`: 
+  - `per_epoch`: Mappings are fixed for the entire epoch.
+  - `per_instance`: Each training sample gets a unique, randomized symbol mapping.
+- `--swap_labels`: (Boolean) For binary/categorical tasks, flips the label semantics (e.g., positive becomes negative) to test robustness.
+- `--validation_modes`: Comma-separated list of modes to test during validation:
+  - `fixed`: Uses the same symbol mappings as the training set.
+  - `original`: Uses the base model's original natural language labels.
+  - `fresh`: Generates brand new symbol mappings never seen during training.
+
+### Data & In-Context Learning (ICL)
+- `--dataset_type`: Hyphen-joined list of datasets (e.g., `hvb-voxceleb`). Active: `voxceleb`, `hvb`, `voxpopuli`, `meld_emotion`.
+- `--max_samples`: Total training samples per dataset (0 = all).
+- `--num_examples`: Number of few-shot examples to include in the prompt.
+- `--num_workers`: Number of data loading threads (increase for faster audio processing).
+
+### LoRA Hyperparameters
+- `--lora_lr`: Learning rate for LoRA weights (default: `1e-5`).
+- `--lora_epochs`: Number of training epochs.
+- `--gradient_accumulation_steps`: Steps to accumulate gradients before an optimizer update.
 
 ## Active Datasets
 

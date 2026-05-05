@@ -45,18 +45,21 @@ class SymbolTrainingOrchestrator:
         self._setup_training_environment()
 
     def _setup_training_environment(self):
-        os.makedirs(self.config.output_dir, exist_ok=True)
-        os.makedirs(os.path.join(self.config.output_dir, "checkpoints"), exist_ok=True)
+        os.makedirs(self.config.checkpoint_dir, exist_ok=True)
+        os.makedirs(self.config.metrics_dir, exist_ok=True)
+        os.makedirs(self.config.logs_dir, exist_ok=True)
 
-        train_dir = self.config.get_training_output_dir()
-        os.makedirs(train_dir, exist_ok=True)
+        checkpoint_dir = self.config.get_checkpoint_dir()
+        os.makedirs(checkpoint_dir, exist_ok=True)
 
-        config_path = os.path.join(train_dir, "training_config.json")
+        config_path = os.path.join(checkpoint_dir, "training_config.json")
         with open(config_path, "w") as f:
             json.dump(self.config.to_dict(), f, indent=2)
 
         logging.info("Training environment setup complete")
-        logging.info(f"Output directory: {self.config.output_dir}")
+        logging.info(f"Checkpoint directory: {checkpoint_dir}")
+        logging.info(f"Metrics directory: {self.config.get_metrics_dir()}")
+        logging.info(f"Logs directory: {self.config.get_logs_dir()}")
 
     def _setup_lora_optimizer(self):
         lora_params = []

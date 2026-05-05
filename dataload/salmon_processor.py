@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_sequence
 
 from config.data_config.master_config import DatasetType
+from utils.environment import get_env_path
 from .model_processors import ModelProcessor
 
 logger = logging.getLogger(__name__)
@@ -17,7 +18,7 @@ class SalmonProcessor(ModelProcessor):
     def __init__(self, tokenizer, max_length: int = 128):
         from transformers import WhisperFeatureExtractor
 
-        whisper_path = "openai/whisper-large-v2"
+        whisper_path = get_env_path("WHISPER_MODEL_NAME", "openai/whisper-large-v2")
         logger.info("Initializing WhisperFeatureExtractor from %s", whisper_path)
         self.processor = WhisperFeatureExtractor.from_pretrained(whisper_path)
         self.tokenizer = tokenizer

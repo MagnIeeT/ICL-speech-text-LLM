@@ -64,6 +64,7 @@ class DataConfig:
     val_frequency: int = 1
     val_dataset_type: str = "voxceleb-hvb-meld_emotion-voxpopuli"
     num_examples: int = 0
+    num_workers: int = 2
 
 
 from utils.environment import setup_environment, get_env_path
@@ -80,6 +81,10 @@ class TrainingConfig:
     data_config: DataConfig = field(default_factory=DataConfig)
 
     output_dir: str = field(default_factory=lambda: get_env_path("BASE_OUTPUT_DIR"))
+    checkpoint_dir: str = field(default_factory=lambda: get_env_path("CHECKPOINT_DIR"))
+    metrics_dir: str = field(default_factory=lambda: get_env_path("METRICS_DIR"))
+    logs_dir: str = field(default_factory=lambda: get_env_path("LOGS_DIR"))
+    
     run_name: str = "symbol_training_run"
     checkpoint_frequency: int = 1
 
@@ -94,9 +99,27 @@ class TrainingConfig:
             raise ValueError("Batch size must be positive")
         if self.data_config.val_batch_size is None:
             self.data_config.val_batch_size = self.data_config.batch_size
+            
+        # Fallback to output_dir if granular paths are not set
+        if not self.checkpoint_dir:
+            self.checkpoint_dir = os.path.join(self.output_dir, "checkpoints")
+        if not self.metrics_dir:
+            self.metrics_dir = os.path.join(self.output_dir, "metrics")
+        if not self.logs_dir:
+            self.logs_dir = os.path.join(self.output_dir, "logs")
 
     def get_training_output_dir(self) -> str:
-        return os.path.join(self.output_dir, "checkpoints", self.run_name)
+        """Legacy helper, now points to checkpoint subdir."""
+        return os.path.join(self.checkpoint_dir, self.run_name)
+        
+    def get_checkpoint_dir(self) -> str:
+        return os.path.join(self.checkpoint_dir, self.run_name)
+
+    def get_metrics_dir(self) -> str:
+        return os.path.join(self.metrics_dir, self.run_name)
+
+    def get_logs_dir(self) -> str:
+        return os.path.join(self.logs_dir, self.run_name)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -128,8 +151,12 @@ class TrainingConfig:
                 "val_batch_size": self.data_config.val_batch_size,
                 "max_samples": self.data_config.max_samples,
                 "val_max_samples": self.data_config.val_max_samples,
+                "num_workers": self.data_config.num_workers,
             },
             "output_dir": self.output_dir,
+            "checkpoint_dir": self.checkpoint_dir,
+            "metrics_dir": self.metrics_dir,
+            "logs_dir": self.logs_dir,
             "run_name": self.run_name,
             "device": self.device,
         }
@@ -161,6 +188,7 @@ class TrainingConfig:
             max_samples=args.max_samples,
             val_max_samples=200 if args.max_samples == 0 else min(200, args.max_samples),
             split=getattr(args, "split", "test"),
+            num_workers=getattr(args, "num_workers", 2),
         )
 
         return cls(
@@ -170,7 +198,10 @@ class TrainingConfig:
             lora_config=lora_config,
             symbol_config=symbol_config,
             data_config=data_config,
-            output_dir=args.output_dir,
+            output_dir=getattr(args, "output_dir", get_env_path("BASE_OUTPUT_DIR")),
+            checkpoint_dir=getattr(args, "checkpoint_dir", get_env_path("CHECKPOINT_DIR")),
+            metrics_dir=getattr(args, "metrics_dir", get_env_path("METRICS_DIR")),
+            logs_dir=getattr(args, "logs_dir", get_env_path("LOGS_DIR")),
             run_name=args.run_name,
             device=args.device,
         )
@@ -198,6 +229,7 @@ def parse_training_args() -> argparse.Namespace:
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--max_samples", type=int, default=100)
+    parser.add_argument("--num_workers", type=int, default=2)
 
     parser.add_argument("--lora_lr", type=float, default=1e-5)
     parser.add_argument("--lora_epochs", type=int, default=5)
@@ -220,7 +252,10 @@ def parse_training_args() -> argparse.Namespace:
         choices=["per_epoch", "per_instance"],
     )
 
-    parser.add_argument("--output_dir", type=str, required=True)
+    parser.add_argument("--output_dir", type=str, default=None)
+    parser.add_argument("--checkpoint_dir", type=str, default=None)
+    parser.add_argument("--metrics_dir", type=str, default=None)
+    parser.add_argument("--logs_dir", type=str, default=None)
     parser.add_argument("--run_name", type=str, required=True)
 
     args = parser.parse_args()

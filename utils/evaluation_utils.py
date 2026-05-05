@@ -162,15 +162,15 @@ def evaluate_predictions(predictions: List[Dict[str, Any]], dataset_type: Datase
                 }
             )
 
-        if dataset_type in [DatasetType.VOXCELEB, DatasetType.MELD_EMOTION]:
+        if not config.is_multi_label:
             return _evaluate_single_label(normalized_rows, valid_labels)
 
-        if dataset_type in [DatasetType.HVB, DatasetType.VOXPOPULI]:
+        if config.is_multi_label:
             if dataset_type == DatasetType.VOXPOPULI and "none" not in valid_labels:
                 valid_labels = valid_labels + ["none"]
             return _evaluate_multi_label(normalized_rows, valid_labels)
 
-        return {"accuracy": 0.0, "error": f"Unsupported dataset type: {dataset_type}"}
+        return {"accuracy": 0.0, "error": f"Unsupported dataset configuration for: {dataset_type}"}
 
     except Exception as exc:
         logger.error("Error in evaluate_predictions: %s", exc)
