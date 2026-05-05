@@ -142,15 +142,11 @@ class SymbolTrainingOrchestrator:
 
         progress_bar.close()
         return total_loss / max(num_batches, 1)
-
     def _run_validation(self, epoch: int) -> Dict[str, Any]:
         return self.validator.run_comprehensive_validation(
             model=self.model,
             val_dataloader=self.val_dataloader,
             epoch=epoch,
-            phase="lora",
-            cycle=0,
-            step=None,
         )
 
     def _save_checkpoint(self, epoch: int, checkpoint_type: str):

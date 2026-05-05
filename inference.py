@@ -198,10 +198,24 @@ class InferenceOrchestrator:
             model=self.model,
             val_dataloader=self.val_dataloader,
             epoch=0,
-            phase="lora",
             symbol_mappings=self.current_mappings,
         )
-        return results["validation_scores"], results["detailed_metrics"], results["all_predictions"]
+
+        validation_scores = {}
+        detailed_metrics = {}
+        all_predictions = []
+        
+        for mode, ds_metrics in results["all_modes"].items():
+            for ds_name, m in ds_metrics.items():
+                key = f"{mode}_{ds_name}"
+                validation_scores[key] = m["score"]
+                detailed_metrics[key] = m["detailed"]
+                if m.get("predictions"):
+                    for p in m["predictions"]:
+                        p["validation_mode"] = mode
+                    all_predictions.extend(m["predictions"])
+
+        return validation_scores, detailed_metrics, all_predictions
 
     def save_results(self, detailed_metrics: Dict[str, Any], all_predictions: List[Dict[str, Any]]):
         metrics_dir = self.config.get_metrics_dir()
