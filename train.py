@@ -45,40 +45,28 @@ def setup_tokenizer_and_processor(config):
 
 
 def extract_dataset_labels(config: TrainingConfig) -> List[str]:
-    """Extract merged label vocabulary from validation datasets."""
-    dataset_type_str = config.data_config.val_dataset_type
-    dataset_names = dataset_type_str.split("-") if "-" in dataset_type_str else [dataset_type_str]
-
+    """Extract merged label vocabulary from ALL registered datasets."""
+    from config.data_config.master_config import DATASET_CONFIGS
+    
     all_valid_labels = set()
-    for dataset_name in dataset_names:
-        try:
-            dataset_type = DatasetType(dataset_name)
-            dataset_config = get_dataset_config(dataset_type)
+    for dataset_config in DATASET_CONFIGS.values():
+        if dataset_config.valid_labels:
             all_valid_labels.update(dataset_config.valid_labels)
-        except Exception as exc:
-            logging.warning("Could not get labels for %s: %s", dataset_name, exc)
 
     dataset_labels = sorted(list(all_valid_labels))
-    logging.info("Extracted dataset labels: %s", dataset_labels)
+    logging.info("Extracted global dataset labels (count: %d)", len(dataset_labels))
     return dataset_labels
 
 
 def extract_dataset_labels_dict(config: TrainingConfig) -> Dict[str, List[str]]:
-    """Extract per-dataset label vocabulary."""
-    dataset_type_str = config.data_config.val_dataset_type
-    dataset_names = dataset_type_str.split("-") if "-" in dataset_type_str else [dataset_type_str]
-
+    """Extract per-dataset label vocabulary for all registered datasets."""
+    from config.data_config.master_config import DATASET_CONFIGS
+    
     dataset_labels_dict = {}
-    for dataset_name in dataset_names:
-        try:
-            dataset_type = DatasetType(dataset_name)
-            dataset_config = get_dataset_config(dataset_type)
-            dataset_labels_dict[dataset_name] = sorted(list(dataset_config.valid_labels))
-        except Exception as exc:
-            logging.warning("Could not get labels for %s: %s", dataset_name, exc)
-            dataset_labels_dict[dataset_name] = []
+    for name, dataset_config in DATASET_CONFIGS.items():
+        if dataset_config.valid_labels:
+            dataset_labels_dict[name.value] = sorted(list(dataset_config.valid_labels))
 
-    logging.info("Extracted dataset labels: %s", dataset_labels_dict)
     return dataset_labels_dict
 
 

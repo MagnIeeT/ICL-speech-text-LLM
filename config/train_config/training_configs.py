@@ -62,7 +62,7 @@ class DataConfig:
     val_batch_size: Optional[int] = 1
     val_max_samples: int = 200
     val_frequency: int = 1
-    val_dataset_type: str = "voxceleb-hvb-meld_emotion-voxpopuli"
+    val_dataset_type: Optional[str] = None
     num_examples: int = 0
     num_workers: int = 2
 
@@ -183,7 +183,7 @@ class TrainingConfig:
 
         data_config = DataConfig(
             dataset_type=args.dataset_type,
-            val_dataset_type=getattr(args, "val_dataset_type", args.dataset_type),
+            val_dataset_type=args.val_dataset_type if args.val_dataset_type else args.dataset_type,
             batch_size=args.batch_size,
             max_samples=args.max_samples,
             val_max_samples=200 if args.max_samples == 0 else min(200, args.max_samples),
