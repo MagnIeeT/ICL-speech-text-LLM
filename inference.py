@@ -10,6 +10,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 
+from utils.environment import setup_environment
+setup_environment()
+
 from config.train_config.training_configs import ModelType, TrainingConfig
 from models.symbolAdapter.symbol_manager import SymbolManager
 from models.symbolAdapter.validation import ValidationManager

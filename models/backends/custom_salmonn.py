@@ -31,6 +31,7 @@ class CustomSalmonn(nn.Module):
     ):
         super().__init__()
         
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         llama_path = llama_path or get_env_path("LLAMA_MODEL_NAME")
         whisper_path = whisper_path or get_env_path("WHISPER_MODEL_NAME")
         beats_path = beats_path or get_env_path("BEATS_CKPT_PATH")

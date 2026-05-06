@@ -8,6 +8,9 @@ from typing import Dict, List
 import torch
 from transformers import LlamaTokenizer
 
+from utils.environment import setup_environment
+setup_environment()
+
 from config.data_config.master_config import DatasetType, get_dataset_config
 from config.train_config.training_configs import TrainingConfig, parse_training_args
 from dataload.model_processors import get_processor
