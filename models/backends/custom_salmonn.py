@@ -10,7 +10,7 @@ from contextlib import nullcontext
 from utils.environment import get_env_path
 
 # Import PEFT for LoRA
-from SALMONN.models.salmonn_org import SALMONN
+from SALMONN.models.salmonn import SALMONN
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', stream=sys.stdout, force=True)
 

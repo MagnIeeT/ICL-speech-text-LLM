@@ -32,8 +32,8 @@ class ModelType(Enum):
 
 @dataclass
 class LoRAConfig:
-    rank: int = 64
-    alpha: int = 128
+    rank: int = 8
+    alpha: int = 32
     dropout: float = 0.1
     learning_rate: float = 1e-5
     weight_decay: float = 0.01
