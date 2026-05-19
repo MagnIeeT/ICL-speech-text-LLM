@@ -64,7 +64,7 @@ mkdir -p "${LOG_DIR}"
 if [[ "${model_type}" == "qwen" ]]; then
     CONDA_ENV="qwen2_new"
 else
-    CONDA_ENV="salmon2"
+    CONDA_ENV="salmonn2"
 fi
 
 echo "============================================================"
