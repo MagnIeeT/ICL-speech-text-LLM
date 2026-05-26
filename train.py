@@ -9,6 +9,7 @@ import torch
 from transformers import LlamaTokenizer
 
 from utils.environment import setup_environment
+
 setup_environment()
 
 from config.data_config.master_config import DatasetType, get_dataset_config
@@ -37,7 +38,22 @@ def setup_tokenizer_and_processor(config):
         return tokenizer, processor
 
     if model_type == "qwen":
+        if Qwen2AudioProcessor is None:
+            raise ImportError("Qwen2AudioProcessor is not available. Please install/upgrade transformers.")
         input_processor = Qwen2AudioProcessor.from_pretrained(config.qwen_model_name, trust_remote_code=True)
+        processor = get_processor(config.model_type.value, processor=input_processor)
+        tokenizer = input_processor.tokenizer
+        tokenizer.add_special_tokens({"pad_token": "[PAD]"})
+        tokenizer.padding_side = "right"
+        return tokenizer, processor
+
+    if model_type == "flamingo":
+        from transformers import AutoProcessor as _AutoProcessor
+
+        input_processor = _AutoProcessor.from_pretrained(
+            config.flamingo_model_name,
+            trust_remote_code=True,
+        )
         processor = get_processor(config.model_type.value, processor=input_processor)
         tokenizer = input_processor.tokenizer
         tokenizer.add_special_tokens({"pad_token": "[PAD]"})
@@ -50,7 +66,7 @@ def setup_tokenizer_and_processor(config):
 def extract_dataset_labels(config: TrainingConfig) -> List[str]:
     """Extract merged label vocabulary from ALL registered datasets."""
     from config.data_config.master_config import DATASET_CONFIGS
-    
+
     all_valid_labels = set()
     for dataset_config in DATASET_CONFIGS.values():
         if dataset_config.valid_labels:
@@ -64,7 +80,7 @@ def extract_dataset_labels(config: TrainingConfig) -> List[str]:
 def extract_dataset_labels_dict(config: TrainingConfig) -> Dict[str, List[str]]:
     """Extract per-dataset label vocabulary for all registered datasets."""
     from config.data_config.master_config import DATASET_CONFIGS
-    
+
     dataset_labels_dict = {}
     for name, dataset_config in DATASET_CONFIGS.items():
         if dataset_config.valid_labels:
@@ -107,7 +123,21 @@ def initialize_model(config: TrainingConfig, tokenizer, symbol_manager) -> torch
             lora_dropout=config.lora_config.dropout,
         )
 
-    raise ValueError(f"Unknown model_type: {model_type}. Supported types are 'salmonn' and 'qwen'")
+    if model_type == "flamingo":
+        from models.backends.custom_flamingo import CustomFlamingo
+
+        return CustomFlamingo(
+            model_path=config.flamingo_model_name,
+            device=config.device,
+            lora=True,
+            lora_rank=config.lora_config.rank,
+            lora_alpha=config.lora_config.alpha,
+            lora_dropout=config.lora_config.dropout,
+        )
+
+    raise ValueError(
+        f"Unknown model_type: {model_type}. Supported types are 'salmonn', 'qwen' and 'flamingo'"
+    )
 
 
 def setup_logging() -> None:
@@ -129,6 +159,7 @@ def main():
         logging.info("Training configuration: %s", config.to_dict())
 
         tokenizer, processor = setup_tokenizer_and_processor(config)
+
         dataset_labels = extract_dataset_labels(config)
         symbol_manager = SymbolManager(
             original_labels=dataset_labels,
@@ -136,7 +167,7 @@ def main():
             dynamic_per_epoch=config.symbol_config.dynamic_symbols,
             symbol_type=config.symbol_config.symbol_type,
             no_symbols=config.symbol_config.no_symbols,
-              swap_labels=config.symbol_config.swap_labels,
+            swap_labels=config.symbol_config.swap_labels,
         )
 
         train_datasets, val_datasets = load_datasets_for_config(config)
@@ -159,6 +190,7 @@ def main():
         orchestrator = SymbolTrainingOrchestrator(
             config=config,
             model=model,
+            processor=processor,  # ✅ NEW: tokenize after symbol replacement inside orchestrator
             train_dataloader=train_dataloader,
             val_dataloader=val_dataloader,
             tokenizer=tokenizer,
@@ -178,6 +210,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-

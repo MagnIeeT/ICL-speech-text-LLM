@@ -174,6 +174,49 @@ class SymbolManager:
 
         return transformed
 
+    # ✅ ADDED for Flamingo compatibility: Handles complex dictionary-based prompts
+    def _apply_mapping_to_prompt_obj(self, prompt_obj: Any, mapping: Dict[str, str], active_keys: set) -> Any:
+        if not mapping:
+            return prompt_obj
+
+        # Old Qwen/Salmonn behavior (prompt is a plain string)
+        if isinstance(prompt_obj, str):
+            return self._apply_mapping_safe(prompt_obj, mapping, active_keys)
+
+        # New Flamingo behavior (prompt is a dict with a "conversation" list)
+        if isinstance(prompt_obj, dict) and "conversation" in prompt_obj:
+            new_obj = dict(prompt_obj)
+            conv = prompt_obj.get("conversation", [])
+
+            new_conv = []
+            for msg in conv:
+                if not isinstance(msg, dict):
+                    new_conv.append(msg)
+                    continue
+
+                new_msg = dict(msg)
+                content = new_msg.get("content")
+
+                if isinstance(content, str):
+                    new_msg["content"] = self._apply_mapping_safe(content, mapping, active_keys)
+                elif isinstance(content, list):
+                    new_content = []
+                    for part in content:
+                        if isinstance(part, dict) and part.get("type") == "text" and isinstance(part.get("text"), str):
+                            new_part = dict(part)
+                            new_part["text"] = self._apply_mapping_safe(new_part["text"], mapping, active_keys)
+                            new_content.append(new_part)
+                        else:
+                            new_content.append(part)
+                    new_msg["content"] = new_content
+
+                new_conv.append(new_msg)
+
+            new_obj["conversation"] = new_conv
+            return new_obj
+
+        return prompt_obj
+
     def replace_symbols_in_batch(
         self,
         batch: Dict[str, Any],
@@ -182,7 +225,6 @@ class SymbolManager:
         random_mask: bool = False,
         force_new_symbols: bool = False,
     ) -> Dict[str, Any]:
-        # If no specific mapping/epoch requested AND manager is in no_symbols mode, return original batch
         if mappings is None and epoch is None and self.no_symbols and not self.swap_labels:
             return batch
 
@@ -193,7 +235,6 @@ class SymbolManager:
         else:
             symbol_mappings = self.get_current_symbols()
 
-        # If we still have no mappings (e.g. baseline requested current symbols), return batch
         if not symbol_mappings:
             return batch
 
@@ -205,9 +246,11 @@ class SymbolManager:
         else:
             masked_labels = set(symbol_mappings.keys())
 
+        # ✅ UPDATED: Calls the new _apply_mapping_to_prompt_obj method
         if "prompt" in batch:
             updated_batch["prompt"] = [
-                self._apply_mapping_safe(prompt, symbol_mappings, masked_labels) for prompt in batch["prompt"]
+                self._apply_mapping_to_prompt_obj(prompt, symbol_mappings, masked_labels)
+                for prompt in batch["prompt"]
             ]
 
         if "completion" in batch:
@@ -224,7 +267,6 @@ class SymbolManager:
         epoch: Optional[int] = None,
         mappings: Optional[Dict[str, str]] = None,
     ) -> str:
-        # If no specific mapping/epoch provided AND manager is in no_symbols mode, return original text
         if mappings is None and epoch is None and self.no_symbols and not self.swap_labels:
             return text
 

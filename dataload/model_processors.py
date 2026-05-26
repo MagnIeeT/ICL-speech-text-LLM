@@ -20,7 +20,12 @@ class ModelProcessor(abc.ABC):
         input_mode: str = "speech_only",
         fewshot_mode: str = "text",
         dataset_type: Optional[Any] = None,
-    ) -> str:
+    ) -> Any:
+        """
+        Return type is model-dependent:
+        - Qwen/Salmonn: typically a rendered string prompt
+        - Flamingo: a structured prompt object (dict with "conversation")
+        """
         pass
 
     @abc.abstractmethod
@@ -36,10 +41,17 @@ def get_processor(model_type: str, processor=None, tokenizer=None) -> ModelProce
         from .salmon_processor import SalmonProcessor
 
         return SalmonProcessor(tokenizer)
+
     if model_type in ["qwen", "qwen2"]:
         from .qwen_processor import QwenProcessor
 
         return QwenProcessor(processor)
+
+    if model_type in ["flamingo", "audioflamingo", "audioflamingo3"]:
+        from .flamingo_processor import FlamingoProcessor
+
+        return FlamingoProcessor(processor)
+
     raise ValueError(f"Unsupported model type: {model_type}")
 
 

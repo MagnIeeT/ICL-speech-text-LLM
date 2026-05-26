@@ -3,7 +3,7 @@
 import json
 import logging
 import os
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import torch
 from torch.utils.data import DataLoader
@@ -21,6 +21,7 @@ class SymbolTrainingOrchestrator:
         self,
         config: TrainingConfig,
         model,
+        processor,
         train_dataloader: DataLoader,
         val_dataloader: DataLoader,
         tokenizer=None,
@@ -29,6 +30,7 @@ class SymbolTrainingOrchestrator:
     ):
         self.config = config
         self.model = model
+        self.processor = processor
         self.train_dataloader = train_dataloader
         self.val_dataloader = val_dataloader
         self.tokenizer = tokenizer
@@ -42,6 +44,7 @@ class SymbolTrainingOrchestrator:
             config=config,
             symbol_manager=self.symbol_manager,
             tokenizer=tokenizer,
+            processor=self.processor,
             max_val_samples=config.data_config.val_max_samples,
         )
 
@@ -107,6 +110,68 @@ class SymbolTrainingOrchestrator:
             force_new_symbols=force_new_symbols,
         )
 
+    def _tokenize_raw_batch(self, raw_batch: Dict[str, Any]) -> Dict[str, Any]:
+        prompts = raw_batch.get("prompt", [])
+        completions = raw_batch.get("completion", [])
+        audios = raw_batch.get("audio", [])
+        texts = raw_batch.get("text", [])
+        dataset_types = raw_batch.get("dataset_type", [])
+        input_modes = raw_batch.get("input_mode", [])
+        fewshot_modes = raw_batch.get("fewshot_mode", [])
+        examples_audios = raw_batch.get("examples_audio", [])
+        is_training_flags = raw_batch.get("is_training", [])
+
+        n = len(prompts) if isinstance(prompts, (list, tuple)) else 1
+        if n == 0:
+            return raw_batch
+
+        def _ensure_len(val, default=None):
+            if isinstance(val, (list, tuple)) and len(val) == n:
+                return list(val)
+            if n == 1 and not isinstance(val, (list, tuple)) and val is not None:
+                return [val]
+            return [default] * n
+
+        prompts = _ensure_len(prompts, None)
+        completions = _ensure_len(completions, "")
+        audios = _ensure_len(audios, None)
+        texts = _ensure_len(texts, "")
+        dataset_types = _ensure_len(dataset_types, None)
+        input_modes = _ensure_len(input_modes, None)
+        fewshot_modes = _ensure_len(fewshot_modes, None)
+        examples_audios = _ensure_len(examples_audios, None)
+        is_training_flags = _ensure_len(is_training_flags, True)
+
+        processed_items: List[Dict[str, Any]] = []
+        for i in range(n):
+            if prompts[i] is None:
+                continue
+            item = {
+                "prompt": prompts[i],
+                "completion": completions[i],
+                "audio": audios[i],
+                "text": texts[i],
+                "dataset_type": dataset_types[i],
+                "input_mode": input_modes[i],
+                "fewshot_mode": fewshot_modes[i],
+                "examples_audio": examples_audios[i],
+            }
+            inputs = self.processor.process_inputs(item, is_training=bool(is_training_flags[i]))
+            merged = dict(item)
+            merged.update(inputs)
+            processed_items.append(merged)
+
+        if not processed_items:
+            return raw_batch
+
+        tokenized_batch = self.processor.collate_batch(processed_items)
+        tokenized_batch["prompt"] = prompts
+        tokenized_batch["completion"] = completions
+        tokenized_batch["text"] = texts
+        tokenized_batch["dataset_type"] = dataset_types
+
+        return tokenized_batch
+
     def _train_one_epoch(self, epoch: int) -> float:
         self.model.train()
         total_loss = 0.0
@@ -115,18 +180,31 @@ class SymbolTrainingOrchestrator:
 
         progress_bar = tqdm(self.train_dataloader, desc=f"Epoch {epoch + 1}", leave=False)
 
-        for batch_idx, batch in enumerate(progress_bar):
+        for batch_idx, raw_batch in enumerate(progress_bar):
             try:
-                updated_batch = self._apply_symbol_replacement(batch, epoch, batch_idx)
+                # Ensure completion field exists
+                if "completion" not in raw_batch or not raw_batch["completion"]:
+                    for key in ["label", "true_label", "target", "answer"]:
+                        if key in raw_batch and raw_batch[key] is not None:
+                            raw_batch["completion"] = raw_batch[key]
+                            break
 
+                # 1) Apply symbol replacement on RAW batch
+                updated_raw = self._apply_symbol_replacement(raw_batch, epoch, batch_idx)
+
+                # Log one sample per training run
                 if not self._logged_sample:
-                    prompts = updated_batch.get("prompt")
-                    labels = updated_batch.get("completion")
+                    prompts = updated_raw.get("prompt")
+                    labels = updated_raw.get("completion")
                     if isinstance(prompts, list) and isinstance(labels, list) and prompts and labels:
                         logging.info("Sample prompt (epoch %d): %s", epoch + 1, prompts[0])
                         logging.info("Sample label (epoch %d): %s", epoch + 1, labels[0])
                         self._logged_sample = True
 
+                # 2) Tokenize AFTER replacement
+                updated_batch = self._tokenize_raw_batch(updated_raw)
+
+                # 3) Move tensors to device
                 updated_batch = self._move_batch_to_device(updated_batch)
 
                 outputs = self.model(updated_batch)
@@ -139,7 +217,9 @@ class SymbolTrainingOrchestrator:
 
                 if (batch_idx + 1) % accumulation_steps == 0:
                     if self.config.lora_config.max_grad_norm > 0:
-                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.lora_config.max_grad_norm)
+                        torch.nn.utils.clip_grad_norm_(
+                            self.model.parameters(), self.config.lora_config.max_grad_norm
+                        )
                     self.optimizer.step()
                     self.optimizer.zero_grad(set_to_none=True)
                     self.global_step += 1
@@ -149,11 +229,23 @@ class SymbolTrainingOrchestrator:
 
                 if num_batches > 0:
                     progress_bar.set_postfix({"loss": f"{total_loss / num_batches:.6f}"})
+
             except Exception as exc:
                 logging.error(f"Batch {batch_idx} failed: {exc}")
 
         progress_bar.close()
+
+        if num_batches > 0 and (num_batches % accumulation_steps) != 0:
+            if self.config.lora_config.max_grad_norm > 0:
+                torch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(), self.config.lora_config.max_grad_norm
+                )
+            self.optimizer.step()
+            self.optimizer.zero_grad(set_to_none=True)
+            self.global_step += 1
+
         return total_loss / max(num_batches, 1)
+
     def _run_validation(self, epoch: int) -> Dict[str, Any]:
         return self.validator.run_comprehensive_validation(
             model=self.model,
@@ -183,10 +275,10 @@ class SymbolTrainingOrchestrator:
             "optimizer_state": self.optimizer.state_dict() if self.optimizer else None,
             "config": self.config,
             "symbol_mappings": {
-                "current_epoch_mappings": self.symbol_manager.get_symbols_for_epoch(epoch),
-                "original_labels": self.symbol_manager.original_labels,
-                "symbol_type": self.symbol_manager.symbol_type,
-                "dynamic_per_epoch": self.symbol_manager.dynamic_per_epoch,
+                "current_epoch_mappings": self.symbol_manager.get_symbols_for_epoch(epoch) if self.symbol_manager else {},
+                "original_labels": self.symbol_manager.original_labels if self.symbol_manager else [],
+                "symbol_type": self.symbol_manager.symbol_type if self.symbol_manager else "",
+                "dynamic_per_epoch": self.symbol_manager.dynamic_per_epoch if self.symbol_manager else False,
             },
         }
 
@@ -221,6 +313,7 @@ class SymbolTrainingOrchestrator:
             if self.config.checkpoint_frequency > 0 and (epoch + 1) % self.config.checkpoint_frequency == 0:
                 self._save_checkpoint(epoch, "periodic")
 
+        # Consolidated validation summary
         logging.info("================ Consolidated Validation Summary ================")
         all_dataset_names = []
         all_mode_names = []
@@ -260,4 +353,43 @@ class SymbolTrainingOrchestrator:
         logging.info("=================================================================")
 
         self._save_checkpoint(self.config.lora_config.epochs - 1, "final")
+
+        # Final summary table
+        logging.info("=" * 100)
+        logging.info("COMPLETE TRAINING SUMMARY - ALL EPOCHS")
+        logging.info("=" * 100)
+        header = f"{'Epoch':<8} {'Loss':<12} {'Avg Score':<12}"
+        if history:
+            first_modes = history[0]["validation"].get("all_modes", {})
+            mode_key = (
+                "original" if "original" in first_modes
+                else ("fixed" if "fixed" in first_modes
+                else (list(first_modes.keys())[0] if first_modes else None))
+            )
+            if mode_key:
+                for ds_name in first_modes[mode_key].keys():
+                    header += f" {ds_name:<12}"
+            header += f" {'Mode'}"
+        logging.info(header)
+        logging.info("-" * 100)
+        for entry in history:
+            ep = entry["epoch"]
+            loss = entry["train_loss"]
+            val = entry["validation"]
+            avg = val.get("avg_score", 0.0)
+            modes = val.get("all_modes", {})
+            mode_key = (
+                "original" if "original" in modes
+                else ("fixed" if "fixed" in modes
+                else (list(modes.keys())[0] if modes else None))
+            )
+            row = f"{ep:<8} {loss:<12.4f} {avg:<12.4f}"
+            if mode_key:
+                for ds_val in modes[mode_key].values():
+                    score = ds_val.get("score", 0.0) if isinstance(ds_val, dict) else 0.0
+                    row += f" {score:<12.4f}"
+                row += f" {mode_key}"
+            logging.info(row)
+        logging.info("=" * 100)
+
         return {"history": history}

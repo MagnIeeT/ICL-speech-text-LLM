@@ -154,7 +154,11 @@ class BaseMultiTaskDataset(Dataset):
                 formatted_examples.append(
                     {
                         "text": example["text"],
-                        "label": self._format_label(example, is_example=True, current_mapping=current_config.label_mapping),
+                        "label": self._format_label(
+                            example,
+                            is_example=True,
+                            current_mapping=current_config.label_mapping,
+                        ),
                     }
                 )
             examples_audio = self._get_examples_audio(selected_examples)
@@ -175,25 +179,16 @@ class BaseMultiTaskDataset(Dataset):
             text=item[current_config.text_key],
         )
 
-        inputs = self.processor.process_inputs(
-            data={
-                "prompt": prompt,
-                "fewshot_mode": self.fewshot_mode,
-                "input_mode": self.input_mode,
-                "completion": formatted_completion,
-                "audio": self._get_main_audio(item),
-                "examples_audio": examples_audio if examples_audio else None,
-                "dataset_type": self.dataset_type,
-            },
-            is_training=self._is_training(),
-        )
-
         return {
             "prompt": prompt,
             "text": item[current_config.text_key],
             "completion": formatted_completion,
+            "audio": self._get_main_audio(item),
+            "examples_audio": examples_audio if examples_audio else None,
+            "input_mode": self.input_mode,
+            "fewshot_mode": self.fewshot_mode,
             "dataset_type": self.dataset_type,
-            **inputs,
+            "is_training": self._is_training(),
         }
 
     def _get_main_audio(self, item):
@@ -302,3 +297,32 @@ class MultiTaskDataset(Dataset):
                 np.random.shuffle(self.dataset_indices[dt])
 
 
+class MultiTaskTrainingDataset(MultiTaskDataset):
+    """Multi-task dataset for training — kept for backward compatibility."""
+
+    def __init__(
+        self,
+        datasets: Dict[DatasetType, BaseMultiTaskDataset],
+        balance_datasets: bool = True,
+        interleave: bool = True,
+    ):
+        super().__init__(datasets, balance_datasets=balance_datasets, interleave=interleave)
+
+
+class MultiTaskInferenceDataset(MultiTaskDataset):
+    """Multi-task dataset for inference — kept for backward compatibility."""
+
+    def __init__(
+        self,
+        datasets: Dict[DatasetType, BaseMultiTaskDataset],
+        balance_datasets: bool = False,
+        interleave: bool = False,
+    ):
+        super().__init__(datasets, balance_datasets=balance_datasets, interleave=interleave)
+
+
+class TrainingBaseDataset(BaseMultiTaskDataset):
+    """Single-task dataset wrapper that marks items as training=True."""
+
+    def _is_training(self):
+        return True

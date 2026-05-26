@@ -1,4 +1,4 @@
-name: qwen
+name: flamingo
 channels:
   - pytorch
   - nvidia
@@ -11,31 +11,24 @@ dependencies:
   - torchvision==0.16.2
   - torchaudio==2.1.2
   - pytorch-cuda=11.8
-  - ffmpeg                   # Required for audio processing
+  - ffmpeg
 
-  # --- AI TOOLS (Conda Versions) ---
-  - transformers==4.45.2
+  # --- AI TOOLS ---
   - accelerate>=0.27.0
   - peft
   - tiktoken
   - einops
   - sentencepiece
   - protobuf
-  - fsspec<=2023.10.0
-  - pyarrow<16
-  - protobuf<5
-  - abseil-cpp
   - huggingface_hub
   - datasets
   - fire
   - pysocks
-  
-  # --- DATA & AUDIO (Conda Versions) ---
+
+  # --- DATA & AUDIO ---
   - pandas
-  - numpy<2
   - scipy
-  - pysoundfile            # <--- CHANGED: Correct Conda name for soundfile
-  # - librosa
+  - pysoundfile
   - scikit-learn
   - matplotlib
   - tensorboard
@@ -44,11 +37,11 @@ dependencies:
   - pyyaml
   - psutil
   - joblib
-  - libstdcxx-ng
 
   # --- PIP FALLBACK ---
   - pip
   - pip:
-    - numpy<2              # Fixes the NumPy crash
-    - bitsandbytes         # MUST be here (Not available in Conda)
+    - numpy<2
+    - bitsandbytes
     - python-dotenv
+    - transformers>=5.0.0      # AF3 needs >= 5.0, so pip not conda
