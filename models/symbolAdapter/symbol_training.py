@@ -25,6 +25,7 @@ class SymbolTrainingOrchestrator:
         val_dataloader: DataLoader,
         tokenizer=None,
         symbol_manager: SymbolManager = None,
+        train_dataset_names: set = None,
     ):
         self.config = config
         self.model = model
@@ -32,8 +33,10 @@ class SymbolTrainingOrchestrator:
         self.val_dataloader = val_dataloader
         self.tokenizer = tokenizer
         self.symbol_manager = symbol_manager
+        self.train_dataset_names = train_dataset_names or set()
         self.optimizer = None
         self.global_step = 0
+        self._logged_sample = False
 
         self.validator = ValidationManager(
             config=config,
@@ -115,6 +118,15 @@ class SymbolTrainingOrchestrator:
         for batch_idx, batch in enumerate(progress_bar):
             try:
                 updated_batch = self._apply_symbol_replacement(batch, epoch, batch_idx)
+
+                if not self._logged_sample:
+                    prompts = updated_batch.get("prompt")
+                    labels = updated_batch.get("completion")
+                    if isinstance(prompts, list) and isinstance(labels, list) and prompts and labels:
+                        logging.info("Sample prompt (epoch %d): %s", epoch + 1, prompts[0])
+                        logging.info("Sample label (epoch %d): %s", epoch + 1, labels[0])
+                        self._logged_sample = True
+
                 updated_batch = self._move_batch_to_device(updated_batch)
 
                 outputs = self.model(updated_batch)
@@ -208,6 +220,44 @@ class SymbolTrainingOrchestrator:
 
             if self.config.checkpoint_frequency > 0 and (epoch + 1) % self.config.checkpoint_frequency == 0:
                 self._save_checkpoint(epoch, "periodic")
+
+        logging.info("================ Consolidated Validation Summary ================")
+        all_dataset_names = []
+        all_mode_names = []
+        for entry in history:
+            validation = entry.get("validation", {})
+            all_modes = validation.get("all_modes", {})
+            for mode, datasets in all_modes.items():
+                if mode not in all_mode_names:
+                    all_mode_names.append(mode)
+                for ds_name in datasets.keys():
+                    if ds_name not in all_dataset_names:
+                        all_dataset_names.append(ds_name)
+
+        if all_dataset_names:
+            dataset_display = {
+                name: f"{name} (train)" if name in self.train_dataset_names else f"{name} (val)"
+                for name in all_dataset_names
+            }
+            header_cols = ["Epoch", "Mode"] + [dataset_display[name] for name in all_dataset_names]
+            header = " | ".join(f"{col:<12}" for col in header_cols)
+            logging.info(header)
+            logging.info("-" * len(header))
+
+            for entry in history:
+                epoch_num = entry["epoch"]
+                validation = entry.get("validation", {})
+                all_modes = validation.get("all_modes", {})
+                for mode in all_mode_names:
+                    datasets = all_modes.get(mode, {})
+                    row_values = [f"{epoch_num:<12}", f"{mode:<12}"]
+                    for ds_name in all_dataset_names:
+                        score = datasets.get(ds_name, {}).get("score")
+                        row_values.append(f"{score:.6f}" if score is not None else "-")
+                    logging.info(" | ".join(row_values))
+        else:
+            logging.info("No validation metrics available to summarize.")
+        logging.info("=================================================================")
 
         self._save_checkpoint(self.config.lora_config.epochs - 1, "final")
         return {"history": history}

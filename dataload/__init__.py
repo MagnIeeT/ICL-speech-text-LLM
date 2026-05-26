@@ -5,16 +5,12 @@ from .salmon_processor import SalmonProcessor
 from .multi_task_dataset import (
     BaseMultiTaskDataset,
     MultiTaskDataset,
-    MultiTaskInferenceDataset,
-    MultiTaskTrainingDataset,
 )
 
 __all__ = [
     "ModelProcessor",
     "BaseMultiTaskDataset",
     "MultiTaskDataset",
-    "MultiTaskTrainingDataset",
-    "MultiTaskInferenceDataset",
     "DatasetType",
     "DatasetSplit",
     "DatasetConfig",

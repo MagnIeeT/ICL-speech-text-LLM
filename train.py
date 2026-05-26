@@ -115,6 +115,7 @@ def setup_logging() -> None:
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s",
         handlers=[logging.StreamHandler()],
+        force=True,
     )
 
 
@@ -144,8 +145,14 @@ def main():
         if not val_datasets:
             logging.warning("No validation datasets were loaded.")
 
-        train_dataloader = create_combined_dataloader(train_datasets, processor, config, shuffle=True)
-        val_dataloader = create_combined_dataloader(val_datasets, processor, config, shuffle=False)
+        train_dataset_names = {
+            dt.value if hasattr(dt, "value") else str(dt)
+            for dt, ds in train_datasets.items()
+            if ds is not None
+        }
+
+        train_dataloader = create_combined_dataloader(train_datasets, processor, config, is_training=True)
+        val_dataloader = create_combined_dataloader(val_datasets, processor, config, is_training=False)
 
         model = initialize_model(config, tokenizer, symbol_manager)
 
@@ -156,6 +163,7 @@ def main():
             val_dataloader=val_dataloader,
             tokenizer=tokenizer,
             symbol_manager=symbol_manager,
+            train_dataset_names=train_dataset_names,
         )
         orchestrator.run_complete_training()
         logging.info("Training completed successfully")

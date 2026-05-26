@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 
 from config.data_config.master_config import DatasetSplit, DatasetType, get_dataset_config
 from config.train_config.training_configs import TrainingConfig
-from dataload.multi_task_dataset import BaseMultiTaskDataset, MultiTaskInferenceDataset, MultiTaskTrainingDataset
+from dataload.multi_task_dataset import BaseMultiTaskDataset, MultiTaskDataset
 
 logger = logging.getLogger(__name__)
 
@@ -84,8 +84,20 @@ def load_datasets_for_config(config: TrainingConfig, inference_mode: bool = Fals
     return train_datasets, val_datasets
 
 
-def create_combined_dataloader(datasets, processor, config: TrainingConfig, num_examples=5, shuffle=False):
+def create_combined_dataloader(
+    datasets,
+    processor,
+    config: TrainingConfig,
+    num_examples=5,
+    is_training: bool = False,
+    shuffle: bool = None,
+    interleave: bool = None,
+):
     """Create a combined dataloader from per-task datasets."""
+    if shuffle is None:
+        shuffle = is_training
+    if interleave is None:
+        interleave = is_training
     per_task_datasets = {}
     for dataset_type, task_dataset in datasets.items():
         per_task_datasets[dataset_type] = BaseMultiTaskDataset(
@@ -96,28 +108,19 @@ def create_combined_dataloader(datasets, processor, config: TrainingConfig, num_
             fewshot_mode="text",
             num_examples=num_examples if num_examples is not None else config.data_config.num_examples,
             random_examples=False,
-            split=DatasetSplit.TRAIN if shuffle else DatasetSplit.TEST,
+            split=DatasetSplit.TRAIN if is_training else DatasetSplit.TEST,
             model_type=config.model_type.value,
             run_name=config.run_name,
             randomize_swap=False,
+            is_training=is_training,
         )
 
-    if shuffle:
-        combined_dataset = MultiTaskTrainingDataset(
-            datasets=per_task_datasets,
-            processor=processor,
-            balance_datasets=False,
-            interleave=False,
-        )
-        batch_size = config.data_config.batch_size
-    else:
-        combined_dataset = MultiTaskInferenceDataset(
-            datasets=per_task_datasets,
-            processor=processor,
-            balance_datasets=False,
-            interleave=False,
-        )
-        batch_size = config.data_config.val_batch_size
+    combined_dataset = MultiTaskDataset(
+        datasets=per_task_datasets,
+        balance_datasets=False,
+        interleave=interleave,
+    )
+    batch_size = config.data_config.batch_size if is_training else config.data_config.val_batch_size
 
     dataloader = DataLoader(
         combined_dataset,

@@ -14,13 +14,17 @@ dependencies:
   - ffmpeg                   # Required for audio processing
 
   # --- AI TOOLS (Conda Versions) ---
-  - transformers>=4.40.0
+  - transformers==4.45.2
   - accelerate>=0.27.0
   - peft
   - tiktoken
   - einops
   - sentencepiece
   - protobuf
+  - fsspec<=2023.10.0
+  - pyarrow<16
+  - protobuf<5
+  - abseil-cpp
   - huggingface_hub
   - datasets
   - fire
@@ -28,6 +32,7 @@ dependencies:
   
   # --- DATA & AUDIO (Conda Versions) ---
   - pandas
+  - numpy<2
   - scipy
   - pysoundfile            # <--- CHANGED: Correct Conda name for soundfile
   - librosa
@@ -39,6 +44,7 @@ dependencies:
   - pyyaml
   - psutil
   - joblib
+  - libstdcxx-ng
 
   # --- PIP FALLBACK ---
   - pip

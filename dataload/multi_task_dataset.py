@@ -39,6 +39,7 @@ class BaseMultiTaskDataset(Dataset):
         model_type: str = "salmonn",
         run_name: str = "",
         randomize_swap: bool = False,
+        is_training: bool = False,
     ):
         self.dataset_type = dataset_type
         self.dataset = dataset
@@ -51,6 +52,7 @@ class BaseMultiTaskDataset(Dataset):
         self.model_type = model_type.lower()
         self.run_name = run_name
         self.randomize_swap = randomize_swap
+        self.is_training = is_training
 
         self.config = get_dataset_config(dataset_type)
         self.current_config = self.config
@@ -216,7 +218,7 @@ class BaseMultiTaskDataset(Dataset):
         return examples_audio or None
 
     def _is_training(self):
-        return False
+        return self.is_training
 
 
 class MultiTaskDataset(Dataset):
@@ -225,13 +227,11 @@ class MultiTaskDataset(Dataset):
     def __init__(
         self,
         datasets: Dict[DatasetType, BaseMultiTaskDataset],
-        processor,
         balance_datasets: bool = True,
         interleave: bool = True,
     ):
         self.datasets = datasets
         self.dataset_types = list(datasets.keys())
-        self.processor = processor
         self.balance_datasets = balance_datasets
         self.interleave = interleave
 
@@ -302,21 +302,3 @@ class MultiTaskDataset(Dataset):
                 np.random.shuffle(self.dataset_indices[dt])
 
 
-class MultiTaskTrainingDataset(MultiTaskDataset):
-    """Multi-task dataset for training."""
-
-    def __init__(self, datasets: Dict[DatasetType, BaseMultiTaskDataset], processor, balance_datasets: bool = True, interleave: bool = True):
-        super().__init__(datasets, processor, balance_datasets=balance_datasets, interleave=interleave)
-
-    def _is_training(self):
-        return True
-
-
-class MultiTaskInferenceDataset(MultiTaskDataset):
-    """Multi-task dataset for inference."""
-
-    def __init__(self, datasets: Dict[DatasetType, BaseMultiTaskDataset], processor, balance_datasets: bool = False, interleave: bool = False):
-        super().__init__(datasets, processor, balance_datasets=balance_datasets, interleave=interleave)
-
-    def _is_training(self):
-        return False
