@@ -182,29 +182,29 @@ class SymbolTrainingOrchestrator:
 
         for batch_idx, raw_batch in enumerate(progress_bar):
             try:
-                # Ensure completion field exists
+                # Ensure the completion field exists so symbols can be mapped to labels
                 if "completion" not in raw_batch or not raw_batch["completion"]:
                     for key in ["label", "true_label", "target", "answer"]:
                         if key in raw_batch and raw_batch[key] is not None:
                             raw_batch["completion"] = raw_batch[key]
                             break
 
-                # 1) Apply symbol replacement on RAW batch
+                # 1) Apply symbol replacement on RAW batch (prompt/completion)
                 updated_raw = self._apply_symbol_replacement(raw_batch, epoch, batch_idx)
 
-                # Log one sample per training run
+                # 2) Tokenize AFTER replacement
+                updated_batch = self._tokenize_raw_batch(updated_raw)
+
+                # 3) Log a sample prompt/label once per epoch (sir's logging)
                 if not self._logged_sample:
-                    prompts = updated_raw.get("prompt")
-                    labels = updated_raw.get("completion")
+                    prompts = updated_batch.get("prompt")
+                    labels = updated_batch.get("completion")
                     if isinstance(prompts, list) and isinstance(labels, list) and prompts and labels:
                         logging.info("Sample prompt (epoch %d): %s", epoch + 1, prompts[0])
                         logging.info("Sample label (epoch %d): %s", epoch + 1, labels[0])
                         self._logged_sample = True
 
-                # 2) Tokenize AFTER replacement
-                updated_batch = self._tokenize_raw_batch(updated_raw)
-
-                # 3) Move tensors to device
+                # 4) Move tensors to device
                 updated_batch = self._move_batch_to_device(updated_batch)
 
                 outputs = self.model(updated_batch)
@@ -217,9 +217,7 @@ class SymbolTrainingOrchestrator:
 
                 if (batch_idx + 1) % accumulation_steps == 0:
                     if self.config.lora_config.max_grad_norm > 0:
-                        torch.nn.utils.clip_grad_norm_(
-                            self.model.parameters(), self.config.lora_config.max_grad_norm
-                        )
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.lora_config.max_grad_norm)
                     self.optimizer.step()
                     self.optimizer.zero_grad(set_to_none=True)
                     self.global_step += 1
@@ -237,9 +235,7 @@ class SymbolTrainingOrchestrator:
 
         if num_batches > 0 and (num_batches % accumulation_steps) != 0:
             if self.config.lora_config.max_grad_norm > 0:
-                torch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(), self.config.lora_config.max_grad_norm
-                )
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.lora_config.max_grad_norm)
             self.optimizer.step()
             self.optimizer.zero_grad(set_to_none=True)
             self.global_step += 1
@@ -294,6 +290,7 @@ class SymbolTrainingOrchestrator:
         history = []
 
         for epoch in range(self.config.lora_config.epochs):
+            self._logged_sample = False  # reset per epoch so we log once per epoch
             logging.info(f"Epoch {epoch + 1}/{self.config.lora_config.epochs}")
 
             epoch_loss = self._train_one_epoch(epoch)
@@ -313,7 +310,6 @@ class SymbolTrainingOrchestrator:
             if self.config.checkpoint_frequency > 0 and (epoch + 1) % self.config.checkpoint_frequency == 0:
                 self._save_checkpoint(epoch, "periodic")
 
-        # Consolidated validation summary
         logging.info("================ Consolidated Validation Summary ================")
         all_dataset_names = []
         all_mode_names = []
@@ -354,18 +350,13 @@ class SymbolTrainingOrchestrator:
 
         self._save_checkpoint(self.config.lora_config.epochs - 1, "final")
 
-        # Final summary table
         logging.info("=" * 100)
         logging.info("COMPLETE TRAINING SUMMARY - ALL EPOCHS")
         logging.info("=" * 100)
         header = f"{'Epoch':<8} {'Loss':<12} {'Avg Score':<12}"
         if history:
             first_modes = history[0]["validation"].get("all_modes", {})
-            mode_key = (
-                "original" if "original" in first_modes
-                else ("fixed" if "fixed" in first_modes
-                else (list(first_modes.keys())[0] if first_modes else None))
-            )
+            mode_key = "original" if "original" in first_modes else ("fixed" if "fixed" in first_modes else (list(first_modes.keys())[0] if first_modes else None))
             if mode_key:
                 for ds_name in first_modes[mode_key].keys():
                     header += f" {ds_name:<12}"
@@ -373,16 +364,12 @@ class SymbolTrainingOrchestrator:
         logging.info(header)
         logging.info("-" * 100)
         for entry in history:
-            ep = entry["epoch"]
+            ep   = entry["epoch"]
             loss = entry["train_loss"]
-            val = entry["validation"]
-            avg = val.get("avg_score", 0.0)
+            val  = entry["validation"]
+            avg  = val.get("avg_score", 0.0)
             modes = val.get("all_modes", {})
-            mode_key = (
-                "original" if "original" in modes
-                else ("fixed" if "fixed" in modes
-                else (list(modes.keys())[0] if modes else None))
-            )
+            mode_key = "original" if "original" in modes else ("fixed" if "fixed" in modes else (list(modes.keys())[0] if modes else None))
             row = f"{ep:<8} {loss:<12.4f} {avg:<12.4f}"
             if mode_key:
                 for ds_val in modes[mode_key].values():

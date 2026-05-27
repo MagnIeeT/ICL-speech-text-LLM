@@ -1,7 +1,7 @@
 """Validation logic for Symbol Adapter training and inference."""
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import torch
 from tqdm import tqdm

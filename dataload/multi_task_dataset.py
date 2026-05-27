@@ -179,6 +179,10 @@ class BaseMultiTaskDataset(Dataset):
             text=item[current_config.text_key],
         )
 
+        # IMPORTANT:
+        # Do NOT tokenize here.
+        # Tokenization must happen in processor.collate_batch so SymbolManager can
+        # rewrite prompt/completion BEFORE tokenization.
         return {
             "prompt": prompt,
             "text": item[current_config.text_key],
@@ -214,6 +218,13 @@ class BaseMultiTaskDataset(Dataset):
 
     def _is_training(self):
         return self.is_training
+
+
+class TrainingBaseDataset(BaseMultiTaskDataset):
+    """Single-task dataset wrapper that marks items as training=True."""
+
+    def _is_training(self):
+        return True
 
 
 class MultiTaskDataset(Dataset):
@@ -295,34 +306,3 @@ class MultiTaskDataset(Dataset):
         if self.balance_datasets or self.interleave:
             for dt in self.dataset_types:
                 np.random.shuffle(self.dataset_indices[dt])
-
-
-class MultiTaskTrainingDataset(MultiTaskDataset):
-    """Multi-task dataset for training — kept for backward compatibility."""
-
-    def __init__(
-        self,
-        datasets: Dict[DatasetType, BaseMultiTaskDataset],
-        balance_datasets: bool = True,
-        interleave: bool = True,
-    ):
-        super().__init__(datasets, balance_datasets=balance_datasets, interleave=interleave)
-
-
-class MultiTaskInferenceDataset(MultiTaskDataset):
-    """Multi-task dataset for inference — kept for backward compatibility."""
-
-    def __init__(
-        self,
-        datasets: Dict[DatasetType, BaseMultiTaskDataset],
-        balance_datasets: bool = False,
-        interleave: bool = False,
-    ):
-        super().__init__(datasets, balance_datasets=balance_datasets, interleave=interleave)
-
-
-class TrainingBaseDataset(BaseMultiTaskDataset):
-    """Single-task dataset wrapper that marks items as training=True."""
-
-    def _is_training(self):
-        return True
