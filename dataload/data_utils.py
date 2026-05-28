@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 
 from config.data_config.master_config import DatasetSplit, DatasetType, get_dataset_config
 from config.train_config.training_configs import TrainingConfig
-from dataload.multi_task_dataset import BaseMultiTaskDataset, MultiTaskDataset
+from dataload.multi_task_dataset import BaseMultiTaskDataset, MultiTaskDataset, TrainingBaseDataset
 
 logger = logging.getLogger(__name__)
 
@@ -98,9 +98,11 @@ def create_combined_dataloader(
         shuffle = is_training
     if interleave is None:
         interleave = is_training
+
     per_task_datasets = {}
     for dataset_type, task_dataset in datasets.items():
-        per_task_datasets[dataset_type] = BaseMultiTaskDataset(
+        dataset_class = TrainingBaseDataset if shuffle else BaseMultiTaskDataset
+        per_task_datasets[dataset_type] = dataset_class(
             dataset_type=dataset_type,
             dataset=task_dataset,
             processor=processor,
@@ -128,8 +130,8 @@ def create_combined_dataloader(
         shuffle=shuffle,
         collate_fn=processor.collate_batch,
         num_workers=config.data_config.num_workers,
-        pin_memory=True,
-        drop_last=True,
+        pin_memory=False,
+        drop_last=shuffle,  # drop only for training, keep all samples for validation/inference
     )
     return dataloader
 

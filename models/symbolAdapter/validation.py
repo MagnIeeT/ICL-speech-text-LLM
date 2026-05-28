@@ -1,43 +1,60 @@
 """Validation logic for Symbol Adapter training and inference."""
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional
 
 import torch
 from tqdm import tqdm
 
 from config.data_config.master_config import DatasetType
-from config.train_config.training_configs import TrainingConfig, ValidationSymbolMode
-from utils.evaluation_utils import clean_prediction, evaluate_predictions
+from config.train_config.training_configs import (
+    TrainingConfig,
+    ValidationSymbolMode,
+)
 
+from utils.evaluation_utils import evaluate_predictions
 from .symbol_manager import SymbolManager
 
 logger = logging.getLogger(__name__)
 
 
 class ValidationManager:
-    """Manages validation for training and inference with configurable symbol modes."""
+    """Manages validation for training and inference."""
 
     def __init__(
         self,
         config: TrainingConfig,
         symbol_manager: SymbolManager,
         tokenizer,
+        processor=None,  # ✅ FIX 1: Add processor to __init__ so we can tokenize
         max_val_samples: int = 200,
     ):
+
         self.config = config
         self.symbol_manager = symbol_manager
         self.tokenizer = tokenizer
+        self.processor = processor
         self.max_val_samples = max_val_samples
-        self.is_inference_mode = getattr(config, "inference_mode", False)
 
-    def _resolve_validation_modes(self) -> List[Tuple[str, bool, bool]]:
-        """
-        Resolve validation modes from config.
-        Returns list of tuples: (mode_key_suffix, use_original_labels, use_dynamic_symbols)
-        """
-        raw = getattr(self.config.symbol_config, "validation_modes", "fixed,original,fresh")
-        tokens = [token.strip().lower() for token in raw.split(",") if token.strip()]
+        self.is_inference_mode = getattr(
+            config,
+            "inference_mode",
+            False,
+        )
+
+    def _resolve_validation_modes(self):
+
+        raw = getattr(
+            self.config.symbol_config,
+            "validation_modes",
+            "fixed,original,fresh",
+        )
+
+        tokens = [
+            token.strip().lower()
+            for token in raw.split(",")
+            if token.strip()
+        ]
 
         valid = {
             ValidationSymbolMode.FIXED.value,
@@ -45,28 +62,96 @@ class ValidationManager:
             ValidationSymbolMode.FRESH.value,
         }
 
-        is_baseline = getattr(self.config.symbol_config, "no_symbols", False) and not getattr(self.config.symbol_config, "swap_labels", False)
+        ordered_unique = []
 
-        ordered_unique: List[str] = []
         for token in tokens:
-            if token in valid:
-                effective_token = token
-                # For baseline models, 'fixed' (training mappings) is the same as 'original' (no mappings)
-                if is_baseline and token == ValidationSymbolMode.FIXED.value:
-                    effective_token = ValidationSymbolMode.ORIGINAL.value
-                
-                if effective_token not in ordered_unique:
-                    ordered_unique.append(effective_token)
+            if token in valid and token not in ordered_unique:
+                ordered_unique.append(token)
 
         if not ordered_unique:
             ordered_unique = [ValidationSymbolMode.FIXED.value]
 
         mode_map = {
-            ValidationSymbolMode.FIXED.value: ("fixed", False, False),
-            ValidationSymbolMode.ORIGINAL.value: ("original", True, False),
-            ValidationSymbolMode.FRESH.value: ("fresh", False, True),
+            ValidationSymbolMode.FIXED.value: (
+                "fixed",
+                False,
+                False,
+            ),
+            ValidationSymbolMode.ORIGINAL.value: (
+                "original",
+                True,
+                False,
+            ),
+            ValidationSymbolMode.FRESH.value: (
+                "fresh",
+                False,
+                True,
+            ),
         }
+
         return [mode_map[token] for token in ordered_unique]
+
+    # ✅ FIX 2: Add tokenization logic to convert the raw strings/dicts into tensors for inference
+    def _tokenize_raw_batch(self, raw_batch: Dict[str, Any]) -> Dict[str, Any]:
+        prompts = raw_batch.get("prompt", [])
+        completions = raw_batch.get("completion", [])
+        audios = raw_batch.get("audio", [])
+        texts = raw_batch.get("text", [])
+        dataset_types = raw_batch.get("dataset_type", [])
+        input_modes = raw_batch.get("input_mode", [])
+        fewshot_modes = raw_batch.get("fewshot_mode", [])
+        examples_audios = raw_batch.get("examples_audio", [])
+
+        n = len(prompts) if isinstance(prompts, (list, tuple)) else 1
+        if n == 0:
+            return raw_batch
+
+        def _ensure_len(val, default=None):
+            if isinstance(val, (list, tuple)) and len(val) == n:
+                return list(val)
+            if n == 1 and not isinstance(val, (list, tuple)) and val is not None:
+                return [val]
+            return [default] * n
+
+        prompts = _ensure_len(prompts, None)
+        completions = _ensure_len(completions, "")
+        audios = _ensure_len(audios, None)
+        texts = _ensure_len(texts, "")
+        dataset_types = _ensure_len(dataset_types, None)
+        input_modes = _ensure_len(input_modes, None)
+        fewshot_modes = _ensure_len(fewshot_modes, None)
+        examples_audios = _ensure_len(examples_audios, None)
+
+        processed_items: List[Dict[str, Any]] = []
+        for i in range(n):
+            if prompts[i] is None:
+                continue
+            item = {
+                "prompt": prompts[i],
+                "completion": completions[i],
+                "audio": audios[i],
+                "text": texts[i],
+                "dataset_type": dataset_types[i],
+                "input_mode": input_modes[i],
+                "fewshot_mode": fewshot_modes[i],
+                "examples_audio": examples_audios[i],
+            }
+            # Crucially: is_training=False for validation!
+            inputs = self.processor.process_inputs(item, is_training=False)
+            merged = dict(item)
+            merged.update(inputs)
+            processed_items.append(merged)
+
+        if not processed_items:
+            return raw_batch
+
+        tokenized_batch = self.processor.collate_batch(processed_items)
+        tokenized_batch["prompt"] = prompts
+        tokenized_batch["completion"] = completions
+        tokenized_batch["text"] = texts
+        tokenized_batch["dataset_type"] = dataset_types
+
+        return tokenized_batch
 
     def validate_model(
         self,
@@ -76,24 +161,30 @@ class ValidationManager:
         use_original_labels: bool = False,
         use_dynamic_symbols: bool = False,
         symbol_mappings: Optional[Dict[str, str]] = None,
-    ) -> Dict[str, Any]:
-        """Run one validation mode and return metrics."""
+    ):
+
         model.eval()
 
         if use_original_labels:
             symbol_mappings_to_use = {}
             mode_name = "Original"
+
         elif use_dynamic_symbols:
             symbol_mappings_to_use = self.symbol_manager._generate_symbol_mappings()
             mode_name = "Fresh-Symbols"
+
         else:
-            if self.is_inference_mode and symbol_mappings is not None:
-                symbol_mappings_to_use = symbol_mappings
-            else:
-                symbol_mappings_to_use = self.symbol_manager.get_symbols_for_epoch(epoch)
+            symbol_mappings_to_use = (
+                symbol_mappings
+                if symbol_mappings is not None
+                else self.symbol_manager.get_symbols_for_epoch(epoch)
+            )
             mode_name = "Fixed-Symbols"
 
-        logger.info(f"--- Validation Mode: {mode_name} (Epoch {epoch + 1}) ---")
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info(f"VALIDATION MODE: {mode_name}")
+        logger.info("=" * 80)
 
         try:
             with torch.no_grad():
@@ -104,9 +195,11 @@ class ValidationManager:
                     use_original_labels=use_original_labels,
                 )
             return metrics_by_dataset
+
         except Exception as exc:
             logger.error(f"Validation failed for {mode_name}: {exc}")
             return {}
+
         finally:
             model.train()
 
@@ -116,70 +209,115 @@ class ValidationManager:
         val_dataloader,
         symbol_mappings: Dict[str, str],
         use_original_labels: bool = False,
-    ) -> Dict[str, Any]:
-        """Run validation using evaluation helpers and return per-dataset metrics."""
-        all_results: Dict[str, List[Dict[str, Any]]] = {}
-        
-        # Determine datasets to validate
-        if not self.is_inference_mode:
-            val_dataset_type_str = self.config.data_config.val_dataset_type
-            dataset_names_val = val_dataset_type_str.split("-") if "-" in val_dataset_type_str else [val_dataset_type_str]
-        else:
-            # In inference mode, use whatever is in the dataloader's items
-            dataset_names_val = [] # Will be populated dynamically
+    ):
 
-        progress_bar = tqdm(val_dataloader, desc="Evaluating", total=len(val_dataloader), leave=False)
+        all_results = {}
+
+        progress_bar = tqdm(
+            val_dataloader,
+            desc="Evaluating",
+            total=len(val_dataloader),
+            leave=False,
+        )
 
         try:
-            for batch_idx, batch in enumerate(progress_bar):
+            for batch in progress_bar:
+
                 if use_original_labels:
                     updated_batch = batch
                 else:
-                    updated_batch = self.symbol_manager.replace_symbols_in_batch(batch, mappings=symbol_mappings)
+                    updated_batch = self.symbol_manager.replace_symbols_in_batch(
+                        batch,
+                        mappings=symbol_mappings,
+                    )
 
-                # Expect model backend to implement generate_output
-                predictions = model.generate_output(updated_batch)
+                # ✅ FIX 3: Tokenize the batch BEFORE passing it to generate_output
+                tokenized_batch = self._tokenize_raw_batch(updated_batch)
+
+                predictions = model.generate_output(tokenized_batch)
 
                 for i, pred in enumerate(predictions):
-                    dt = batch["dataset_type"][i] if isinstance(batch["dataset_type"], list) else batch["dataset_type"]
+
+                    dt = (
+                        batch["dataset_type"][i]
+                        if isinstance(batch["dataset_type"], list)
+                        else batch["dataset_type"]
+                    )
+
                     dt_key = dt.value if hasattr(dt, "value") else str(dt)
-                    
+
                     if dt_key not in all_results:
                         all_results[dt_key] = []
-                    
-                    true_label = batch["completion"][i] if isinstance(batch["completion"], list) else batch["completion"]
+
+                    true_label = (
+                        batch["completion"][i]
+                        if isinstance(batch["completion"], list)
+                        else batch["completion"]
+                    )
 
                     converted_pred = pred
+
                     if not use_original_labels and symbol_mappings:
-                        converted_pred = self.symbol_manager.convert_symbols_back(pred, mappings=symbol_mappings)
+                        converted_pred = self.symbol_manager.convert_symbols_back(
+                            pred,
+                            mappings=symbol_mappings,
+                        )
 
                     result = {
-                        "text": batch["text"][i] if isinstance(batch["text"], list) else batch["text"],
+                        "text": (
+                            batch["text"][i]
+                            if isinstance(batch["text"], list)
+                            else batch["text"]
+                        ),
                         "true_label": true_label,
                         "predicted_label": converted_pred.strip(),
                         "dataset_type": dt_key,
                     }
+
                     all_results[dt_key].append(result)
+
         finally:
             progress_bar.close()
 
-        # Compute metrics per dataset
         final_metrics = {}
+
         for dataset_name, dt_results in all_results.items():
+
             try:
                 dataset_type = DatasetType(dataset_name)
-                dt_metrics = evaluate_predictions(dt_results, dataset_type)
-                
-                # Prioritize macro_f1_with_invalid as requested
+
+                dt_metrics = evaluate_predictions(
+                    dt_results,
+                    dataset_type,
+                )
+
+                logger.info("")
+                logger.info("=" * 80)
+                logger.info(f"Metrics for {dataset_name}")
+                logger.info("=" * 80)
+
+                for metric_key, metric_value in dt_metrics.items():
+                    logger.info(f"  {metric_key}: {metric_value}")
+
+                logger.info("")
+                logger.info("Example predictions after cleaning:")
+
+                for sample in dt_results[:5]:
+                    logger.info(f"Original: {sample['predicted_label']}")
+                    logger.info(f"Cleaned: {sample['predicted_label']}")
+                    logger.info(f"True: {sample['true_label']}")
+                    logger.info("-" * 50)
+
                 score = dt_metrics.get("macro_f1_with_invalid")
                 if score is None:
                     score = dt_metrics.get("accuracy", 0.0)
-                
+
                 final_metrics[dataset_name] = {
                     "score": score,
                     "detailed": dt_metrics,
-                    "predictions": dt_results if self.is_inference_mode else None
+                    "predictions": (dt_results if self.is_inference_mode else None),
                 }
+
             except Exception as exc:
                 logger.error(f"Error evaluating {dataset_name}: {exc}")
                 final_metrics[dataset_name] = {"score": 0.0}
@@ -192,12 +330,13 @@ class ValidationManager:
         val_dataloader,
         epoch: int,
         symbol_mappings: Optional[Dict[str, str]] = None,
-    ) -> Dict[str, Any]:
-        """Run all configured validation modes."""
+    ):
+
         mode_defs = self._resolve_validation_modes()
-        comprehensive_results = {}
+        comprehensive_results: Dict[str, Any] = {}
 
         for mode_suffix, use_original, use_dynamic in mode_defs:
+
             metrics_by_dataset = self.validate_model(
                 model=model,
                 val_dataloader=val_dataloader,
@@ -206,34 +345,59 @@ class ValidationManager:
                 use_dynamic_symbols=use_dynamic,
                 symbol_mappings=symbol_mappings,
             )
+
             comprehensive_results[mode_suffix] = metrics_by_dataset
 
-        self.log_validation_summary(comprehensive_results, epoch)
-        
-        # For training history compatibility, return a simple summary score
-        # Typically the average of the primary mode's scores
-        primary_mode = mode_defs[0][0]
-        primary_scores = [m["score"] for m in comprehensive_results.get(primary_mode, {}).values()]
-        avg_score = sum(primary_scores) / len(primary_scores) if primary_scores else 0.0
-        
-        return {
-            "avg_score": avg_score,
-            "all_modes": comprehensive_results
+        self.log_validation_summary(
+            comprehensive_results,
+            epoch,
+        )
+
+        fixed_mode_results = comprehensive_results.get("fixed", {})
+        dataset_metrics = {
+            ds_name: metrics.get("score", 0.0)
+            for ds_name, metrics in fixed_mode_results.items()
         }
 
-    def log_validation_summary(self, comprehensive_results: Dict[str, Any], epoch: int):
-        """Simple, readable logging of results."""
-        logger.info("=" * 60)
-        logger.info(f" EPOCH {epoch + 1} VALIDATION SUMMARY")
-        logger.info("=" * 60)
-        
-        header = f"{'Dataset':<15} | {'Mode':<10} | {'Score (F1/Acc)':<12}"
-        logger.info(header)
-        logger.info("-" * 60)
-        
+        combined_metric = (
+            sum(dataset_metrics.values()) / len(dataset_metrics)
+            if dataset_metrics else 0.0
+        )
+
+        metric_string = "|".join(
+            [f"{k}:{v:.4f}" for k, v in dataset_metrics.items()]
+        )
+
+        logger.info(f"📊 Dataset metrics (fixed mode): {dataset_metrics}")
+        logger.info(f"📊 Combined metric (fixed mode): {combined_metric:.4f}")
+        logger.info(f"📊 Composite string (fixed mode): {metric_string}")
+
+        return {
+            "avg_score": combined_metric,
+            "all_modes": comprehensive_results,
+        }
+
+    def log_validation_summary(
+        self,
+        comprehensive_results: Dict[str, Any],
+        epoch: int,
+    ):
+
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info("FINAL VALIDATION RESULTS")
+        logger.info("=" * 80)
+
         for mode, datasets in comprehensive_results.items():
+
+            logger.info("")
+            logger.info(f"Validation Mode: {mode}")
+            logger.info("-" * 80)
+
             for ds_name, metrics in datasets.items():
+
                 score = metrics.get("score", 0.0)
-                logger.info(f"{ds_name:<15} | {mode:<10} | {score:.4f}")
-        
-        logger.info("=" * 60)
+
+                logger.info(f"{ds_name:<20} : {score:.4f}")
+
+        logger.info("=" * 80)

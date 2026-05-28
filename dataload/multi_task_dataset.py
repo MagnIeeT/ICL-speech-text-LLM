@@ -154,7 +154,11 @@ class BaseMultiTaskDataset(Dataset):
                 formatted_examples.append(
                     {
                         "text": example["text"],
-                        "label": self._format_label(example, is_example=True, current_mapping=current_config.label_mapping),
+                        "label": self._format_label(
+                            example,
+                            is_example=True,
+                            current_mapping=current_config.label_mapping,
+                        ),
                     }
                 )
             examples_audio = self._get_examples_audio(selected_examples)
@@ -175,25 +179,20 @@ class BaseMultiTaskDataset(Dataset):
             text=item[current_config.text_key],
         )
 
-        inputs = self.processor.process_inputs(
-            data={
-                "prompt": prompt,
-                "fewshot_mode": self.fewshot_mode,
-                "input_mode": self.input_mode,
-                "completion": formatted_completion,
-                "audio": self._get_main_audio(item),
-                "examples_audio": examples_audio if examples_audio else None,
-                "dataset_type": self.dataset_type,
-            },
-            is_training=self._is_training(),
-        )
-
+        # IMPORTANT:
+        # Do NOT tokenize here.
+        # Tokenization must happen in processor.collate_batch so SymbolManager can
+        # rewrite prompt/completion BEFORE tokenization.
         return {
             "prompt": prompt,
             "text": item[current_config.text_key],
             "completion": formatted_completion,
+            "audio": self._get_main_audio(item),
+            "examples_audio": examples_audio if examples_audio else None,
+            "input_mode": self.input_mode,
+            "fewshot_mode": self.fewshot_mode,
             "dataset_type": self.dataset_type,
-            **inputs,
+            "is_training": self._is_training(),
         }
 
     def _get_main_audio(self, item):
@@ -219,6 +218,13 @@ class BaseMultiTaskDataset(Dataset):
 
     def _is_training(self):
         return self.is_training
+
+
+class TrainingBaseDataset(BaseMultiTaskDataset):
+    """Single-task dataset wrapper that marks items as training=True."""
+
+    def _is_training(self):
+        return True
 
 
 class MultiTaskDataset(Dataset):
@@ -300,5 +306,3 @@ class MultiTaskDataset(Dataset):
         if self.balance_datasets or self.interleave:
             for dt in self.dataset_types:
                 np.random.shuffle(self.dataset_indices[dt])
-
-

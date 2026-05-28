@@ -28,6 +28,7 @@ class ModelType(Enum):
     SALMONN = "salmonn"
     LLAMA = "llama"
     QWEN = "qwen"
+    FLAMINGO = "flamingo"
 
 
 @dataclass
@@ -74,6 +75,8 @@ class TrainingConfig:
     model_type: ModelType = ModelType.SALMONN
     salmonn_tokenizer_name: str = field(default_factory=lambda: get_env_path("SALMONN_TOKENIZER_NAME"))
     qwen_model_name: str = field(default_factory=lambda: get_env_path("QWEN_MODEL_NAME"))
+    flamingo_model_name: str = field(default_factory=lambda: get_env_path("FLAMINGO_MODEL_NAME"))
+
     lora_config: LoRAConfig = field(default_factory=LoRAConfig)
     symbol_config: SymbolConfig = field(default_factory=SymbolConfig)
     data_config: DataConfig = field(default_factory=DataConfig)
@@ -124,6 +127,7 @@ class TrainingConfig:
             "model_type": self.model_type.value,
             "salmonn_tokenizer_name": self.salmonn_tokenizer_name,
             "qwen_model_name": self.qwen_model_name,
+            "flamingo_model_name": self.flamingo_model_name,
             "lora_config": {
                 "rank": self.lora_config.rank,
                 "alpha": self.lora_config.alpha,
@@ -193,6 +197,7 @@ class TrainingConfig:
             model_type=ModelType(args.model_type),
             salmonn_tokenizer_name=getattr(args, "salmonn_tokenizer_name", "lmsys/vicuna-13b-v1.1"),
             qwen_model_name=getattr(args, "qwen_model_name", "Qwen/Qwen2-Audio-7B-Instruct"),
+            flamingo_model_name=getattr(args, "flamingo_model_name", "nvidia/audio-flamingo-3-hf"),
             lora_config=lora_config,
             symbol_config=symbol_config,
             data_config=data_config,
@@ -219,9 +224,10 @@ def get_default_config(dynamic_symbols: bool = False, symbol_update_strategy: st
 def parse_training_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Symbol Adapter Training (LoRA-only)")
 
-    parser.add_argument("--model_type", type=str, default="salmonn", choices=["salmonn", "llama", "qwen"])
+    parser.add_argument("--model_type", type=str, default="salmonn", choices=["salmonn", "llama", "qwen", "flamingo"])
     parser.add_argument("--salmonn_tokenizer_name", type=str, default="lmsys/vicuna-13b-v1.1")
     parser.add_argument("--qwen_model_name", type=str, default="Qwen/Qwen2-Audio-7B-Instruct")
+    parser.add_argument("--flamingo_model_name", type=str, default="nvidia/audio-flamingo-3-hf")
     parser.add_argument("--dataset_type", type=str, default="voxceleb")
     parser.add_argument("--val_dataset_type", type=str, default=None)
     parser.add_argument("--device", type=str, default="cuda:0")
