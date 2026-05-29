@@ -1,66 +1,85 @@
 #!/bin/bash
+set -e
+
 # ============================================================
-# LLaVA General Inference Script
-# Strategy, dataset, and paths are set in vision_orchestrator.py.
-# Edit ONLY the job settings below (num_samples, hostname, etc.).
+# LLaVA Inference Submit Script
+# ============================================================
+# HOW TO USE:
+#
+#   Single run:
+#       dataset=colon strategy=regular icl_shots=0 bash submit_inference.sh
+#       dataset=chest  strategy=regular icl_shots=0 bash submit_inference.sh
+#       dataset=endo   strategy=regular icl_shots=0 bash submit_inference.sh
+#
+#   Chain 0/1/5-shot jobs (each waits for previous):
+#       JOB1=$(dataset=colon icl_shots=0 bash submit_inference.sh --print-id)
+#       JOB2=$(hold_job_id="$JOB1" dataset=colon icl_shots=1 bash submit_inference.sh --print-id)
+#       JOB3=$(hold_job_id="$JOB2" dataset=colon icl_shots=5 bash submit_inference.sh --print-id)
+#
+#   Run multiple datasets:
+#       for ds in colon chest endo; do
+#           dataset=$ds icl_shots=0 bash submit_inference.sh
+#       done
 # ============================================================
 
 # ========================================
-# Configuration - Edit these values
+# Configuration — edit these values
 # ========================================
+dataset=endo                       # colon | chest | endo
+strategy=regular                  # regular | two_token
 model_type="llava-v1.5-13b"
 
-num_samples=0                # Number of samples to infer (0 = ALL) — passed to orchestrator
-batch_size=1                    # Inference batch size
-gradient_accumulation_steps=8   # Kept for template consistency
+num_samples=0      # 0 = ALL samples
+icl_shots=0
 
-hostname="n6"
-cuda_device=2
+hostname="n10"
+cuda_device=0
 
-# Paths — override via env vars or edit here
+# Set to a job ID (e.g. "12345.cluster") to wait for that job first.
+hold_job_id=11787.eehpc
+
+# Paths
 LLAVA_DIR="${LLAVA_DIR:-/home/harinis/LLaVA}"
 output_dir="${LLAVA_DIR}/logs"
 orchestrator_path="${LLAVA_DIR}/sprint_vision/vision_orchestrator.py"
-hold_job_id=""
 
 # ========================================
-# Auto Setup & Logging Validation
+# Auto setup
 # ========================================
-eval "$(conda shell.bash hook)"
-conda activate llava
-
-if [ -n "$hold_job_id" ]; then
-    HOLD_FLAG="-W depend=afterok:$hold_job_id"
-else
-    HOLD_FLAG=""
-fi
-
-# Dynamic Run Naming
 CURRENT_DATETIME=$(date +"%d%m_%H%M")
 TODAY=$(date +"%Y-%m-%d")
+RUN_NAME="${CURRENT_DATETIME}_infer_${dataset}_${strategy}_${icl_shots}shot_${model_type}"
 
-RUN_NAME="${CURRENT_DATETIME}_infer_${model_type}_samples${num_samples}"
 LOG_DIR="${output_dir}/${TODAY}"
-
 mkdir -p "$LOG_DIR"
 LOG_FILE="${LOG_DIR}/${RUN_NAME}.log"
 rm -f "${LOG_FILE}"
+
+if [ -n "$hold_job_id" ]; then
+    HOLD_FLAG="-W depend=afterok:${hold_job_id}"
+    HOLD_MSG="Waiting for job: ${hold_job_id}"
+else
+    HOLD_FLAG=""
+    HOLD_MSG="Starting immediately (no dependency)"
+fi
 
 echo "=========================================="
 echo "LLaVA Inference Configuration"
 echo "=========================================="
 echo "Run Name:    ${RUN_NAME}"
+echo "Dataset:     ${dataset}"
+echo "Strategy:    ${strategy}"
 echo "Model:       ${model_type}"
+echo "Shots:       ${icl_shots}"
 echo "Samples:     ${num_samples} (0 = ALL)"
-echo "Batch Size:  ${batch_size}"
 echo "Hostname:    ${hostname}"
 echo "CUDA Device: ${cuda_device}"
+echo "Dependency:  ${HOLD_MSG}"
 echo "Log File:    ${LOG_FILE}"
-echo "NOTE: Strategy/dataset/paths are set in vision_orchestrator.py"
 echo "=========================================="
 
 # ========================================
-# Write job script to temp file
+# Write job script
 # ========================================
 TMPJOB=$(mktemp /tmp/llava_infer_XXXX.sh)
 
@@ -68,7 +87,6 @@ cat << EOF > ${TMPJOB}
 #!/bin/bash
 set -e
 
-# Real-time unbuffered logging setup
 export PYTHONUNBUFFERED=1
 export PYTHONIOENCODING=utf-8
 export CUDA_VISIBLE_DEVICES=${cuda_device}
@@ -77,10 +95,9 @@ exec > >(stdbuf -oL tee -a ${LOG_FILE}) 2>&1
 echo "=========================================="
 echo "Job started at: \$(date)"
 echo "Running on host: \$(hostname)"
-echo "CUDA devices: ${cuda_device}"
+echo "Dataset: ${dataset}  Strategy: ${strategy}  Shots: ${icl_shots}"
 echo "=========================================="
 
-# Environment Activation
 eval "\$(conda shell.bash hook)"
 conda activate llava
 cd ${LLAVA_DIR}
@@ -97,7 +114,10 @@ echo "=========================================="
 
 stdbuf -oL -eL python -u "${orchestrator_path}" \\
     --mode inference \\
-    --num-samples "${num_samples}"
+    --dataset "${dataset}" \\
+    --strategy "${strategy}" \\
+    --num-samples "${num_samples}" \\
+    --icl-shots "${icl_shots}"
 
 echo "=========================================="
 echo "Job completed at: \$(date)"
@@ -107,22 +127,28 @@ EOF
 chmod +x ${TMPJOB}
 
 # ========================================
-# Submit Job via qsub
+# Submit and capture job ID
 # ========================================
-qsub -q workq \
+JOB_ID=$(qsub -q workq \
     $HOLD_FLAG \
     -l select=1:num_gpus=1:gpu_mem=48GB:host=${hostname} \
     -l walltime=24:00:00 \
     -o /dev/null \
     -j oe \
-    -v num_samples=${num_samples},cuda_device=${cuda_device},LOG_FILE=${LOG_FILE} \
     -S /bin/bash \
-    ${TMPJOB}
+    ${TMPJOB})
 
 echo ""
 echo "=========================================="
 echo "Job Submitted!"
-echo "Monitor with:"
-echo "  tail -f ${LOG_FILE}"
-echo "  qstat | grep harinis"
+echo "  Job ID:  ${JOB_ID}"
+echo "  Monitor: tail -f ${LOG_FILE}"
+echo "  Status:  qstat | grep harinis"
+echo ""
+echo "To chain another job after this one:"
+echo "  hold_job_id=${JOB_ID} dataset=${dataset} icl_shots=5 bash submit_inference.sh"
 echo "=========================================="
+
+if [[ "${1}" == "--print-id" ]]; then
+    echo "${JOB_ID}"
+fi

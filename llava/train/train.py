@@ -16,7 +16,10 @@
 
 import os
 import copy
+import random
+import re
 from dataclasses import dataclass, field
+from datetime import datetime
 import json
 import logging
 import pathlib
@@ -33,9 +36,13 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "sprint_vision")))
 try:
     from models.symbolAdapter.symbol_manager import SymbolManager
+    from dataload.example_selector import ExampleSelector
+    from dataload.prompt_builder import LLaVAPromptBuilder
 except ImportError:
-    logging.warning("SymbolManager not found in sprint_vision/models/symbolAdapter/. Please check folder structure.")
+    logging.warning("SymbolManager / ExampleSelector / LLaVAPromptBuilder not found. Check sprint_vision/ path.")
     SymbolManager = None
+    ExampleSelector = None
+    LLaVAPromptBuilder = None
 # -----------------------------------
 
 from llava.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
@@ -44,7 +51,7 @@ from llava.train.llava_trainer import LLaVATrainer
 
 from llava import conversation as conversation_lib
 from llava.model import *
-from llava.mm_utils import tokenizer_image_token
+from llava.mm_utils import tokenizer_image_token, process_images
 
 from PIL import Image
 
@@ -85,6 +92,14 @@ class DataArguments:
     is_multimodal: bool = False
     image_folder: Optional[str] = field(default=None)
     image_aspect_ratio: str = 'square'
+    # --- SPRInT MODIFICATION: ICL TRAINING ---
+    icl_shots: int = field(default=0,
+                           metadata={"help": "ICL examples per training prompt. 0 = no ICL."})
+    icl_pool_path: Optional[str] = field(default=None,
+                           metadata={"help": "JSON pool for ICL example selection. Defaults to data_path."})
+    icl_seed: int = field(default=42,
+                           metadata={"help": "Base seed for per-item ICL selection (seed + item_index used per sample)."})
+    # -----------------------------------------
 
 
 @dataclass
@@ -123,6 +138,15 @@ class TrainingArguments(transformers.TrainingArguments):
     group_by_modality_length: bool = field(default=False)
     # --- SPRInT MODIFICATION: STRATEGY FLAG ---
     sprint_strategy: str = field(default="regular")
+    # --- SPRInT MODIFICATION: VALIDATION FIELDS ---
+    eval_data_path: Optional[str] = field(
+        default=None,
+        metadata={"help": "Path to validation JSON (LLaVA format). If set, runs symbol-aware accuracy after each epoch."}
+    )
+    max_val_samples: int = field(
+        default=100,
+        metadata={"help": "Max validation samples per epoch. 0 = use all."}
+    )
 
 
 def maybe_zero_3(param, ignore_status=False, name=None):
@@ -422,10 +446,15 @@ def preprocess_v1(
         for source in sources:
             for sentence in source:
                 if sentence["from"] == "gpt":
-                    # Exact replacement logic to handle labels strictly
+                    # Exact match: label turn is always a bare "0" or "1"
                     current_val = sentence["value"].strip()
                     if current_val in mappings:
                         sentence["value"] = mappings[current_val]
+                elif sentence["from"] == "human":
+                    # Substring replace: symbol mapping hint in the instruction text
+                    # e.g. "(0 for No, 1 for Yes)" → "(kxzy for No, wxab for Yes)"
+                    # Uses two-pass safe replacement to prevent cascade corruption.
+                    sentence["value"] = symbol_manager.apply_to_text(sentence["value"], mappings)
     # ------------------------------------------
 
     conv = conversation_lib.default_conversation.copy()
@@ -669,6 +698,21 @@ def preprocess(
     return dict(input_ids=input_ids, labels=targets)
 
 
+def _expand2square(pil_img, background_color):
+    """Pad a PIL image to a square by centering on a solid background."""
+    width, height = pil_img.size
+    if width == height:
+        return pil_img
+    elif width > height:
+        result = Image.new(pil_img.mode, (width, width), background_color)
+        result.paste(pil_img, (0, (width - height) // 2))
+        return result
+    else:
+        result = Image.new(pil_img.mode, (height, height), background_color)
+        result.paste(pil_img, ((height - width) // 2, 0))
+        return result
+
+
 class LazySupervisedDataset(Dataset):
     """Dataset for supervised fine-tuning."""
 
@@ -685,6 +729,19 @@ class LazySupervisedDataset(Dataset):
         self.data_args = data_args
         self.symbol_manager = symbol_manager # --- SPRInT MODIFICATION ---
 
+        # --- SPRInT MODIFICATION: ICL TRAINING SETUP ---
+        self.icl_shots = getattr(data_args, "icl_shots", 0)
+        self.icl_seed  = getattr(data_args, "icl_seed", 42)
+        if self.icl_shots > 0 and ExampleSelector is not None and LLaVAPromptBuilder is not None:
+            pool_path = getattr(data_args, "icl_pool_path", None) or data_path
+            self.example_selector = ExampleSelector(pool_path, seed=self.icl_seed)
+            self.prompt_builder   = LLaVAPromptBuilder()
+            rank0_print(f"[ICL Training] icl_shots={self.icl_shots}, pool={pool_path}")
+        else:
+            self.example_selector = None
+            self.prompt_builder   = None
+        # -------------------------------------------------
+
     def __len__(self):
         return len(self.list_data_dict)
 
@@ -699,45 +756,91 @@ class LazySupervisedDataset(Dataset):
     @property
     def modality_lengths(self):
         length_list = []
+        # 128 tokens per image is the estimate used in lengths; multiply by (1 + icl_shots)
+        # so group_by_modality_length bins ICL samples with other long multimodal samples.
+        extra_img_tokens = self.icl_shots * 128
         for sample in self.list_data_dict:
             cur_len = sum(len(conv['value'].split()) for conv in sample['conversations'])
-            cur_len = cur_len if 'image' in sample else -cur_len
+            cur_len = cur_len + extra_img_tokens if 'image' in sample else -cur_len
             length_list.append(cur_len)
         return length_list
+
+    def _load_image(self, image_file: str) -> torch.Tensor:
+        """Load, pad, and preprocess a single image to a [C, H, W] tensor."""
+        processor = self.data_args.image_processor
+        image = Image.open(
+            os.path.join(self.data_args.image_folder, image_file)
+        ).convert("RGB")
+        if self.data_args.image_aspect_ratio == "pad":
+            image = _expand2square(image, tuple(int(x * 255) for x in processor.image_mean))
+        return processor.preprocess(image, return_tensors="pt")["pixel_values"][0]
 
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
         sources = self.list_data_dict[i]
         if isinstance(i, int):
             sources = [sources]
         assert len(sources) == 1, "Don't know why it is wrapped to a list"  # FIXME
+
+        # ── ICL training path ─────────────────────────────────────────────────
+        # When icl_shots > 0 we embed K example images + labels into the human
+        # turn, mirroring exactly what LLaVAPromptBuilder produces at inference.
+        # preprocess_multimodal is SKIPPED because it collapses multiple <image>
+        # tokens to one; tokenizer_image_token handles them correctly already.
+        if self.icl_shots > 0 and self.example_selector is not None:
+            item = self.list_data_dict[i]
+
+            # Extract plain instruction (strip leading <image>\n from human turn)
+            raw_human = item["conversations"][0]["value"]
+            instruction = raw_human.replace(DEFAULT_IMAGE_TOKEN, "").lstrip("\n").strip()
+
+            # Select K balanced examples; exclude this sample by ID
+            examples = self.example_selector.select(
+                n_shots=self.icl_shots,
+                exclude_id=item.get("id"),
+                seed=self.icl_seed + i,       # deterministic per item, varied across items
+            )
+
+            # Build human turn with K+1 <image> tokens (original labels, no symbol
+            # substitution here — preprocess_v1 applies symbols uniformly below)
+            new_human_val, image_paths = self.prompt_builder.build(
+                instruction=instruction,
+                examples=examples,
+                test_image_path=item.get("image", ""),
+                symbol_mappings=None,
+            )
+
+            icl_sources = [[
+                {"from": "human", "value": new_human_val},
+                {"from": "gpt",   "value": item["conversations"][1]["value"]},
+            ]]
+
+            data_dict = preprocess(
+                copy.deepcopy(icl_sources),
+                self.tokenizer,
+                has_image=True,
+                symbol_manager=self.symbol_manager,
+            )
+            if isinstance(i, int):
+                data_dict = dict(input_ids=data_dict["input_ids"][0],
+                                 labels=data_dict["labels"][0])
+
+            # Store K+1 images as a list of [C,H,W] tensors.
+            # The collator keeps them as a list → LLaVA's prepare_inputs_labels_for_multimodal
+            # takes the list path (type is list) and assigns one feature set per <image> token.
+            data_dict["image"] = [self._load_image(p) for p in image_paths]
+            return data_dict
+        # ── End ICL path ──────────────────────────────────────────────────────
+
+        # ── Standard single-image path (unchanged) ────────────────────────────
         if 'image' in sources[0]:
             image_file = self.list_data_dict[i]['image']
-            image_folder = self.data_args.image_folder
-            processor = self.data_args.image_processor
-            image = Image.open(os.path.join(image_folder, image_file)).convert('RGB')
-            if self.data_args.image_aspect_ratio == 'pad':
-                def expand2square(pil_img, background_color):
-                    width, height = pil_img.size
-                    if width == height:
-                        return pil_img
-                    elif width > height:
-                        result = Image.new(pil_img.mode, (width, width), background_color)
-                        result.paste(pil_img, (0, (width - height) // 2))
-                        return result
-                    else:
-                        result = Image.new(pil_img.mode, (height, height), background_color)
-                        result.paste(pil_img, ((height - width) // 2, 0))
-                        return result
-                image = expand2square(image, tuple(int(x*255) for x in processor.image_mean))
-                image = processor.preprocess(image, return_tensors='pt')['pixel_values'][0]
-            else:
-                image = processor.preprocess(image, return_tensors='pt')['pixel_values'][0]
+            image = self._load_image(image_file)
             sources = preprocess_multimodal(
                 copy.deepcopy([e["conversations"] for e in sources]),
                 self.data_args)
         else:
             sources = copy.deepcopy([e["conversations"] for e in sources])
-        
+
         # --- SPRInT MODIFICATION: PASS SYMBOL MANAGER ---
         data_dict = preprocess(
             sources,
@@ -745,16 +848,14 @@ class LazySupervisedDataset(Dataset):
             has_image=('image' in self.list_data_dict[i]),
             symbol_manager=self.symbol_manager)
         # ------------------------------------------------
-        
+
         if isinstance(i, int):
             data_dict = dict(input_ids=data_dict["input_ids"][0],
                              labels=data_dict["labels"][0])
 
-        # image exist in the data
         if 'image' in self.list_data_dict[i]:
             data_dict['image'] = image
         elif self.data_args.is_multimodal:
-            # image does not exist in the data, but the model is multimodal
             crop_size = self.data_args.image_processor.crop_size
             data_dict['image'] = torch.zeros(3, crop_size['height'], crop_size['width'])
         return data_dict
@@ -786,7 +887,15 @@ class DataCollatorForSupervisedDataset(object):
 
         if 'image' in instances[0]:
             images = [instance['image'] for instance in instances]
-            if all(x is not None and x.shape == images[0].shape for x in images):
+            if isinstance(images[0], list):
+                # ICL multi-image path: each sample holds a list of [C,H,W] tensors.
+                # Flatten to a single list so LLaVA's prepare_inputs_labels_for_multimodal
+                # receives type(images) == list and assigns one feature set per <image> token.
+                flat: List[torch.Tensor] = []
+                for img_list in images:
+                    flat.extend(img_list)
+                batch['images'] = flat
+            elif all(x is not None and x.shape == images[0].shape for x in images):
                 batch['images'] = torch.stack(images)
             else:
                 batch['images'] = images
@@ -806,6 +915,157 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer,
     return dict(train_dataset=train_dataset,
                 eval_dataset=None,
                 data_collator=data_collator)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SPRInT Trainer Callbacks
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SPRInTSymbolEpochCallback(transformers.TrainerCallback):
+    """
+    Rotates ED-FT symbols at the start of each training epoch.
+
+    HuggingFace Trainer re-spawns DataLoader workers at the start of each
+    epoch when persistent_workers=False (the default).  on_epoch_begin fires
+    before the new iterator is created, so workers fork with the updated
+    current_epoch and call get_current_symbols() → fresh mappings for that
+    epoch.  NUM_WORKERS=0 is set in run_sprint_finetune.sh for ed_ft so
+    symbol state is shared in-process rather than across fork boundaries.
+    """
+
+    def __init__(self, symbol_manager):
+        self.symbol_manager = symbol_manager
+
+    def on_epoch_begin(self, args, state, control, **kwargs):
+        epoch = int(state.epoch) if state.epoch is not None else 0
+        self.symbol_manager.get_symbols_for_epoch(epoch, force_new_symbols=True)
+        if args.local_rank in (-1, 0):
+            rank0_print(
+                f"[SPRInT ED-FT] Epoch {epoch}: rotated symbols → "
+                f"{self.symbol_manager.get_current_symbols()}"
+            )
+
+
+class SPRInTValidationCallback(transformers.TrainerCallback):
+    """
+    Runs a lightweight symbol-aware accuracy check on a validation subset
+    after each epoch.  Saves results to {output_dir}/val_epoch{N}.json.
+
+    Only active when training_args.eval_data_path is set.
+    Skipped on non-rank-0 processes in distributed training.
+    """
+
+    def __init__(self, model, tokenizer, image_processor, data_args, training_args, symbol_manager):
+        self.model = model
+        self.tokenizer = tokenizer
+        self.image_processor = image_processor
+        self.data_args = data_args
+        self.training_args = training_args
+        self.symbol_manager = symbol_manager
+        self._val_data = None
+
+    def _load_val_data(self):
+        if self._val_data is not None:
+            return self._val_data
+        path = self.training_args.eval_data_path
+        if not path or not os.path.exists(path):
+            return []
+        with open(path, "r") as f:
+            data = json.load(f)
+        n = self.training_args.max_val_samples
+        if n > 0 and len(data) > n:
+            rng = random.Random(42)
+            data = rng.sample(data, n)
+        self._val_data = data
+        return data
+
+    def on_epoch_end(self, args, state, control, **kwargs):
+        if args.local_rank not in (-1, 0):
+            return
+        val_data = self._load_val_data()
+        if not val_data:
+            return
+
+        epoch = int(state.epoch) if state.epoch is not None else 0
+        symbols = self.symbol_manager.get_current_symbols() if self.symbol_manager else {}
+        strategy = args.sprint_strategy
+
+        self.model.eval()
+        correct = total = 0
+        results = []
+
+        with torch.no_grad():
+            for item in val_data:
+                # Load image
+                img_path = os.path.join(self.data_args.image_folder, item.get("image", ""))
+                try:
+                    image = Image.open(img_path).convert("RGB")
+                    image_tensor = process_images([image], self.image_processor, self.data_args)[0]
+                    image_tensor = image_tensor.unsqueeze(0).to(self.model.device, dtype=torch.float16)
+                except Exception:
+                    continue
+
+                # Build prompt (human turn only, with image token)
+                human_text = item["conversations"][0]["value"]
+                if self.symbol_manager is not None:
+                    human_text = self.symbol_manager.apply_to_text(human_text)
+
+                from llava.conversation import conv_templates
+                from llava.mm_utils import tokenizer_image_token
+                from llava.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN
+
+                conv = conv_templates["v1"].copy()
+                if DEFAULT_IMAGE_TOKEN not in human_text:
+                    human_text = DEFAULT_IMAGE_TOKEN + "\n" + human_text
+                conv.append_message(conv.roles[0], human_text)
+                conv.append_message(conv.roles[1], None)
+                prompt = conv.get_prompt()
+
+                input_ids = tokenizer_image_token(
+                    prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt"
+                ).unsqueeze(0).to(self.model.device)
+
+                out = self.model.generate(
+                    input_ids,
+                    images=image_tensor,
+                    max_new_tokens=8,
+                    do_sample=False,
+                )
+                pred_text = self.tokenizer.decode(
+                    out[0][input_ids.shape[1]:], skip_special_tokens=True
+                ).strip()
+
+                # Ground truth
+                gt_symbol = item["conversations"][1]["value"].strip()
+                if symbols:
+                    gt_orig = self.symbol_manager.convert_symbols_back(gt_symbol) if self.symbol_manager else gt_symbol
+                else:
+                    gt_orig = gt_symbol
+
+                # Decode prediction back to original label
+                if self.symbol_manager is not None and symbols:
+                    pred_orig = self.symbol_manager.convert_symbols_back(pred_text)
+                else:
+                    m = re.search(r"\b([01])\b", pred_text)
+                    pred_orig = m.group(1) if m else pred_text[:1]
+
+                correct += int(pred_orig == gt_orig)
+                total += 1
+                results.append({"gt": gt_orig, "pred": pred_orig, "pred_raw": pred_text})
+
+        acc = correct / total if total else 0.0
+        rank0_print(f"[SPRInT Val] Epoch {epoch}: accuracy={acc:.4f} ({correct}/{total})")
+
+        out_path = os.path.join(
+            args.output_dir,
+            f"val_epoch{epoch}_{strategy}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        )
+        os.makedirs(args.output_dir, exist_ok=True)
+        with open(out_path, "w") as f:
+            json.dump({"epoch": epoch, "accuracy": acc, "correct": correct, "total": total, "results": results}, f, indent=2)
+        rank0_print(f"[SPRInT Val] Saved to {out_path}")
+
+        self.model.train()
 
 
 def train(attn_implementation=None):
@@ -981,27 +1241,73 @@ def train(attn_implementation=None):
 
     # --- SPRInT MODIFICATION: INITIALIZE SYMBOL MANAGER ---
     sprint_manager = None
-    if SymbolManager is not None and training_args.sprint_strategy != "regular":
-        # Only create SymbolManager when using symbol strategy.
-        # symbol_type is always "two_token"; "regular" means no symbol replacement.
-        sprint_manager = SymbolManager(
-            original_labels=["0", "1"],
-            tokenizer=tokenizer,
-            dynamic_per_epoch=False,
-            symbol_type="two_token"
-        )
-        rank0_print(f"SPRInT SymbolManager Initialized. Mappings: {sprint_manager.get_current_symbols()}")
+    _strategy = training_args.sprint_strategy
+    if SymbolManager is not None and _strategy not in ("regular", "rft"):
+        if _strategy == "lf_ft":
+            sprint_manager = SymbolManager(
+                original_labels=["0", "1"],
+                tokenizer=tokenizer,
+                swap_labels=True,
+            )
+        elif _strategy == "ed_ft":
+            sprint_manager = SymbolManager(
+                original_labels=["0", "1"],
+                tokenizer=tokenizer,
+                dynamic_per_epoch=True,
+                symbol_type="two_token",
+            )
+            # HuggingFace Trainer preprocesses data at __getitem__ time, not inside
+            # a per-batch training loop.  Without this call, epoch_mappings_history
+            # is empty when the dataset is first accessed, get_current_symbols()
+            # returns {}, and no symbol substitution happens — ED-FT silently trains
+            # as RFT with no error.
+            sprint_manager.get_symbols_for_epoch(0, force_new_symbols=True)
+        elif _strategy == "id_ft":
+            raise NotImplementedError(
+                "id_ft (per-instance dynamic symbols) is not implemented in this "
+                "training path.  It requires pre-generated per-instance JSON files "
+                "and a custom data pipeline.  Use two_token (ss_ft) for static "
+                "symbols or ed_ft for epoch-dynamic symbols."
+            )
+        else:
+            # ss_ft / two_token: static fixed symbols, same mapping for the full run.
+            sprint_manager = SymbolManager(
+                original_labels=["0", "1"],
+                tokenizer=tokenizer,
+                dynamic_per_epoch=False,
+                symbol_type="two_token",
+            )
+        rank0_print(f"SPRInT SymbolManager Initialized (strategy={_strategy}). Mappings: {sprint_manager.get_current_symbols()}")
     else:
-        rank0_print(f"SPRInT: strategy='{training_args.sprint_strategy}' — using original labels, no symbol replacement.")
+        rank0_print(f"SPRInT: strategy='{_strategy}' — using original labels, no symbol replacement.")
     # -----------------------------------------------------
 
     data_module = make_supervised_data_module(tokenizer=tokenizer,
                                               data_args=data_args,
                                               symbol_manager=sprint_manager) # --- SPRInT MODIFICATION ---
-    
+
+    # --- SPRInT MODIFICATION: BUILD CALLBACKS ---
+    sprint_callbacks = []
+    if sprint_manager is not None and _strategy == "ed_ft":
+        sprint_callbacks.append(SPRInTSymbolEpochCallback(sprint_manager))
+        rank0_print("[SPRInT] Registered SPRInTSymbolEpochCallback for ED-FT epoch rotation.")
+
+    if training_args.eval_data_path:
+        sprint_callbacks.append(SPRInTValidationCallback(
+            model=model,
+            tokenizer=tokenizer,
+            image_processor=data_args.image_processor if hasattr(data_args, "image_processor") else None,
+            data_args=data_args,
+            training_args=training_args,
+            symbol_manager=sprint_manager,
+        ))
+        rank0_print(f"[SPRInT] Registered SPRInTValidationCallback — eval_data_path={training_args.eval_data_path}")
+    # --------------------------------------------
+
     trainer = LLaVATrainer(model=model,
                     tokenizer=tokenizer,
                     args=training_args,
+                    callbacks=sprint_callbacks if sprint_callbacks else None,
                     **data_module)
 
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
