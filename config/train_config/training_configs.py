@@ -70,12 +70,26 @@ class DataConfig:
 from utils.environment import get_env_path
 
 @dataclass
+class DifferentiableSymbolConfig:
+    enabled: bool = False
+    num_slots: int = 20
+    pool_size: int = 50
+    tau: float = 1.0
+    tau_min: float = 0.1
+    tau_anneal_rate: float = 0.0001
+    router_lr: float = 1e-3
+    integrity_alpha: float = 1.0  # ASR integrity weight
+    integrity_beta: float = 1.0   # Linguistic integrity weight
+
+
+@dataclass
 class TrainingConfig:
     model_type: ModelType = ModelType.SALMONN
     salmonn_tokenizer_name: str = field(default_factory=lambda: get_env_path("SALMONN_TOKENIZER_NAME"))
     qwen_model_name: str = field(default_factory=lambda: get_env_path("QWEN_MODEL_NAME"))
     lora_config: LoRAConfig = field(default_factory=LoRAConfig)
     symbol_config: SymbolConfig = field(default_factory=SymbolConfig)
+    diff_symbol_config: DifferentiableSymbolConfig = field(default_factory=DifferentiableSymbolConfig)
     data_config: DataConfig = field(default_factory=DataConfig)
 
     output_dir: str = field(default_factory=lambda: get_env_path("BASE_OUTPUT_DIR"))
@@ -179,6 +193,10 @@ class TrainingConfig:
         if symbol_config.no_symbols:
             symbol_config.dynamic_symbols = False
 
+        diff_symbol_config = DifferentiableSymbolConfig(
+            enabled=getattr(args, "diff_symbol_enabled", False)
+        )
+
         data_config = DataConfig(
             dataset_type=args.dataset_type,
             val_dataset_type=args.val_dataset_type if args.val_dataset_type else args.dataset_type,
@@ -195,6 +213,7 @@ class TrainingConfig:
             qwen_model_name=getattr(args, "qwen_model_name", "Qwen/Qwen2-Audio-7B-Instruct"),
             lora_config=lora_config,
             symbol_config=symbol_config,
+            diff_symbol_config=diff_symbol_config,
             data_config=data_config,
             output_dir=getattr(args, "output_dir", get_env_path("BASE_OUTPUT_DIR")),
             checkpoint_dir=getattr(args, "checkpoint_dir", get_env_path("CHECKPOINT_DIR")),
@@ -235,6 +254,7 @@ def parse_training_args() -> argparse.Namespace:
     parser.add_argument("--max_grad_norm", type=float, default=1.0)
 
     parser.add_argument("--dynamic_symbols", action="store_true")
+    parser.add_argument("--diff_symbol_enabled", action="store_true", help="Enable Differentiable Symbolic Preference Optimization (D-SPO)")
     parser.add_argument("--no_symbols", action="store_true")
     parser.add_argument("--swap_labels", action="store_true", help="Swap labels (e.g., positive<->negative) during prompt/completion rewriting")
     parser.add_argument(

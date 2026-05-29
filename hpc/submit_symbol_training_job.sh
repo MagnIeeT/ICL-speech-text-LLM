@@ -29,6 +29,7 @@ val_dataset_type="voxceleb"    # datasets to validate on (hyphen-separated)
 
 no_symbols=false               # true = baseline, false = symbol-based
 dynamic_symbols=false          # true = refresh symbols per epoch
+diff_symbol_enabled=false      # true = Differentiable Symbolic Preference Optimization (D-SPO)
 swap_labels=false              # true = flip labels (e.g. pos<->neg)
 symbol_update_strategy="per_epoch"    # per_epoch | per_instance
 validation_modes="fixed,original,fresh" # modes to test each epoch
@@ -56,6 +57,7 @@ SCRIPT_PATH="${PROJECT_ROOT}/train.py"
 CURRENT_DATETIME="$(date +"%d%m_%H%M")"
 RUN_NAME="${CURRENT_DATETIME}_${model_type}_${dataset_type}_${symbol_update_strategy}"
 [ "${no_symbols}" = true ] && RUN_NAME="${RUN_NAME}_baseline"
+[ "${diff_symbol_enabled}" = true ] && RUN_NAME="${RUN_NAME}_dspo"
 [ "${swap_labels}" = true ] && RUN_NAME="${RUN_NAME}_swap"
 
 LOG_DIR="${output_dir}/logs/$(date +"%Y-%m-%d")"
@@ -124,6 +126,7 @@ python \${SCRIPT_PATH} \
   --device "\${device}" \
   $( [ "${no_symbols}" = "true" ] && echo "--no_symbols" ) \
   $( [ "${dynamic_symbols}" = "true" ] && echo "--dynamic_symbols" ) \
+  $( [ "${diff_symbol_enabled}" = "true" ] && echo "--diff_symbol_enabled" ) \
   $( [ "${swap_labels}" = "true" ] && echo "--swap_labels" ) 2>&1 | tee \${LOG_FILE}
 EOF
 

@@ -15,7 +15,8 @@ logger = logging.getLogger(__name__)
 class SalmonProcessor(ModelProcessor):
     """Processor for SALMONN model."""
 
-    def __init__(self, tokenizer, max_length: int = 128):
+    def __init__(self, tokenizer, max_length: int = 128, symbol_manager=None):
+        super().__init__(symbol_manager=symbol_manager)
         from transformers import WhisperFeatureExtractor
 
         whisper_path = get_env_path("WHISPER_MODEL_NAME", "openai/whisper-large-v2")
@@ -26,10 +27,16 @@ class SalmonProcessor(ModelProcessor):
 
     def process_inputs(self, data: Dict[str, Any], is_training: bool = False):
         prompt = data.get("prompt", "")
-        audio = data.get("audio")
-        examples_audio = data.get("examples_audio", [])
+        
+        # GLOBAL FIX: Apply Symbol Replacements BEFORE Tokenization
+        mappings = data.get("prompt_mappings") or data.get("mappings")
+        if self.symbol_manager is not None and mappings is not None:
+            prompt = self.symbol_manager._apply_mapping_safe(prompt, mappings)
+
         completion = data.get("completion", "")
-        input_mode = data.get("input_mode", "speech_only")
+        c_mappings = data.get("completion_mappings") or data.get("mappings")
+        if self.symbol_manager is not None and c_mappings is not None:
+            completion = self.symbol_manager._apply_mapping_safe(completion, c_mappings)
 
         tokenized = self.tokenizer(
             prompt,
@@ -43,13 +50,14 @@ class SalmonProcessor(ModelProcessor):
         raw_wav = None
         wav_length = 0
 
-        if audio is not None and input_mode != "text_only":
-            raw_wav = torch.tensor(audio)
-            spectrogram = self.processor(audio, sampling_rate=16000, return_tensors="pt").input_features.squeeze(0)
-            wav_length = len(raw_wav)
+        if audio := data.get("audio"):
+            if data.get("input_mode", "speech_only") != "text_only":
+                raw_wav = torch.tensor(audio)
+                spectrogram = self.processor(audio, sampling_rate=16000, return_tensors="pt").input_features.squeeze(0)
+                wav_length = len(raw_wav)
 
         examples_speech = []
-        if examples_audio and len(examples_audio) > 0:
+        if examples_audio := data.get("examples_audio", []):
             for example_audio in examples_audio:
                 example_raw_wav = torch.tensor(example_audio)
                 example_spectrogram = self.processor(
