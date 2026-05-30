@@ -1,127 +1,172 @@
-# ICL Speech-Text LLM (Strict Active Pipeline)
+# ICL Speech-Text LLM
 
-This repository implements an In-Context Learning (ICL) pipeline for Speech-Text Large Language Models, specifically focused on a LoRA-only symbol-adapter training flow.
+In-Context Learning pipeline for Speech-Text Large Language Models. Supports LoRA fine-tuning with a Symbol Adapter — a training strategy that replaces class labels with random tokens to prevent the model from exploiting pre-trained label knowledge. Includes Differentiable Symbolic Preference Optimization (D-SPO) for end-to-end differentiable symbol learning.
+
+## Supported Models
+
+| Model | Backend | Notes |
+|---|---|---|
+| Qwen2-Audio-7B-Instruct | `custom_qwen.py` | Primary, fully tested |
+| SALMONN | `custom_salmonn.py` | LLaMA + Whisper + BEATs |
+| Audio Flamingo 3 | `custom_flamingo.py` | nvidia/audio-flamingo-3-hf |
 
 ## Project Structure
 
-```text
+```
 ICL-speech-text-LLM/
-├── train.py                         # Active training entrypoint
-├── inference.py                     # Active inference entrypoint
-├── config/                          # Training and data configurations
-├── dataload/                        # Dataset and model processing logic
-├── models/                          # Model backends and symbol-adapter logic
-├── utils/                           # Shared utilities (environment, few-shots, etc.)
-├── requirements/                    # Environment setup files
-├── .env.example                     # Template for environment variables
-└── hpc/                             # HPC/Cluster submit scripts (gitignored)
+├── train.py                          # Training entrypoint
+├── inference.py                      # Inference entrypoint
+├── config/
+│   ├── train_config/training_configs.py   # TrainingConfig + all sub-configs
+│   └── data_config/                       # Per-dataset configs (voxceleb, hvb, ...)
+├── dataload/
+│   ├── qwen_processor.py             # Qwen tokenization + audio features
+│   ├── flamingo_processor.py         # Flamingo processor
+│   ├── salmon_processor.py           # SALMONN processor
+│   ├── multi_task_dataset.py         # Multi-dataset sampling
+│   └── data_utils.py                 # Dataset loading helpers
+├── models/
+│   ├── backends/                     # custom_qwen.py, custom_flamingo.py, custom_salmonn.py
+│   └── symbolAdapter/
+│       ├── symbol_training.py        # Training orchestrator
+│       ├── symbol_manager.py         # Label→symbol mapping + swap logic
+│       ├── validation.py             # Validation manager (multi-mode)
+│       ├── symbol_router.py          # D-SPO slot matrix (Gumbel-Softmax)
+│       ├── dspo_module.py            # D-SPO soft embedding injection
+│       └── vocab_filter.py           # Symbol pool generation
+├── utils/
+│   ├── training_utils.py             # Checkpoint load/save
+│   └── evaluation_utils.py           # macro_f1, macro_f1_with_invalid
+├── eval_asr_tasks/                   # ASR/ST evaluation scripts
+├── requirements/                     # Conda environment files
+└── hpc/                              # SLURM submit scripts
 ```
 
 ## Setup
 
-1.  **Environment:**
-    Create a conda environment using the provided `.yml` files.
-    ```bash
-    conda env create -f requirements/environment.yml
-    conda activate salmonn
-    ```
-
-2.  **Configuration (.env):**
-    Copy `.env.example` to `.env` and configure your local paths. This is **required** as the code uses these variables to avoid hardcoded paths.
-    ```bash
-    cp .env.example .env
-    ```
-    Key variables to set:
-    - `SALMONN_CKPT_PATH`: Path to the `salmonn_v1.pth` file.
-    - `BEATS_CKPT_PATH`: Path to the `BEATs_iter3_plus_AS2M_finetuned_on_AS2M_cpt2.pt` file.
-    - `WHISPER_MODEL_NAME`: e.g., `openai/whisper-large-v2`.
-    - `LLAMA_MODEL_NAME`: e.g., `lmsys/vicuna-13b-v1.1`.
-    - `VOXCELEB_TRAIN_PATH`, etc.: Paths to your local dataset splits.
-
-## Usage
-
-### Training (HPC)
-The HPC scripts are now self-contained. You can edit the "Job Configuration" block at the top of the script and run it without passing external environment variables.
+**1. Environment:**
 ```bash
-# 1. Edit the config block in hpc/submit_symbol_training_job.sh
-# 2. Run the script
-./hpc/submit_symbol_training_job.sh
+conda env create -f requirements/environment.yml
+conda activate qwen          # or salmonn
 ```
 
-### Inference (HPC)
-Similarly for inference:
+**2. Configuration (.env):**
 ```bash
-# 1. Edit CHECKPOINT_PATH and other values in hpc/submit_symbol_inference_job.sh
-# 2. Run the script
-./hpc/submit_symbol_inference_job.sh
+cp .env.example .env
+```
+Key variables:
+- `QWEN_MODEL_NAME` — e.g. `Qwen/Qwen2-Audio-7B-Instruct`
+- `FLAMINGO_MODEL_NAME` — e.g. `nvidia/audio-flamingo-3-hf`
+- `SALMONN_CKPT_PATH`, `BEATS_CKPT_PATH`, `WHISPER_MODEL_NAME`, `LLAMA_MODEL_NAME`
+- `VOXCELEB_TRAIN_PATH`, `HVB_TRAIN_PATH`, etc. — dataset split paths
+- `BASE_OUTPUT_DIR`, `CHECKPOINT_DIR`, `LOGS_DIR`
+
+## Training
+
+### HPC (SLURM)
+```bash
+# Edit the config block at the top of the script, then:
+./hpc/submit_symbol_training_node1.sh
 ```
 
-### ASR Evaluation (HPC)
-For ASR tasks:
+### Local
 ```bash
-./eval_asr_tasks/submit_eval.sh
+python train.py \
+  --model_type qwen \
+  --dataset_type voxceleb \
+  --run_name my_run \
+  --lora_epochs 10 \
+  --max_samples 0 \
+  --num_examples 5
 ```
 
-### Local Execution
-You can still run the scripts directly. They will automatically load paths from your `.env` file.
-```bash
-python train.py --model_type salmonn --dataset_type hvb --run_name my_test
-```
+## Configuration Reference
 
-## Configuration Parameters
+### Core
+| Argument | Description |
+|---|---|
+| `--model_type` | `qwen`, `salmonn`, `flamingo` |
+| `--dataset_type` | `voxceleb`, `hvb`, `voxpopuli`, `meld_emotion` (comma-separated for multi) |
+| `--val_dataset_type` | Validation dataset (defaults to `dataset_type`) |
+| `--run_name` | Unique run identifier for logging and checkpoints |
+| `--device` | e.g. `cuda:0` |
+| `--max_samples` | Training samples per dataset (0 = all) |
+| `--num_examples` | Few-shot examples per prompt |
 
-The pipeline is highly configurable via CLI arguments or the `.env` file. Below are the key parameters:
-
-### Core Settings
-- `--model_type`: Choose between `salmonn` or `qwen` (default: `salmonn`).
-- `--device`: Target device, e.g., `cuda:0` or `cpu`.
-- `--run_name`: A unique identifier for the run (used for logging and checkpoints).
+### LoRA
+| Argument | Default | Description |
+|---|---|---|
+| `--lora_lr` | `1e-5` | LoRA learning rate |
+| `--lora_epochs` | `5` | Training epochs |
+| `--gradient_accumulation_steps` | `8` | Gradient accumulation |
+| `--max_grad_norm` | `1.0` | Gradient clipping |
 
 ### Symbol Adapter Strategy
-- `--no_symbols`: (Boolean) If set, disables symbol replacement and uses original labels (Baseline mode).
-- `--dynamic_symbols`: (Boolean) If set, generates new symbol-to-label mappings for every epoch.
-- `--symbol_update_strategy`: 
-  - `per_epoch`: Mappings are fixed for the entire epoch.
-  - `per_instance`: Each training sample gets a unique, randomized symbol mapping.
-- `--swap_labels`: (Boolean) For binary/categorical tasks, flips the label semantics (e.g., positive becomes negative) to test robustness.
-- `--validation_modes`: Comma-separated list of modes to test during validation:
-  - `fixed`: Uses the same symbol mappings as the training set.
-  - `original`: Uses the base model's original natural language labels.
-  - `fresh`: Generates brand new symbol mappings never seen during training.
+| Argument | Description |
+|---|---|
+| `--no_symbols` | Baseline — use original label names, no replacement |
+| `--dynamic_symbols` | Generate new symbol mappings each epoch |
+| `--symbol_update_strategy` | `per_epoch` (default) or `per_instance` |
+| `--swap_labels` | Shuffle label→symbol assignments (see Swap Mode below) |
+| `--validation_modes` | Comma-separated: `fixed`, `original`, `fresh` (default: all three) |
 
-### Data & In-Context Learning (ICL)
-- `--dataset_type`: Hyphen-joined list of datasets (e.g., `hvb-voxceleb`). Active: `voxceleb`, `hvb`, `voxpopuli`, `meld_emotion`.
-- `--max_samples`: Total training samples per dataset (0 = all).
-- `--num_examples`: Number of few-shot examples to include in the prompt.
-- `--num_workers`: Number of data loading threads (increase for faster audio processing).
+### Differentiable Symbolic Preference Optimization (D-SPO)
+| Argument | Description |
+|---|---|
+| `--diff_symbol_enabled` | Enable D-SPO end-to-end differentiable symbol learning |
 
-### LoRA Hyperparameters
-- `--lora_lr`: Learning rate for LoRA weights (default: `1e-5`).
-- `--lora_epochs`: Number of training epochs.
-- `--gradient_accumulation_steps`: Steps to accumulate gradients before an optimizer update.
+D-SPO maintains a learnable slot matrix (Preference Matrix Π). During training, soft embeddings are injected into the LLM's input space via Gumbel-Softmax (hard=True, straight-through estimator). During validation, hard argmax token IDs replace slot placeholders. Slot→label assignments are fixed per dataset per validation run for comparable scores across epochs.
 
-### Validation Modes & Robustness Testing
+## Symbol Adapter Modes
 
-The pipeline supports three distinct validation modes to thoroughly evaluate the robustness of the Symbol Adapter:
+### No Symbols (`--no_symbols`)
+Model sees original label names. Baseline for comparison.
 
-1.  **Fixed-Symbols (`fixed`)**: Uses the same label-to-symbol mappings that the model was trained on during the current epoch. This measures how well the model learned the specific symbols provided during training.
-2.  **Original Labels (`original`)**: Bypasses the symbol manager entirely and uses the natural language labels (e.g., "positive", "negative"). This provides a baseline to see if symbol training degraded the model's original language understanding.
-3.  **Fresh-Symbols (`fresh`)**: Generates brand new, randomized symbols never seen during training. This is the **ultimate robustness test**, measuring if the model has learned the *concept* of in-context mapping rather than just memorizing specific symbols.
+### Fixed Symbols (default)
+Labels replaced with random 4–5 character tokens (e.g. `neutral → tepj`). Same mapping throughout training. Forces the model to use in-context examples rather than pre-trained label knowledge.
 
-#### Using Label Swapping (`--swap_labels`)
-You can combine symbols with the label swapping feature to further test robustness. 
-- When `swap_labels` is enabled, the system flips the semantics of the original labels (e.g., "positive" becomes "negative").
-- In `fixed` or `fresh` symbol modes, the model must learn this flipped mapping from the provided few-shot examples.
-- **Note**: If `no_symbols` is active, the `original` validation mode will skip the swap. To test swapped labels without random symbols, ensure `fixed` is included in your validation modes.
+### Dynamic Symbols (`--dynamic_symbols`)
+New random symbol set generated each epoch (`per_epoch`) or each batch (`per_instance --symbol_update_strategy per_instance`).
+
+### Swap Mode (`--swap_labels`)
+Shuffles which symbol is assigned to which label. Scope is always within the current dataset's label set — never crosses dataset boundaries.
+
+- With `--no_symbols`: shuffles original label names (e.g. `neutral↔positive`)
+- Without `--no_symbols`: generates symbols first, then shuffles the label→symbol assignment
+- Frequency: controlled by `--symbol_update_strategy` (`per_epoch` or `per_instance`)
+
+### D-SPO (`--diff_symbol_enabled`)
+Learns the optimal symbol-to-label mapping end-to-end. The router randomly samples `k` slots per training batch so all slots get exposure over time. During validation, slot assignments are fixed per dataset.
+
+## Validation Modes
+
+Three modes run sequentially each epoch (configurable via `--validation_modes`):
+
+| Mode | Description |
+|---|---|
+| `original` | Original label names — tests whether symbol training hurt base capability |
+| `fixed` | Same symbols used during training — tests how well the model learned the mapping |
+| `fresh` | Brand new symbols never seen in training — tests whether the model learned to use in-context mappings generally |
+
+**Primary metric:** `macro_f1_with_invalid` — samples with out-of-vocabulary true labels (e.g. `disagreement` in VoxCeleb) are excluded from both metrics. Invalid model predictions (outputs not in the valid label set) are counted as wrong. `avg_score` in epoch summaries reflects the primary (first configured) validation mode, averaged across datasets.
 
 ## Active Datasets
 
-Current active dataset types: `voxceleb`, `hvb`, `voxpopuli`, `meld_emotion`. These are defined and registered in `config/data_config/master_config.py`.
+| Dataset | Task | Labels |
+|---|---|---|
+| VoxCeleb | Sentiment | positive, negative, neutral |
+| HVB | Dialogue Acts | ~34 act types |
+| VoxPopuli | Named Entity | Multi-label |
+| MELD-Emotion | Emotion | 7 emotion classes |
 
-## Data Preparation
+Dataset configs in `config/data_config/`. Register new datasets in `config/data_config/master_config.py`.
 
-To generate augmented few-shot datasets, use:
-```bash
-python utils/generate_fewshots.py
+## Checkpoints
+
+Checkpoints saved to `$CHECKPOINT_DIR/<run_name>/`. Format:
 ```
-Ensure you have set `BASE_DATA_DIR` in your `.env` file.
+lora_epoch{N}_periodic.pt   # saved every checkpoint_frequency epochs
+lora_epoch{N}_final.pt      # saved at end of training
+```
+
+Checkpoint keys: `model_state` (LoRA weights), `router_state` (D-SPO router), `optimizer_state`, `config`, `symbol_mappings`.

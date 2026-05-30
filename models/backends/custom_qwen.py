@@ -20,7 +20,7 @@ logging.basicConfig(
 
 class CustomQwen(nn.Module):
     """
-    Custom implementation of Qwen2 Audio model.
+    Custom implementation of Qwen2 Audio model with D-SPO support.
     Provides a standardized interface for training and inference.
     """
 
@@ -87,7 +87,7 @@ class CustomQwen(nn.Module):
 
         if ckpt_path:
             checkpoint = load_checkpoint(ckpt_path, map_location=device)
-            self.model.load_state_dict(checkpoint["model"], strict=False)
+            self.model.load_state_dict(checkpoint["model_state"], strict=False)
 
         self.prompt_template = prompt_template
         self.max_txt_len = max_txt_len
@@ -119,7 +119,7 @@ class CustomQwen(nn.Module):
         input_features = samples.get("input_features")
         feature_attention_mask = samples.get("feature_attention_mask")
 
-        # Build labels from remote branch logic
+        # Build labels: mask padding first, then mask prompt tokens
         labels = input_ids.clone()
         labels = labels.masked_fill(attention_mask == 0, -100)
         for i, prompt_len in enumerate(samples["prompt_length"]):
@@ -129,7 +129,7 @@ class CustomQwen(nn.Module):
 
         if (labels != -100).sum().item() == 0:
             logging.error("All labels are -100. Skipping batch.")
-            dummy_loss = sum(p.sum() for p in self.model.parameters() if p.requires_grad) * 0.0
+            dummy_loss = torch.tensor(0.0, requires_grad=True, device=self.device)
             return {"loss": dummy_loss, "logits": None, "labels": labels}
 
         if self.batch_counter == 0:
@@ -146,6 +146,8 @@ class CustomQwen(nn.Module):
             input_features = input_features.to(self.device)
             if self.use_fp16:
                 input_features = input_features.half()
+            elif input_features.dtype == torch.float16:
+                input_features = input_features.float()
 
         if feature_attention_mask is not None:
             feature_attention_mask = feature_attention_mask.to(self.device)
@@ -182,7 +184,7 @@ class CustomQwen(nn.Module):
         self.batch_counter += 1
         return {"loss": outputs.loss, "logits": outputs.logits, "labels": labels}
 
-    def generate_output(self, batch):
+    def generate_output(self, batch, slot_replacement=None):
         input_ids = batch["input_ids"].to(self.device).long()
         attention_mask = batch["attention_mask"].to(self.device)
         input_features = batch.get("input_features")
@@ -192,8 +194,24 @@ class CustomQwen(nn.Module):
             input_features = input_features.to(self.device)
             if self.use_fp16:
                 input_features = input_features.half()
+            elif input_features.dtype == torch.float16:
+                input_features = input_features.float()
         if feature_attention_mask is not None:
             feature_attention_mask = feature_attention_mask.to(self.device)
+
+        # D-SPO inference: swap placeholder token IDs with the hard vocab tokens
+        # chosen by the router. slot_replacement = {placeholder_id: hard_vocab_id}
+        # Soft embeddings are training-only; generation always uses discrete tokens.
+        if slot_replacement:
+            input_ids = input_ids.clone()
+            for placeholder_id, hard_vocab_id in slot_replacement.items():
+                n_replaced = (input_ids == placeholder_id).sum().item()
+                if n_replaced:
+                    placeholder_txt = self.input_processor.tokenizer.decode([placeholder_id])
+                    hard_txt = self.input_processor.tokenizer.decode([hard_vocab_id])
+                    logging.debug("D-SPO swap: %r(id=%d) -> %r(id=%d) at %d positions",
+                                  placeholder_txt, placeholder_id, hard_txt, hard_vocab_id, n_replaced)
+                input_ids[input_ids == placeholder_id] = hard_vocab_id
 
         with torch.cuda.amp.autocast(enabled=self.use_fp16):
             generated_ids = self.model.generate(

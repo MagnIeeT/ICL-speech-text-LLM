@@ -1,3 +1,4 @@
+import logging
 from typing import Any, Dict, List, Optional
 
 import torch
@@ -26,10 +27,7 @@ class QwenProcessor(ModelProcessor):
     def __init__(self, processor, tokenizer=None, max_length: int = 512, symbol_manager=None):
         super().__init__(symbol_manager=symbol_manager)
         self.processor = processor
-        # FIX: Ensure the internal processor uses the same updated tokenizer object
-        if tokenizer is not None:
-            self.processor.tokenizer = tokenizer
-        self.tokenizer = self.processor.tokenizer
+        self.tokenizer = tokenizer if tokenizer is not None else processor.tokenizer
         self.max_length = max_length
 
     def process_inputs(self, data: Dict[str, Any], is_training: bool = False):
@@ -67,16 +65,52 @@ class QwenProcessor(ModelProcessor):
         
         for i, p_text in enumerate(prompts):
             if completions is not None:
-                # Training Path: Full sequence withEOS
+                # Training path: tokenize completion first to reserve its tokens,
+                # then tokenize the prompt with the remaining budget.
+                # This guarantees the completion is always at the end — never truncated away.
                 c_text = completions[i]
-                full_text = f"{p_text}{c_text}{self.tokenizer.eos_token}"
-                tokenized = self.tokenizer(full_text, truncation=True, max_length=self.max_length, padding=False, add_special_tokens=True)
-                
-                # Calculate prompt length for loss masking (everything before completion)
-                p_ids = self.tokenizer(p_text, add_special_tokens=True).input_ids
-                prompt_lens.append(len(p_ids))
+                c_ids = self.tokenizer(
+                    f"{c_text}{self.tokenizer.eos_token}",
+                    add_special_tokens=False,
+                ).input_ids
+                prompt_budget = self.max_length - len(c_ids)
+
+                p_tokenized = self.tokenizer(
+                    p_text,
+                    truncation=True,
+                    max_length=max(prompt_budget, 1),
+                    padding=False,
+                    add_special_tokens=True,
+                )
+                prompt_len = len(p_tokenized.input_ids)
+
+                combined_ids  = p_tokenized.input_ids + c_ids
+                combined_mask = p_tokenized.attention_mask + [1] * len(c_ids)
+
+                # Warn once per batch when the prompt was truncated (few-shot cut off)
+                if i == 0:
+                    p_ids_full = self.tokenizer(p_text, add_special_tokens=True).input_ids
+                    was_truncated = len(p_ids_full) > prompt_len
+                    logging.debug(
+                        "tokenize_batch: prompt_tokens=%d  completion_tokens=%d  total=%d  (prompt_truncated=%s)",
+                        prompt_len, len(c_ids), len(combined_ids), was_truncated,
+                    )
+                    if was_truncated:
+                        logging.warning(
+                            "Prompt truncated from %d to %d tokens to fit completion — "
+                            "some few-shot examples were cut off.",
+                            len(p_ids_full), prompt_len,
+                        )
+
+                prompt_lens.append(prompt_len)
+                # Wrap into a namespace-like object so the rest of the code is unchanged
+                class _T:
+                    pass
+                tokenized = _T()
+                tokenized.input_ids      = combined_ids
+                tokenized.attention_mask = combined_mask
             else:
-                # Inference/Validation Path (Prompt only)
+                # Inference/Validation path (prompt only)
                 tokenized = self.tokenizer(p_text, truncation=True, max_length=self.max_length, padding=False, add_special_tokens=True)
                 prompt_lens.append(len(tokenized.input_ids))
                 

@@ -1,6 +1,8 @@
 """Validation logic for Symbol Adapter training and inference."""
 
+import hashlib
 import logging
+import random
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
@@ -96,13 +98,21 @@ class ValidationManager:
         all_results = {}
         progress_bar = tqdm(val_dataloader, desc="Evaluating", total=len(val_dataloader), leave=False)
         router = getattr(model, "router", None)
-        
+        dspo_module = getattr(model, "dspo_module", None)
+
+        # Per-dataset slot assignment cache: computed once per dataset per validation run.
+        # Keyed by ds_name_str -> (p_map, c_map, slot_replacement).
+        # Slot indices are seeded from the dataset name so the same label always gets
+        # the same slot index across epochs; the vocab token each slot resolves to
+        # can change naturally as the router trains.
+        dataset_slot_cache: Dict[str, tuple] = {}
+
         try:
             for batch in progress_bar:
                 dataset_types = batch.get("dataset_type", [])
                 ds_name = dataset_types[0] if isinstance(dataset_types, list) and len(dataset_types) > 0 else "unknown"
                 ds_name_str = ds_name.value if hasattr(ds_name, "value") else str(ds_name)
-                
+
                 relevant_labels = []
                 for dt_enum, ds_cfg in DATASET_CONFIGS.items():
                     if dt_enum.value == ds_name_str:
@@ -110,34 +120,49 @@ class ValidationManager:
                         break
                 if not relevant_labels: relevant_labels = self.symbol_manager.original_labels
 
-                # Determine D-SPO Mappings
+                # Determine mappings and slot_replacement for this batch.
+                slot_replacement = None
                 if use_original_labels:
                     p_map, c_map = {}, {}
-                elif router is not None and not use_original_labels:
-                    import random
-                    # Seed with a deterministic value for this sample to ensure consistent slots
-                    sample_seed = sum(batch.get("input_ids", [torch.tensor([0])])[0].tolist()) if "input_ids" in batch else 0
-                    rng = random.Random(sample_seed)
-                    slots = rng.sample(list(range(self.config.diff_symbol_config.num_slots)), k=min(len(relevant_labels), self.config.diff_symbol_config.num_slots))
-                    vocab_indices, _ = router.get_slot_mappings(slots, hard=True)
-                    p_map = {label: f"<slot_{s}>" for label, s in zip(relevant_labels, slots)}
-                    symbols = [self.tokenizer.decode([idx]).strip() for idx in vocab_indices]
-                    c_map = {label: sym for label, sym in zip(relevant_labels, symbols)}
+                elif router is not None and dspo_module is not None:
+                    if ds_name_str not in dataset_slot_cache:
+                        # First batch for this dataset — fix slot assignment for the whole run.
+                        seed = int(hashlib.md5(ds_name_str.encode()).hexdigest(), 16) % (2 ** 31)
+                        rng = random.Random(seed)
+                        slots = rng.sample(
+                            list(range(self.config.diff_symbol_config.num_slots)),
+                            k=min(len(relevant_labels), self.config.diff_symbol_config.num_slots),
+                        )
+                        vocab_indices, _ = router.get_slot_mappings(slots, hard=True)
+                        p_map = {label: f"<slot_{s}>" for label, s in zip(relevant_labels, slots)}
+                        symbols = [
+                            self.tokenizer.decode([idx]).strip() or f"<tok_{idx.item()}>"
+                            for idx in vocab_indices
+                        ]
+                        c_map = {label: sym for label, sym in zip(relevant_labels, symbols)}
+                        slot_replacement = {
+                            int(dspo_module.slot_token_ids[s].item()): int(vocab_indices[i].item())
+                            for i, s in enumerate(slots)
+                        }
+                        dataset_slot_cache[ds_name_str] = (p_map, c_map, slot_replacement)
+                        logger.info("D-SPO val slots fixed for %s: %s", ds_name_str,
+                                    {lbl: f"slot_{s}→{sym}" for (lbl, s, sym) in zip(relevant_labels, slots, symbols)})
+                    else:
+                        p_map, c_map, slot_replacement = dataset_slot_cache[ds_name_str]
                 else:
                     p_map = c_map = symbol_mappings
 
                 # 1. Text Replacement
                 updated_batch = self.symbol_manager.replace_symbols_in_batch(batch, prompt_mappings=p_map, completion_mappings=c_map)
 
-                # 2. MODULAR TOKENIZATION (Our Fix)
+                # 2. Tokenization
                 if self.processor is not None:
                     tokenized_data = self.processor.tokenize_batch(updated_batch["prompt"], completions=None)
                     updated_batch.update(tokenized_data)
 
-                # 3. Move and Generate (D-SPO Aware)
+                # 3. Move to device and generate
                 updated_batch = {k: v.to(model.device) if isinstance(v, torch.Tensor) else v for k, v in updated_batch.items()}
-                dspo_module = getattr(model, "dspo_module", None)
-                predictions = model.generate_output(updated_batch, router=router, dspo_module=dspo_module)
+                predictions = model.generate_output(updated_batch, slot_replacement=slot_replacement)
 
                 for i, pred in enumerate(predictions):
                     dt_val = batch["dataset_type"][i]
@@ -184,14 +209,22 @@ class ValidationManager:
 
         self.log_validation_summary(comprehensive_results, epoch)
         
-        fixed_mode_results = comprehensive_results.get("fixed", {})
-        dataset_metrics = {ds_name: metrics.get("score", 0.0) for ds_name, metrics in fixed_mode_results.items()}
-        combined_metric = sum(dataset_metrics.values()) / len(dataset_metrics) if dataset_metrics else 0.0
-        metric_string = "|".join([f"{k}:{v:.4f}" for k, v in dataset_metrics.items()])
+        # Per-mode breakdown log + compute avg_score from the primary (first) mode.
+        # avg_score = average across datasets for the primary mode so that with
+        # a single dataset it equals that dataset's score directly.
+        primary_mode = mode_defs[0][0] if mode_defs else None
+        combined_metric = 0.0
+        metric_string = ""
+        for mode_suffix, mode_results in comprehensive_results.items():
+            mode_scores = {ds: m.get("score", 0.0) for ds, m in mode_results.items()}
+            mode_avg = sum(mode_scores.values()) / len(mode_scores) if mode_scores else 0.0
+            logger.info("📊 [%s] per-dataset: %s  avg=%.4f", mode_suffix, mode_scores, mode_avg)
+            if mode_suffix == primary_mode:
+                combined_metric = mode_avg
+                metric_string = "|".join([f"{k}:{v:.4f}" for k, v in mode_scores.items()])
 
-        logger.info(f"📊 Dataset metrics (fixed mode): {dataset_metrics}")
-        logger.info(f"📊 Combined metric (fixed mode): {combined_metric:.4f}")
-        logger.info(f"📊 Composite string (fixed mode): {metric_string}")
+        logger.info("📊 Primary mode (%s) avg: %.4f", primary_mode, combined_metric)
+        logger.info("📊 Composite string: %s", metric_string)
 
         return {"avg_score": combined_metric, "all_modes": comprehensive_results}
 

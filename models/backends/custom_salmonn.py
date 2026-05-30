@@ -133,7 +133,7 @@ class CustomSalmonn(nn.Module):
             return_attention_mask=True,
         ).to(wrapped_embeds.device)
         
-        target_embeds = self.llama_model.model.embed_tokens(target_tokens.input_ids) if not self.lora else self.llama_model.model.model.embed_tokens(target_tokens.input_ids)
+        target_embeds = self.embed_module(target_tokens.input_ids)
         prompt_length = wrapped_embeds.size(1)
         
         labels = torch.full(

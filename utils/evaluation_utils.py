@@ -49,9 +49,11 @@ def _evaluate_single_label(predictions: List[Dict[str, Any]], valid_labels: List
     true_filtered = []
     pred_filtered = []
     pred_with_invalid = []
+    skipped_true_labels = []
 
     for gt, pd in zip(true_labels, pred_labels):
         if gt not in valid_labels:
+            skipped_true_labels.append(gt)
             continue
         true_filtered.append(gt)
         pred_with_invalid.append(pd if pd in valid_labels else "invalid")
@@ -59,6 +61,14 @@ def _evaluate_single_label(predictions: List[Dict[str, Any]], valid_labels: List
             pred_filtered.append(pd)
         else:
             pred_filtered.append(None)
+
+    if skipped_true_labels:
+        from collections import Counter
+        counts = Counter(skipped_true_labels)
+        logger.warning(
+            "Skipped %d sample(s) with out-of-vocab true labels (excluded from both metrics): %s",
+            len(skipped_true_labels), dict(counts),
+        )
 
     if not true_filtered:
         return {

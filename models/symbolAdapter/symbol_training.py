@@ -43,7 +43,8 @@ class SymbolTrainingOrchestrator:
         self.train_dataset_names = train_dataset_names or set()
         self.optimizer = None
         self.global_step = 0
-        self._logged_sample = False
+        self._epoch_log_count = 0  # logs first 2 batches per epoch
+        self._swap_cache: dict = {}  # per-dataset swap mapping; reset each epoch
 
         self.validator = ValidationManager(
             config=config,
@@ -72,6 +73,14 @@ class SymbolTrainingOrchestrator:
             
             slot_tokens = [f"<slot_{i}>" for i in range(self.config.diff_symbol_config.num_slots)]
             slot_token_ids = [tokenizer.convert_tokens_to_ids(t) for t in slot_tokens]
+            unk_id = tokenizer.unk_token_id
+            bad_tokens = [t for t, tid in zip(slot_tokens, slot_token_ids) if tid is None or tid == unk_id]
+            if bad_tokens:
+                raise ValueError(
+                    f"D-SPO: slot tokens not in tokenizer vocabulary: {bad_tokens}. "
+                    "Ensure setup_dspo_tokenizer() was called before model init."
+                )
+            logging.info("D-SPO slot token IDs validated: %s", dict(zip(slot_tokens, slot_token_ids)))
             self.dspo_module = DspoModule(slot_token_ids).to(self.config.device)
             logging.info("D-SPO initialized: %d slots, %d symbols in pool", self.config.diff_symbol_config.num_slots, len(symbol_pool))
 
@@ -124,19 +133,50 @@ class SymbolTrainingOrchestrator:
 
         p_mappings, c_mappings = None, None
         if self.router is not None:
+            # D-SPO Mode
             num_labels = len(relevant_labels)
             num_slots_available = self.config.diff_symbol_config.num_slots
             batch_slot_indices = random.sample(list(range(num_slots_available)), k=min(num_labels, num_slots_available))
             vocab_indices, _ = self.router.get_slot_mappings(batch_slot_indices, hard=True)
             p_mappings = {label: f"<slot_{slot_idx}>" for label, slot_idx in zip(relevant_labels, batch_slot_indices)}
-            clean_symbols = [self.tokenizer.decode([idx]).strip() for idx in vocab_indices]
+            # Fallback if a vocab token decodes to empty (e.g. whitespace-only token)
+            clean_symbols = [
+                self.tokenizer.decode([idx]).strip() or f"<tok_{idx.item()}>"
+                for idx in vocab_indices
+            ]
             c_mappings = {label: symbol for label, symbol in zip(relevant_labels, clean_symbols)}
-            if batch_idx == 0:
-                logging.info(f"D-SPO Mapping for Batch 0 ({ds_name_str}):")
-                for label, slot_marker in p_mappings.items(): logging.info(f"  {label} -> {slot_marker} (Target: {c_mappings[label]})")
+            if batch_idx < 2:
+                logging.info("D-SPO mapping (epoch=%d batch=%d dataset=%s):", epoch + 1, batch_idx, ds_name_str)
+                for label in relevant_labels:
+                    logging.info("  %-20s -> prompt: %-12s  completion: %s", label, p_mappings[label], c_mappings[label])
+        elif self.config.symbol_config.swap_labels:
+            per_instance = self.config.symbol_config.update_strategy == SymbolUpdateStrategy.PER_INSTANCE
+            # per_instance: new shuffle every batch
+            # per_epoch: one shuffle per dataset per epoch (cached after first batch)
+            if per_instance or ds_name_str not in self._swap_cache:
+                base_mapping = None
+                if not self.config.symbol_config.no_symbols:
+                    # Use _pure_symbol_mappings — always label→symbol, never affected by
+                    # swap_labels. Filter to this dataset's labels only.
+                    full_base = self.symbol_manager._pure_symbol_mappings
+                    base_mapping = {l: full_base[l] for l in relevant_labels if l in full_base}
+                mapping = self.symbol_manager.generate_swap_mapping_for_labels(
+                    relevant_labels, base_symbol_mapping=base_mapping
+                )
+                if not per_instance:
+                    self._swap_cache[ds_name_str] = mapping
+            else:
+                mapping = self._swap_cache[ds_name_str]
+            p_mappings = c_mappings = mapping
+            if batch_idx < 2:
+                mode = "symbol-swap" if not self.config.symbol_config.no_symbols else "label-swap"
+                logging.info("Swap mapping [%s] (epoch=%d batch=%d dataset=%s): %s",
+                             mode, epoch + 1, batch_idx, ds_name_str, p_mappings)
         else:
             force_new = (self.config.symbol_config.update_strategy == SymbolUpdateStrategy.PER_INSTANCE) or (batch_idx == 0)
             p_mappings = c_mappings = self.symbol_manager.get_symbols_for_epoch(epoch, force_new_symbols=force_new)
+            if batch_idx < 2:
+                logging.info("Symbol mapping (epoch=%d batch=%d dataset=%s): %s", epoch + 1, batch_idx, ds_name_str, p_mappings)
 
         updated_batch = self.symbol_manager.replace_symbols_in_batch(batch, prompt_mappings=p_mappings, completion_mappings=c_mappings)
         if self.processor is not None and "prompt" in updated_batch:
@@ -146,6 +186,7 @@ class SymbolTrainingOrchestrator:
 
     def _train_one_epoch(self, epoch: int) -> float:
         self.model.train()
+        self._swap_cache = {}  # reset per-epoch swap assignments
         total_loss, num_batches = 0.0, 0
         accumulation_steps = self.config.lora_config.gradient_accumulation_steps
         progress_bar = tqdm(self.train_dataloader, desc=f"Epoch {epoch + 1}", leave=False)
@@ -157,10 +198,20 @@ class SymbolTrainingOrchestrator:
                         if key in raw_batch and raw_batch[key]: raw_batch["completion"] = raw_batch[key]; break
 
                 updated_batch = self._apply_symbol_replacement(raw_batch, epoch, batch_idx)
-                if not self._logged_sample:
-                    logging.info("--- Training Batch 0 Debug ---")
-                    logging.info("Decoded Check: %s", self.tokenizer.decode(updated_batch["input_ids"][0][-30:]))
-                    self._logged_sample = True
+                if self._epoch_log_count < 2:
+                    ids   = updated_batch["input_ids"][0]
+                    p_len = int(updated_batch["prompt_length"][0])
+                    full_prompt  = self.tokenizer.decode(ids[:p_len],  skip_special_tokens=False)
+                    completion_ids = [t for t in ids[p_len:].tolist() if t != -100 and t != self.tokenizer.pad_token_id]
+                    completion_txt = self.tokenizer.decode(completion_ids, skip_special_tokens=True)
+                    logging.info("=" * 60)
+                    logging.info("TRAIN epoch=%d batch=%d  prompt_len=%d  seq_len=%d",
+                                 epoch + 1, batch_idx, p_len, len(ids))
+                    logging.info("--- Full prompt ---\n%s", full_prompt)
+                    logging.info("--- Completion text : %r", completion_txt)
+                    logging.info("--- Completion IDs  : %s", completion_ids)
+                    logging.info("=" * 60)
+                    self._epoch_log_count += 1
 
                 updated_batch = self._move_batch_to_device(updated_batch)
                 outputs = self.model(updated_batch, router=self.router, dspo_module=self.dspo_module)
@@ -170,11 +221,15 @@ class SymbolTrainingOrchestrator:
                 (loss / accumulation_steps).backward()
 
                 if (batch_idx + 1) % accumulation_steps == 0:
-                    if self.router is not None and self.global_step % 10 == 0:
-                        params = [p for p in self.router.parameters() if p.grad is not None]
-                        if params:
-                            grad_norm = torch.nn.utils.clip_grad_norm_(params, 1.0)
-                            logging.info(f"D-SPO Step {self.global_step}: Router Grad Norm = {grad_norm:.4f}")
+                    if self.router is not None:
+                        log_this_step = (self.global_step < 20) or (self.global_step % 10 == 0)
+                        if log_this_step:
+                            params = [p for p in self.router.parameters() if p.grad is not None]
+                            if params:
+                                grad_norm = torch.nn.utils.clip_grad_norm_(params, 1.0)
+                                entropy = self.router.get_safety_scores().item()
+                                logging.info("D-SPO step=%d  router_grad_norm=%.4f  slot_entropy=%.4f  tau=%.4f",
+                                             self.global_step, grad_norm, entropy, self.router.tau)
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                     self.optimizer.step()
                     self.optimizer.zero_grad(set_to_none=True)
@@ -182,12 +237,12 @@ class SymbolTrainingOrchestrator:
                     if self.router is not None:
                         self.router.update_tau(self.config.diff_symbol_config.tau_anneal_rate)
 
-                total_loss += loss.item() * accumulation_steps
+                total_loss += loss.item()
                 num_batches += 1
                 progress_bar.set_postfix({"loss": f"{total_loss / num_batches:.6f}"})
             except Exception as exc: logging.error(f"Batch {batch_idx} failed: {exc}")
         
-        # Accumulation Cleanup (From remote branch)
+        # Accumulation Cleanup
         if num_batches > 0 and (num_batches % accumulation_steps) != 0:
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
             self.optimizer.step()
@@ -221,18 +276,24 @@ class SymbolTrainingOrchestrator:
         logging.info(f"Saved checkpoint: {os.path.basename(checkpoint_path)}")
 
     def run_complete_training(self) -> Dict[str, Any]:
+        logging.info("Starting simple LoRA training (no phases, no cycles, no steps)")
         self._setup_lora_optimizer()
+        self.optimizer.zero_grad(set_to_none=True)
         history = []
+
         for epoch in range(self.config.lora_config.epochs):
-            self._logged_sample = False
+            self._epoch_log_count = 0
             logging.info(f"Epoch {epoch + 1}/{self.config.lora_config.epochs}")
             epoch_loss = self._train_one_epoch(epoch)
             validation_scores = self._run_validation(epoch)
+            logging.info(f"Epoch {epoch + 1} loss: {epoch_loss:.6f}")
+            logging.info(f"Epoch {epoch + 1} validation: {validation_scores}")
+
             history.append({"epoch": epoch + 1, "train_loss": epoch_loss, "validation": validation_scores})
             if self.config.checkpoint_frequency > 0 and (epoch + 1) % self.config.checkpoint_frequency == 0:
                 self._save_checkpoint(epoch, "periodic")
         
-        # 1. Consolidated Validation Summary Table (Our Big Table)
+        # 1. Consolidated Validation Summary Table
         logging.info("=" * 30 + " Consolidated Validation Summary " + "=" * 30)
         all_ds_names, all_mode_names = [], []
         for entry in history:
@@ -249,7 +310,8 @@ class SymbolTrainingOrchestrator:
             for ds in all_ds_names: header += f" | {ds:<15}"
             if len(train_ds) > 1: header += " | Avg (train)"
             if len(val_ds) > 1: header += " | Avg (val)"
-            logging.info(header + "\n" + "-" * len(header))
+            logging.info(header)
+            logging.info("-" * len(header))
             for i, entry in enumerate(history):
                 modes = entry.get("validation", {}).get("all_modes", {})
                 for mode in all_mode_names:
@@ -266,16 +328,43 @@ class SymbolTrainingOrchestrator:
                 if i < len(history) - 1: logging.info("-" * len(header))
         logging.info("=" * 80)
 
-        # 2. COMPLETE TRAINING SUMMARY (Remote branch's Small Table)
-        logging.info("=" * 100 + "\nCOMPLETE TRAINING SUMMARY\n" + "=" * 100)
-        header = f"{'Epoch':<8} {'Loss':<12} {'Avg Score':<12} {'Mode'}"
-        logging.info(header + "\n" + "-" * 100)
-        for e in history:
-            val = e["validation"]
-            modes = val.get("all_modes", {})
-            mode_key = "fixed" if "fixed" in modes else (list(modes.keys())[0] if modes else "N/A")
-            logging.info(f"{e['epoch']:<8} {e['train_loss']:<12.4f} {val.get('avg_score', 0.0):<12.4f} {mode_key}")
-        logging.info("=" * 100)
-        
+        # 2. COMPLETE TRAINING SUMMARY — one row per mode per epoch
         self._save_checkpoint(self.config.lora_config.epochs - 1, "final")
+        logging.info("=" * 100 + "\nCOMPLETE TRAINING SUMMARY - ALL EPOCHS\n" + "=" * 100)
+
+        # Collect all mode and dataset names seen across history
+        summary_modes, summary_ds = [], []
+        for entry in history:
+            for mode, ds_dict in entry.get("validation", {}).get("all_modes", {}).items():
+                if mode not in summary_modes: summary_modes.append(mode)
+                for ds in ds_dict:
+                    if ds not in summary_ds: summary_ds.append(ds)
+
+        header = f"{'Epoch':<8} {'Loss':<12} {'Mode':<12}"
+        for ds in summary_ds: header += f" {ds:<14}"
+        header += f" {'Avg Score':<12}"
+        sep = "-" * len(header)
+        logging.info(header)
+        logging.info(sep)
+
+        for entry in history:
+            ep   = entry["epoch"]
+            loss = entry["train_loss"]
+            modes = entry.get("validation", {}).get("all_modes", {})
+            for j, mode in enumerate(summary_modes):
+                mode_results = modes.get(mode, {})
+                ep_str   = str(ep) if j == 0 else ""
+                loss_str = f"{loss:.4f}" if j == 0 else ""
+                row = f"{ep_str:<8} {loss_str:<12} {mode:<12}"
+                scores = []
+                for ds in summary_ds:
+                    s = mode_results.get(ds, {}).get("score")
+                    row += f" {s:<14.4f}" if s is not None else f" {'-':<14}"
+                    if s is not None: scores.append(s)
+                avg = sum(scores) / len(scores) if scores else 0.0
+                row += f" {avg:<12.4f}"
+                logging.info(row)
+            logging.info(sep)
+
+        logging.info("=" * 100)
         return {"history": history}

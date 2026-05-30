@@ -25,7 +25,7 @@ class SymbolRouter(nn.Module):
         super().__init__()
         self.num_slots = num_slots
         self.pool_size = pool_size
-        self.symbol_pool_indices = torch.tensor(symbol_pool_indices, dtype=torch.long)
+        self.register_buffer("symbol_pool_indices", torch.tensor(symbol_pool_indices, dtype=torch.long))
         
         # Preference Matrix (Π) - initialized randomly
         # Shape: [M, N] where M=Slots, N=Pool Size

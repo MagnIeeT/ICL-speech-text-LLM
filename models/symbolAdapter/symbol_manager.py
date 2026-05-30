@@ -33,10 +33,24 @@ class SymbolManager:
         self.epoch_mappings_history: Dict[int, Dict[str, str]] = {}
         self.current_epoch = 0
 
+        # Pure symbol mappings: label→symbol, generated once at init, never affected by
+        # swap_labels. Used as the base pool when doing symbol-level swap.
+        self._pure_symbol_mappings: Dict[str, str] = {}
+        if not self.no_symbols:
+            if self.symbol_type == "two_token":
+                syms = self._generate_two_token_symbols(len(self.original_labels))
+            else:
+                syms = ["".join(random.choices(string.ascii_lowercase, k=4)) for _ in self.original_labels]
+            self._pure_symbol_mappings = dict(zip(self.original_labels, syms))
+
         if self.no_symbols and not self.swap_labels:
             logging.info("No-symbol mode enabled - symbol replacement is disabled")
+        elif self.swap_labels:
+            logging.info("Swap mode enabled (update_strategy controls per-epoch vs per-instance)")
+            if self._pure_symbol_mappings:
+                logging.info("Base symbol pool for swap: %s", self._pure_symbol_mappings)
         elif not self.dynamic_per_epoch:
-            self.fixed_mappings = self._generate_symbol_mappings()
+            self.fixed_mappings = self._pure_symbol_mappings.copy()
             logging.info("Generated fixed mappings: %s", self.fixed_mappings)
         else:
             logging.info("Dynamic mode enabled - mappings will be generated per epoch")
@@ -72,6 +86,32 @@ class SymbolManager:
         shuffled = labels[:]
         random.shuffle(shuffled)
         return dict(zip(labels, shuffled))
+
+    def generate_swap_mapping_for_labels(
+        self,
+        relevant_labels: List[str],
+        base_symbol_mapping: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, str]:
+        """
+        Generate a swap mapping scoped to the given dataset's label set.
+
+        no_symbols=True  → shuffle original label names within this set
+        no_symbols=False → keep the same symbols but shuffle which symbol is
+                           assigned to which label (swap at symbol level)
+        """
+        labels = sorted(list(set(relevant_labels)))
+        if len(labels) <= 1:
+            return {l: l for l in labels}
+
+        if self.no_symbols or not base_symbol_mapping:
+            shuffled = labels[:]
+            random.shuffle(shuffled)
+            return dict(zip(labels, shuffled))
+        else:
+            # Same symbol pool, different label→symbol assignment
+            symbols = [base_symbol_mapping.get(l, l) for l in labels]
+            random.shuffle(symbols)
+            return dict(zip(labels, symbols))
 
     def _generate_two_token_symbols(self, num_symbols: int) -> List[str]:
         words, used, attempts = [], set(), 0
