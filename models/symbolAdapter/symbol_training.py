@@ -160,8 +160,12 @@ class SymbolTrainingOrchestrator:
                     # swap_labels. Filter to this dataset's labels only.
                     full_base = self.symbol_manager._pure_symbol_mappings
                     base_mapping = {l: full_base[l] for l in relevant_labels if l in full_base}
+                # per_epoch: pass epoch so shuffle is seeded → guaranteed different each epoch
+                # per_instance: pass None so global random state → varies each batch
                 mapping = self.symbol_manager.generate_swap_mapping_for_labels(
-                    relevant_labels, base_symbol_mapping=base_mapping
+                    relevant_labels,
+                    base_symbol_mapping=base_mapping,
+                    epoch=epoch if not per_instance else None,
                 )
                 if not per_instance:
                     self._swap_cache[ds_name_str] = mapping

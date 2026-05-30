@@ -91,6 +91,7 @@ class SymbolManager:
         self,
         relevant_labels: List[str],
         base_symbol_mapping: Optional[Dict[str, str]] = None,
+        epoch: Optional[int] = None,
     ) -> Dict[str, str]:
         """
         Generate a swap mapping scoped to the given dataset's label set.
@@ -98,19 +99,28 @@ class SymbolManager:
         no_symbols=True  → shuffle original label names within this set
         no_symbols=False → keep the same symbols but shuffle which symbol is
                            assigned to which label (swap at symbol level)
+
+        epoch: when provided (per_epoch mode), seed the shuffle from (epoch, labels)
+               so each epoch is guaranteed a different mapping. When None
+               (per_instance mode), uses global random state for batch-level variety.
         """
         labels = sorted(list(set(relevant_labels)))
         if len(labels) <= 1:
             return {l: l for l in labels}
 
+        if epoch is not None:
+            rng = random.Random(hash((epoch, tuple(labels))) & 0x7FFFFFFF)
+            shuffle_fn = rng.shuffle
+        else:
+            shuffle_fn = random.shuffle
+
         if self.no_symbols or not base_symbol_mapping:
             shuffled = labels[:]
-            random.shuffle(shuffled)
+            shuffle_fn(shuffled)
             return dict(zip(labels, shuffled))
         else:
-            # Same symbol pool, different label→symbol assignment
             symbols = [base_symbol_mapping.get(l, l) for l in labels]
-            random.shuffle(symbols)
+            shuffle_fn(symbols)
             return dict(zip(labels, symbols))
 
     def _generate_two_token_symbols(self, num_symbols: int) -> List[str]:
