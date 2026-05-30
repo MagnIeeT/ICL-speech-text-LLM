@@ -15,6 +15,8 @@ setup_environment()
 from config.train_config.training_configs import ModelType, TrainingConfig
 from models.symbolAdapter.symbol_manager import SymbolManager
 from models.symbolAdapter.validation import ValidationManager
+from models.symbolAdapter.dspo_module import setup_dspo_model, DspoModule
+from models.symbolAdapter.symbol_router import SymbolRouter
 from dataload.data_utils import create_combined_dataloader, load_datasets_for_config
 from train import (
     extract_dataset_labels,
@@ -36,9 +38,7 @@ class InferenceOrchestrator:
         num_examples: int = 5,
         run_name: str = "",
         output_dir: Optional[str] = None,
-        no_symbols: bool = False,
         validation_modes: Optional[str] = None,
-        swap_labels: bool = False,
         num_workers: int = 2,
     ):
         self.checkpoint_path = checkpoint_path
@@ -47,9 +47,7 @@ class InferenceOrchestrator:
         self.device = device
         self.max_val_samples = max_val_samples
         self.num_examples = num_examples
-        self.no_symbols = no_symbols
         self.validation_modes = validation_modes
-        self.swap_labels = swap_labels
         self.run_name = run_name
         self.num_workers = num_workers
 
@@ -122,15 +120,15 @@ class InferenceOrchestrator:
             self.config.data_config.dataset_type = self.dataset_type
             self.config.data_config.max_samples = self.max_val_samples
 
-            self.config.symbol_config.no_symbols = self.no_symbols
-
-            if self.no_symbols:
-                self.config.symbol_config.dynamic_symbols = False
-
+            # validation_modes is the only legitimate override at inference time;
+            # all other symbol settings come from the saved checkpoint config
             if self.validation_modes:
                 self.config.symbol_config.validation_modes = self.validation_modes
 
-            self.config.symbol_config.swap_labels = self.swap_labels
+            # Auto-detect D-SPO from checkpoint — no flag needed
+            if checkpoint.get("router_state") is not None:
+                self.config.diff_symbol_config.enabled = True
+                logging.info("D-SPO detected in checkpoint — will restore router")
 
             return checkpoint
 
@@ -241,6 +239,10 @@ class InferenceOrchestrator:
             else:
                 raise ValueError(f"Unknown model_type: {self.model_type}")
 
+            # Resize embeddings for D-SPO slot tokens before loading weights
+            if self.config.diff_symbol_config.enabled:
+                setup_dspo_model(self.model, tokenizer, self.config)
+
             if "model_state" in checkpoint:
                 self.model.load_state_dict(
                     checkpoint["model_state"],
@@ -249,6 +251,32 @@ class InferenceOrchestrator:
 
             self.model.to(self.device)
             self.model.eval()
+
+            # Restore D-SPO router from checkpoint
+            if self.config.diff_symbol_config.enabled:
+                router_state = checkpoint.get("router_state")
+                if router_state is not None:
+                    cfg = self.config.diff_symbol_config
+                    dummy_indices = [[0] * cfg.slot_vocab_size for _ in range(cfg.num_slots)]
+                    router = SymbolRouter(
+                        num_slots=cfg.num_slots,
+                        slot_vocab_size=cfg.slot_vocab_size,
+                        slot_vocab_indices=dummy_indices,
+                        initial_tau=cfg.tau,
+                        tau_min=cfg.tau_min,
+                    )
+                    router.load_state_dict(router_state)
+                    router.eval()
+                    slot_token_ids = torch.tensor(
+                        [tokenizer.convert_tokens_to_ids(f"<slot_{i}>") for i in range(cfg.num_slots)],
+                        dtype=torch.long,
+                    )
+                    dspo_module = DspoModule(slot_token_ids).to(self.device)
+                    self.model.router = router
+                    self.model.dspo_module = dspo_module
+                    logging.info("D-SPO router restored from checkpoint (%d slots, K=%d)", cfg.num_slots, cfg.slot_vocab_size)
+                else:
+                    logging.warning("D-SPO enabled but no router_state in checkpoint — router not restored")
 
             self.validator = ValidationManager(
                 config=self.config,
@@ -376,9 +404,8 @@ def main():
     parser.add_argument("--num_workers", type=int, default=2)
     parser.add_argument("--output_dir", type=str, default=None)
     parser.add_argument("--run_name", type=str, required=True)
-    parser.add_argument("--no_symbols", action="store_true")
-    parser.add_argument("--swap_labels", action="store_true")
-    parser.add_argument("--validation_modes", type=str, default=None)
+    parser.add_argument("--validation_modes", type=str, default=None,
+                        help="Override validation modes from checkpoint (e.g. original,fixed,fresh)")
 
     args = parser.parse_args()
 
@@ -392,9 +419,7 @@ def main():
             num_examples=args.num_examples,
             run_name=args.run_name,
             output_dir=args.output_dir,
-            no_symbols=args.no_symbols,
             validation_modes=args.validation_modes,
-            swap_labels=args.swap_labels,
             num_workers=args.num_workers,
         )
 
