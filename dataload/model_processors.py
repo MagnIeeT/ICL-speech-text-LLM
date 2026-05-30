@@ -23,11 +23,16 @@ class ModelProcessor(abc.ABC):
         input_mode: str = "speech_only",
         fewshot_mode: str = "text",
         dataset_type: Optional[Any] = None,
-    ) -> str:
+    ) -> Any:
+        """
+        Return type is model-dependent:
+        - Qwen/Salmonn: typically a rendered string prompt
+        - Flamingo: a structured prompt object (dict with "conversation")
+        """
         pass
 
     @abc.abstractmethod
-    def tokenize_batch(self, prompts: List[str], completions: List[str]) -> Dict[str, torch.Tensor]:
+    def tokenize_batch(self, prompts: List[str], completions: Optional[List[str]] = None) -> Dict[str, torch.Tensor]:
         """Unified tokenization method for training and validation."""
         pass
 
@@ -42,12 +47,17 @@ def get_processor(model_type: str, processor=None, tokenizer=None, symbol_manage
 
     if model_type == "salmonn":
         from .salmon_processor import SalmonProcessor
-
         return SalmonProcessor(tokenizer, symbol_manager=symbol_manager)
+
     if model_type in ["qwen", "qwen2"]:
         from .qwen_processor import QwenProcessor
-
         return QwenProcessor(processor, tokenizer=tokenizer, symbol_manager=symbol_manager)
+
+    if model_type in ["flamingo", "audioflamingo", "audioflamingo3"]:
+        from .flamingo_processor import FlamingoProcessor
+        # Keep Flamingo identical to remote version
+        return FlamingoProcessor(processor)
+
     raise ValueError(f"Unsupported model type: {model_type}")
 
 

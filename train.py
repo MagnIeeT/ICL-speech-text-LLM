@@ -25,22 +25,39 @@ except ImportError:
     Qwen2AudioProcessor = None
 
 
-def setup_tokenizer_only(config):
-    """Initializes the tokenizer for the selected backend."""
+def setup_tokenizer_and_processor(config):
+    """Build tokenizer + processor for the selected backend."""
     model_type = config.model_type.value
+    logging.info("Setting up tokenizer and processor for model type: %s", model_type)
+
     if model_type == "salmonn":
         tokenizer = LlamaTokenizer.from_pretrained(config.salmonn_tokenizer_name, use_fast=False)
         tokenizer.add_special_tokens({"pad_token": "[PAD]"})
         tokenizer = setup_dspo_tokenizer(tokenizer, config)
         tokenizer.padding_side = "right"
-        return tokenizer, None
+        processor = get_processor(config.model_type.value, tokenizer=tokenizer)
+        return tokenizer, processor
+
     if model_type == "qwen":
+        if Qwen2AudioProcessor is None:
+            raise ImportError("Qwen2AudioProcessor is not available. Please install/upgrade transformers.")
         input_processor = Qwen2AudioProcessor.from_pretrained(config.qwen_model_name, trust_remote_code=True)
         tokenizer = input_processor.tokenizer
         tokenizer.add_special_tokens({"pad_token": "[PAD]"})
         tokenizer = setup_dspo_tokenizer(tokenizer, config)
         tokenizer.padding_side = "right"
-        return tokenizer, input_processor
+        processor = get_processor(config.model_type.value, processor=input_processor, tokenizer=tokenizer)
+        return tokenizer, processor
+
+    if model_type == "flamingo":
+        from transformers import AutoProcessor as _AutoProcessor
+        input_processor = _AutoProcessor.from_pretrained(config.flamingo_model_name, trust_remote_code=True)
+        processor = get_processor(config.model_type.value, processor=input_processor)
+        tokenizer = input_processor.tokenizer
+        tokenizer.add_special_tokens({"pad_token": "[PAD]"})
+        tokenizer.padding_side = "right"
+        return tokenizer, processor
+
     raise ValueError(f"Unsupported model type: {model_type}")
 
 
@@ -54,7 +71,17 @@ def extract_dataset_labels(config: TrainingConfig) -> List[str]:
     return sorted(list(all_valid_labels))
 
 
-def initialize_model(config: TrainingConfig, tokenizer, symbol_manager, raw_qwen_processor) -> torch.nn.Module:
+def extract_dataset_labels_dict(config: TrainingConfig) -> Dict[str, List[str]]:
+    """Extract per-dataset label vocabulary for all registered datasets."""
+    from config.data_config.master_config import DATASET_CONFIGS
+    dataset_labels_dict = {}
+    for name, dataset_config in DATASET_CONFIGS.items():
+        if dataset_config.valid_labels:
+            dataset_labels_dict[name.value] = sorted(list(dataset_config.valid_labels))
+    return dataset_labels_dict
+
+
+def initialize_model(config: TrainingConfig, tokenizer, symbol_manager, raw_processor) -> torch.nn.Module:
     """Initialize backend model with LoRA parameters."""
     model_type = config.model_type.value
     if model_type == "salmonn":
@@ -62,12 +89,20 @@ def initialize_model(config: TrainingConfig, tokenizer, symbol_manager, raw_qwen
         model = CustomSalmonn(device=config.device, lora=True, lora_rank=config.lora_config.rank,
                               lora_alpha=config.lora_config.alpha, lora_dropout=config.lora_config.dropout)
         return setup_dspo_model(model, tokenizer, config)
+    
     if model_type == "qwen":
         from models.backends.custom_qwen import CustomQwen
-        model = CustomQwen(model_path=config.qwen_model_name, input_processor=raw_qwen_processor, 
+        model = CustomQwen(model_path=config.qwen_model_name, input_processor=raw_processor, 
                            device=config.device, lora=True, lora_rank=config.lora_config.rank, 
                            lora_alpha=config.lora_config.alpha, lora_dropout=config.lora_config.dropout)
         return setup_dspo_model(model, tokenizer, config)
+
+    if model_type == "flamingo":
+        from models.backends.custom_flamingo import CustomFlamingo
+        return CustomFlamingo(model_path=config.flamingo_model_name, device=config.device, lora=True,
+                               lora_rank=config.lora_config.rank, lora_alpha=config.lora_config.alpha,
+                               lora_dropout=config.lora_config.dropout)
+
     raise ValueError(f"Unknown model_type: {model_type}")
 
 
@@ -82,7 +117,8 @@ def main():
         config = TrainingConfig.from_args(args)
         logging.info("Starting training with config: %s", config.run_name)
 
-        tokenizer, raw_qwen_processor = setup_tokenizer_only(config)
+        tokenizer, processor = setup_tokenizer_and_processor(config)
+        
         dataset_labels = extract_dataset_labels(config)
         symbol_manager = SymbolManager(
             original_labels=dataset_labels,
@@ -93,25 +129,20 @@ def main():
             swap_labels=config.symbol_config.swap_labels,
         )
 
-        processor = get_processor(
-            config.model_type.value, 
-            processor=raw_qwen_processor, 
-            tokenizer=tokenizer, 
-            symbol_manager=symbol_manager
-        )
-
         train_datasets, val_datasets = load_datasets_for_config(config)
         train_dataset_names = {dt.value if hasattr(dt, "value") else str(dt) for dt, ds in train_datasets.items() if ds is not None}
 
         train_dataloader = create_combined_dataloader(train_datasets, processor, config, is_training=True)
         val_dataloader = create_combined_dataloader(val_datasets, processor, config, is_training=False)
 
-        model = initialize_model(config, tokenizer, symbol_manager, raw_qwen_processor)
+        # Retrieve raw_processor for backend initialization
+        raw_processor = processor.processor if hasattr(processor, "processor") else None
+        model = initialize_model(config, tokenizer, symbol_manager, raw_processor)
 
         orchestrator = SymbolTrainingOrchestrator(
             config=config, model=model, train_dataloader=train_dataloader, val_dataloader=val_dataloader,
             tokenizer=tokenizer, symbol_manager=symbol_manager, train_dataset_names=train_dataset_names,
-            processor=processor # PASS PROCESSOR HERE
+            processor=processor
         )
         orchestrator.run_complete_training()
         logging.info("Training completed successfully")
