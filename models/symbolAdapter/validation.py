@@ -104,7 +104,8 @@ class ValidationManager:
         # the same slot index across epochs; the vocab token each slot resolves to
         # can change naturally as the router trains.
         dataset_slot_cache: Dict[str, tuple] = {}
-        logged_datasets: set = set()  # tracks which datasets have had their first-batch log
+        logged_datasets: set = set()   # tracks which datasets have had their mapping log
+        logged_prompts: set = set()    # tracks which datasets have had their prompt log
 
         try:
             for batch in progress_bar:
@@ -123,7 +124,7 @@ class ValidationManager:
                 slot_replacement = None
                 if use_original_labels:
                     p_map, c_map = {}, {}
-                elif router is not None and dspo_module is not None:
+                elif router is not None and dspo_module is not None and not use_dynamic:
                     if ds_name_str not in dataset_slot_cache:
                         # First batch for this dataset — fix slot assignment for the whole run.
                         # Pick the top-K most converged slots (highest confidence) so we
@@ -133,6 +134,12 @@ class ValidationManager:
                         slots = confidence.topk(num_needed).indices.tolist()
                         # Sort by confidence descending → assign to labels in alphabetical order
                         slots = sorted(slots, key=lambda s: confidence[s].item(), reverse=True)
+                        # Log all slot confidence scores so we can track router convergence
+                        conf_str = "  ".join(
+                            f"slot_{i}={'*' if i in slots else ''}{confidence[i].item():.3f}"
+                            for i in range(router.num_slots)
+                        )
+                        logger.info("D-SPO val confidence [%s]: %s", ds_name_str, conf_str)
                         vocab_indices, _ = router.get_slot_mappings(slots, hard=True)
                         p_map = {label: f"<slot_{s}>" for label, s in zip(relevant_labels, slots)}
                         symbols = [
@@ -171,6 +178,14 @@ class ValidationManager:
                 if self.processor is not None:
                     tokenized_data = self.processor.tokenize_batch(updated_batch["prompt"], completions=None)
                     updated_batch.update(tokenized_data)
+
+                # Log one full prompt per dataset per validation mode
+                if ds_name_str not in logged_prompts and "input_ids" in updated_batch:
+                    logged_prompts.add(ds_name_str)
+                    full_prompt = self.tokenizer.decode(
+                        updated_batch["input_ids"][0], skip_special_tokens=False
+                    )
+                    logger.info("VAL prompt [%s]:\n%s", ds_name_str, full_prompt)
 
                 # 3. Move to device and generate
                 updated_batch = {k: v.to(model.device) if isinstance(v, torch.Tensor) else v for k, v in updated_batch.items()}
