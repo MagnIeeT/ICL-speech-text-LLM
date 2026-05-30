@@ -65,7 +65,7 @@ class ValidationManager:
             symbol_mappings_to_use = {}
             mode_name = "Original"
         elif use_dynamic_symbols:
-            symbol_mappings_to_use = self.symbol_manager._generate_symbol_mappings()
+            symbol_mappings_to_use = self.symbol_manager._generate_symbol_mappings(force=True)
             mode_name = "Fresh-Symbols"
         else:
             symbol_mappings_to_use = symbol_mappings if symbol_mappings is not None else self.symbol_manager.get_symbols_for_epoch(epoch)

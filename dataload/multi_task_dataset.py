@@ -33,7 +33,7 @@ class BaseMultiTaskDataset(Dataset):
         processor: ModelProcessor,
         input_mode: str = "speech_only",
         fewshot_mode: str = "text",
-        num_examples: int = 5,
+        num_examples: int = 0,
         random_examples: bool = False,
         split: DatasetSplit = DatasetSplit.TEST,
         model_type: str = "salmonn",

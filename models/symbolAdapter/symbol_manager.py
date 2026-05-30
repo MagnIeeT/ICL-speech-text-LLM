@@ -73,9 +73,9 @@ class SymbolManager:
         else: active = self.get_current_symbols()
         return {v.lower(): k for k, v in active.items()}
 
-    def _generate_symbol_mappings(self) -> Dict[str, str]:
+    def _generate_symbol_mappings(self, force: bool = False) -> Dict[str, str]:
         if self.swap_labels: return self._generate_swap_mappings()
-        if self.no_symbols: return {}
+        if self.no_symbols and not force: return {}
         if self.symbol_type == "two_token": symbols = self._generate_two_token_symbols(len(self.original_labels))
         else: symbols = ["".join(random.choices(string.ascii_lowercase, k=4)) for _ in self.original_labels]
         return dict(zip(self.original_labels, symbols))

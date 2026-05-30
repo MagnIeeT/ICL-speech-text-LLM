@@ -370,7 +370,9 @@ class SymbolTrainingOrchestrator:
             train_ds = [n for n in all_ds_names if n in self.train_dataset_names]
             val_ds = [n for n in all_ds_names if n not in self.train_dataset_names]
             header = f"{'Epoch':<8} | {'Mode':<12}"
-            for ds in all_ds_names: header += f" | {ds:<15}"
+            for ds in all_ds_names:
+                col = f"{ds}(T)" if ds in train_ds else ds
+                header += f" | {col:<15}"
             if len(train_ds) > 1: header += " | Avg (train)"
             if len(val_ds) > 1: header += " | Avg (val)"
             logging.info(header)
@@ -391,43 +393,5 @@ class SymbolTrainingOrchestrator:
                 if i < len(history) - 1: logging.info("-" * len(header))
         logging.info("=" * 80)
 
-        # 2. COMPLETE TRAINING SUMMARY — one row per mode per epoch
         self._save_checkpoint(self.config.lora_config.epochs - 1, "final")
-        logging.info("=" * 100 + "\nCOMPLETE TRAINING SUMMARY - ALL EPOCHS\n" + "=" * 100)
-
-        # Collect all mode and dataset names seen across history
-        summary_modes, summary_ds = [], []
-        for entry in history:
-            for mode, ds_dict in entry.get("validation", {}).get("all_modes", {}).items():
-                if mode not in summary_modes: summary_modes.append(mode)
-                for ds in ds_dict:
-                    if ds not in summary_ds: summary_ds.append(ds)
-
-        header = f"{'Epoch':<8} {'Loss':<12} {'Mode':<12}"
-        for ds in summary_ds: header += f" {ds:<14}"
-        header += f" {'Avg Score':<12}"
-        sep = "-" * len(header)
-        logging.info(header)
-        logging.info(sep)
-
-        for entry in history:
-            ep   = entry["epoch"]
-            loss = entry["train_loss"]
-            modes = entry.get("validation", {}).get("all_modes", {})
-            for j, mode in enumerate(summary_modes):
-                mode_results = modes.get(mode, {})
-                ep_str   = str(ep) if j == 0 else ""
-                loss_str = f"{loss:.4f}" if j == 0 else ""
-                row = f"{ep_str:<8} {loss_str:<12} {mode:<12}"
-                scores = []
-                for ds in summary_ds:
-                    s = mode_results.get(ds, {}).get("score")
-                    row += f" {s:<14.4f}" if s is not None else f" {'-':<14}"
-                    if s is not None: scores.append(s)
-                avg = sum(scores) / len(scores) if scores else 0.0
-                row += f" {avg:<12.4f}"
-                logging.info(row)
-            logging.info(sep)
-
-        logging.info("=" * 100)
         return {"history": history}

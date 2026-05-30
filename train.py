@@ -132,8 +132,8 @@ def main():
         train_datasets, val_datasets = load_datasets_for_config(config)
         train_dataset_names = {dt.value if hasattr(dt, "value") else str(dt) for dt, ds in train_datasets.items() if ds is not None}
 
-        train_dataloader = create_combined_dataloader(train_datasets, processor, config, is_training=True)
-        val_dataloader = create_combined_dataloader(val_datasets, processor, config, is_training=False)
+        train_dataloader = create_combined_dataloader(train_datasets, processor, config, num_examples=config.data_config.num_examples, is_training=True)
+        val_dataloader = create_combined_dataloader(val_datasets, processor, config, num_examples=config.data_config.val_num_examples, is_training=False)
 
         # Retrieve raw_processor for backend initialization
         raw_processor = processor.processor if hasattr(processor, "processor") else None

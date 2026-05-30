@@ -64,7 +64,8 @@ class DataConfig:
     val_max_samples: int = 200
     val_frequency: int = 1
     val_dataset_type: Optional[str] = None
-    num_examples: int = 0
+    num_examples: int = 5
+    val_num_examples: int = 5
     num_workers: int = 2
 
 
@@ -73,13 +74,13 @@ from utils.environment import get_env_path
 @dataclass
 class DifferentiableSymbolConfig:
     enabled: bool = False
-    num_slots: int = 5
+    num_slots: int = 25
     slot_vocab_size: int = 5       # K: private vocab tokens per slot (non-overlapping)
     tau: float = 1.0
     tau_min: float = 0.1
     tau_anneal_rate: float = 0.0001
     router_lr: float = 1e-3
-    rotation_interval: int = 2      # 0 = rotate slot assignments per epoch; >0 = every N global steps
+    rotation_interval: int = 0      # 0 = rotate slot assignments per epoch; >0 = every N global steps
     integrity_alpha: float = 1.0
     integrity_beta: float = 1.0
 
@@ -217,6 +218,8 @@ class TrainingConfig:
             val_max_samples=200 if args.max_samples == 0 else min(200, args.max_samples),
             split=getattr(args, "split", "test"),
             num_workers=getattr(args, "num_workers", 2),
+            num_examples=getattr(args, "num_examples", 5),
+            val_num_examples=getattr(args, "val_num_examples", 5),
         )
 
         return cls(
@@ -260,6 +263,8 @@ def parse_training_args() -> argparse.Namespace:
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--max_samples", type=int, default=100)
+    parser.add_argument("--num_examples", type=int, default=5, help="Few-shot examples per training prompt")
+    parser.add_argument("--val_num_examples", type=int, default=5, help="Few-shot examples per validation prompt")
     parser.add_argument("--num_workers", type=int, default=2)
 
     parser.add_argument("--lora_lr", type=float, default=1e-5)
