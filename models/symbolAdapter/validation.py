@@ -83,6 +83,7 @@ class ValidationManager:
                     val_dataloader=val_dataloader,
                     symbol_mappings=symbol_mappings_to_use,
                     use_original_labels=use_original_labels,
+                    use_dynamic=use_dynamic_symbols,
                 )
             return metrics_by_dataset
         except Exception as exc:
@@ -92,7 +93,7 @@ class ValidationManager:
         finally:
             model.train()
 
-    def _run_validation_with_utils(self, model, val_dataloader, symbol_mappings: Dict[str, str], use_original_labels: bool = False):
+    def _run_validation_with_utils(self, model, val_dataloader, symbol_mappings: Dict[str, str], use_original_labels: bool = False, use_dynamic: bool = False):
         all_results = {}
         progress_bar = tqdm(val_dataloader, desc="Evaluating", total=len(val_dataloader), leave=False)
         router = getattr(model, "router", None)
