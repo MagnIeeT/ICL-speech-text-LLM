@@ -69,10 +69,12 @@ class VocabFilter:
             if len(re_encoded) != 1:
                 continue
 
-            # Semantic Neutrality: Exclude common punctuation, numbers, etc.
+            # Semantic Neutrality: Exclude common punctuation, numbers, non-ASCII.
             if any(char.isdigit() for char in decoded):
                 continue
             if not decoded.isalpha():
+                continue
+            if not decoded.isascii():
                 continue
 
             candidate_ids.append(token_id)

@@ -44,7 +44,9 @@ class SymbolTrainingOrchestrator:
         self.optimizer = None
         self.global_step = 0
         self._epoch_log_count = 0  # logs first 2 batches per epoch
-        self._swap_cache: dict = {}  # per-dataset swap mapping; reset each epoch
+        self._swap_cache: dict = {}       # per-dataset swap mapping; reset each epoch
+        self._slot_assignments: dict = {} # ds_name → list[slot_idx]; reset per rotation
+        self._assignment_steps: dict = {} # ds_name → global_step when last assigned
 
         self.validator = ValidationManager(
             config=config,
@@ -58,20 +60,41 @@ class SymbolTrainingOrchestrator:
         self.router = None
         self.dspo_module = None
         if self.config.diff_symbol_config.enabled:
+            num_slots = self.config.diff_symbol_config.num_slots
+            K = self.config.diff_symbol_config.slot_vocab_size
+            required_pool = num_slots * K
+
             vocab_filter = VocabFilter(tokenizer)
             symbol_pool = vocab_filter.generate_symbol_pool(
-                pool_size=self.config.diff_symbol_config.pool_size,
-                exclude_labels=self.symbol_manager.original_labels if self.symbol_manager else None
+                pool_size=required_pool,
+                exclude_labels=self.symbol_manager.original_labels if self.symbol_manager else None,
             )
+            if len(symbol_pool) < required_pool:
+                logging.warning(
+                    "D-SPO: pool has %d tokens but need %d (%d slots × %d). "
+                    "Reducing slot_vocab_size to fit.",
+                    len(symbol_pool), required_pool, num_slots, K,
+                )
+                K = len(symbol_pool) // num_slots
+                symbol_pool = symbol_pool[:num_slots * K]
+
+            # Partition pool into non-overlapping groups of K, one per slot
+            random.shuffle(symbol_pool)
+            slot_vocab_indices = [symbol_pool[i * K:(i + 1) * K] for i in range(num_slots)]
+            logging.info(
+                "D-SPO: %d slots × %d private tokens each (pool=%d)",
+                num_slots, K, len(symbol_pool),
+            )
+
             self.router = SymbolRouter(
-                num_slots=self.config.diff_symbol_config.num_slots,
-                pool_size=len(symbol_pool),
-                symbol_pool_indices=symbol_pool,
+                num_slots=num_slots,
+                slot_vocab_size=K,
+                slot_vocab_indices=slot_vocab_indices,
                 initial_tau=self.config.diff_symbol_config.tau,
                 tau_min=self.config.diff_symbol_config.tau_min,
             ).to(self.config.device)
-            
-            slot_tokens = [f"<slot_{i}>" for i in range(self.config.diff_symbol_config.num_slots)]
+
+            slot_tokens = [f"<slot_{i}>" for i in range(num_slots)]
             slot_token_ids = [tokenizer.convert_tokens_to_ids(t) for t in slot_tokens]
             unk_id = tokenizer.unk_token_id
             bad_tokens = [t for t, tid in zip(slot_tokens, slot_token_ids) if tid is None or tid == unk_id]
@@ -80,9 +103,17 @@ class SymbolTrainingOrchestrator:
                     f"D-SPO: slot tokens not in tokenizer vocabulary: {bad_tokens}. "
                     "Ensure setup_dspo_tokenizer() was called before model init."
                 )
-            logging.info("D-SPO slot token IDs validated: %s", dict(zip(slot_tokens, slot_token_ids)))
+            logging.info(
+                "D-SPO slot token IDs validated (first 10 of %d): %s",
+                len(slot_tokens),
+                dict(list(zip(slot_tokens, slot_token_ids))[:10]),
+            )
             self.dspo_module = DspoModule(slot_token_ids).to(self.config.device)
-            logging.info("D-SPO initialized: %d slots, %d symbols in pool", self.config.diff_symbol_config.num_slots, len(symbol_pool))
+            logging.info("D-SPO initialized: %d slots, %d tokens/slot", num_slots, K)
+
+            # Attach to model so validation.py can find them via getattr(model, "router")
+            self.model.router = self.router
+            self.model.dspo_module = self.dspo_module
 
         self._setup_training_environment()
 
@@ -133,13 +164,37 @@ class SymbolTrainingOrchestrator:
 
         p_mappings, c_mappings = None, None
         if self.router is not None:
-            # D-SPO Mode
+            # D-SPO Mode — slot assignments rotate on a schedule instead of every batch.
+            # rotation_interval=0 → per-epoch (reset at epoch start, assign on first batch).
+            # rotation_interval>0 → every N global steps.
             num_labels = len(relevant_labels)
             num_slots_available = self.config.diff_symbol_config.num_slots
-            batch_slot_indices = random.sample(list(range(num_slots_available)), k=min(num_labels, num_slots_available))
+            rotation_interval = self.config.diff_symbol_config.rotation_interval
+            steps_per_epoch = len(self.train_dataloader)
+            effective_interval = rotation_interval if rotation_interval > 0 else steps_per_epoch
+
+            last_step = self._assignment_steps.get(ds_name_str, -(effective_interval + 1))
+            needs_rotation = (
+                ds_name_str not in self._slot_assignments
+                or (self.global_step - last_step) >= effective_interval
+            )
+            if needs_rotation:
+                batch_slot_indices = random.sample(
+                    list(range(num_slots_available)),
+                    k=min(num_labels, num_slots_available),
+                )
+                self._slot_assignments[ds_name_str] = batch_slot_indices
+                self._assignment_steps[ds_name_str] = self.global_step
+                logging.info(
+                    "D-SPO slot rotation (step=%d interval=%d dataset=%s): %s → slots %s",
+                    self.global_step, effective_interval, ds_name_str,
+                    relevant_labels, batch_slot_indices,
+                )
+            else:
+                batch_slot_indices = self._slot_assignments[ds_name_str]
+
             vocab_indices, _ = self.router.get_slot_mappings(batch_slot_indices, hard=True)
             p_mappings = {label: f"<slot_{slot_idx}>" for label, slot_idx in zip(relevant_labels, batch_slot_indices)}
-            # Fallback if a vocab token decodes to empty (e.g. whitespace-only token)
             clean_symbols = [
                 self.tokenizer.decode([idx]).strip() or f"<tok_{idx.item()}>"
                 for idx in vocab_indices
@@ -191,6 +246,10 @@ class SymbolTrainingOrchestrator:
     def _train_one_epoch(self, epoch: int) -> float:
         self.model.train()
         self._swap_cache = {}  # reset per-epoch swap assignments
+        if self.router is not None and self.config.diff_symbol_config.rotation_interval == 0:
+            # Per-epoch rotation: clear assignments so first batch of each epoch rotates
+            self._slot_assignments = {}
+            self._assignment_steps = {}
         total_loss, num_batches = 0.0, 0
         accumulation_steps = self.config.lora_config.gradient_accumulation_steps
         progress_bar = tqdm(self.train_dataloader, desc=f"Epoch {epoch + 1}", leave=False)

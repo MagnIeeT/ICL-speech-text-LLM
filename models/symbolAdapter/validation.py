@@ -1,8 +1,6 @@
 """Validation logic for Symbol Adapter training and inference."""
 
-import hashlib
 import logging
-import random
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
@@ -106,6 +104,7 @@ class ValidationManager:
         # the same slot index across epochs; the vocab token each slot resolves to
         # can change naturally as the router trains.
         dataset_slot_cache: Dict[str, tuple] = {}
+        logged_datasets: set = set()  # tracks which datasets have had their first-batch log
 
         try:
             for batch in progress_bar:
@@ -127,12 +126,13 @@ class ValidationManager:
                 elif router is not None and dspo_module is not None:
                     if ds_name_str not in dataset_slot_cache:
                         # First batch for this dataset — fix slot assignment for the whole run.
-                        seed = int(hashlib.md5(ds_name_str.encode()).hexdigest(), 16) % (2 ** 31)
-                        rng = random.Random(seed)
-                        slots = rng.sample(
-                            list(range(self.config.diff_symbol_config.num_slots)),
-                            k=min(len(relevant_labels), self.config.diff_symbol_config.num_slots),
-                        )
+                        # Pick the top-K most converged slots (highest confidence) so we
+                        # always use the slots whose router has learned the most.
+                        num_needed = min(len(relevant_labels), self.config.diff_symbol_config.num_slots)
+                        confidence = router.get_confidence_scores()  # [num_slots]
+                        slots = confidence.topk(num_needed).indices.tolist()
+                        # Sort by confidence descending → assign to labels in alphabetical order
+                        slots = sorted(slots, key=lambda s: confidence[s].item(), reverse=True)
                         vocab_indices, _ = router.get_slot_mappings(slots, hard=True)
                         p_map = {label: f"<slot_{s}>" for label, s in zip(relevant_labels, slots)}
                         symbols = [
@@ -151,6 +151,18 @@ class ValidationManager:
                         p_map, c_map, slot_replacement = dataset_slot_cache[ds_name_str]
                 else:
                     p_map = c_map = symbol_mappings
+
+                # One-time log per dataset showing what replacement is active for this mode.
+                if ds_name_str not in logged_datasets:
+                    logged_datasets.add(ds_name_str)
+                    if use_original_labels:
+                        logger.info("VAL [%s] no symbol replacement (original labels)", ds_name_str)
+                    elif router is not None and dspo_module is not None:
+                        pass  # already logged by D-SPO branch above
+                    elif p_map:
+                        logger.info("VAL [%s] symbol mapping: %s", ds_name_str, p_map)
+                    else:
+                        logger.info("VAL [%s] empty mapping — model sees original labels", ds_name_str)
 
                 # 1. Text Replacement
                 updated_batch = self.symbol_manager.replace_symbols_in_batch(batch, prompt_mappings=p_map, completion_mappings=c_map)

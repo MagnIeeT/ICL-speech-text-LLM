@@ -1,73 +1,84 @@
 """
 Differentiable Symbol Router for D-SPO.
-Implements the Slot Matrix and Gumbel-Softmax routing.
+Each slot has a private non-overlapping vocabulary of K tokens.
 """
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Dict, List, Optional, Tuple
+from typing import List, Tuple
 
 
 class SymbolRouter(nn.Module):
     """
-    Manages the differentiable 'Slot Matrix' (Π) and performs Gumbel-Softmax routing.
+    Slot Matrix where every slot owns a private set of K candidate tokens.
+    Non-overlapping private vocabs prevent slots from converging on the same token.
+    preferences[i] has shape [K] — softmax is over K, never over full vocab.
     """
 
     def __init__(
         self,
         num_slots: int,
-        pool_size: int,
-        symbol_pool_indices: List[int],
+        slot_vocab_size: int,
+        slot_vocab_indices: List[List[int]],  # [num_slots][K] — token IDs, non-overlapping
         initial_tau: float = 1.0,
         tau_min: float = 0.1,
     ):
         super().__init__()
         self.num_slots = num_slots
-        self.pool_size = pool_size
-        self.register_buffer("symbol_pool_indices", torch.tensor(symbol_pool_indices, dtype=torch.long))
-        
-        # Preference Matrix (Π) - initialized randomly
-        # Shape: [M, N] where M=Slots, N=Pool Size
-        self.preferences = nn.Parameter(torch.randn(num_slots, pool_size))
-        
+        self.slot_vocab_size = slot_vocab_size
+
+        # [num_slots, K] — each slot's private token IDs, not learnable
+        self.register_buffer(
+            "slot_vocab_indices",
+            torch.tensor(slot_vocab_indices, dtype=torch.long),
+        )
+
+        # [num_slots, K] — learned weights; zero init → uniform Gumbel start
+        self.preferences = nn.Parameter(torch.zeros(num_slots, slot_vocab_size))
+
         self.tau = initial_tau
         self.tau_min = tau_min
 
     def get_slot_mappings(
-        self, 
-        slot_indices: List[int], 
-        hard: bool = True
+        self,
+        slot_indices: List[int],
+        hard: bool = True,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Samples symbols for the requested slots.
+        For each requested slot, sample one token from its private K-token vocab.
+
+        Returns:
+            vocab_indices: [S] — the chosen real vocab token ID for each slot
+            probs:         [S, K] — Gumbel-Softmax weights (used for soft embedding)
         """
-        # Select preference vectors for the requested slots [K, N]
-        slot_prefs = self.preferences[slot_indices]
-        
-        # Gumbel-Softmax sampling [K, N]
-        probs = F.gumbel_softmax(slot_prefs, tau=self.tau, hard=hard, dim=-1)
-        
-        discrete_indices = torch.argmax(probs, dim=-1)
-        vocab_indices = self.symbol_pool_indices.to(probs.device)[discrete_indices]
-        
-        # Log selection for debugging (only if in training/verbose mode)
-        import logging
-        if logging.getLogger().isEnabledFor(logging.DEBUG):
-            for i, slot_idx in enumerate(slot_indices):
-                logging.debug(f"Router: Slot {slot_idx} selected Token ID {vocab_indices[i].item()}")
-        
+        slot_prefs = self.preferences[slot_indices]                           # [S, K]
+        probs = F.gumbel_softmax(slot_prefs, tau=self.tau, hard=hard, dim=-1) # [S, K]
+        discrete_indices = torch.argmax(probs, dim=-1)                        # [S]
+
+        # discrete_indices[i] is an index into slot_vocab_indices[slot_indices[i]]
+        slot_vocab = self.slot_vocab_indices[slot_indices]                    # [S, K]
+        vocab_indices = slot_vocab[
+            torch.arange(len(slot_indices), device=slot_vocab.device),
+            discrete_indices,
+        ]  # [S] — actual token IDs in the model's vocabulary
+
         return vocab_indices, probs
 
+    def get_confidence_scores(self) -> torch.Tensor:
+        """
+        Per-slot confidence: max softmax prob over the slot's K candidates.
+        Higher = router has converged on a single token for this slot.
+        Shape: [num_slots]
+        """
+        probs = F.softmax(self.preferences, dim=-1)
+        return probs.max(dim=-1).values
+
     def update_tau(self, anneal_rate: float):
-        """Anneal the temperature."""
         self.tau = max(self.tau_min, self.tau - anneal_rate)
 
     def get_safety_scores(self) -> torch.Tensor:
-        """
-        Returns a measure of how 'peaked' the distributions are.
-        Lower entropy = more confident/learned mappings.
-        """
+        """Mean entropy across all slots (lower = more peaked)."""
         probs = F.softmax(self.preferences, dim=-1)
         entropy = -torch.sum(probs * torch.log(probs + 1e-10), dim=-1)
         return entropy.mean()

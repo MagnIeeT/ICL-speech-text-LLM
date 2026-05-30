@@ -28,57 +28,56 @@ class DspoModule(nn.Module):
     ) -> torch.Tensor:
         """
         Replaces placeholder embeddings with differentiable symbol embeddings.
-        
+
+        Each slot has a private vocab of K tokens. For slot i:
+          probs[i]      : [K] Gumbel-Softmax weights (sums to 1, over K only)
+          slot_embeds[i]: [K, hidden] embeddings of slot i's K candidate tokens
+          soft_embed[i] = probs[i] @ slot_embeds[i]   — [hidden]
+
         Args:
-            input_ids: [Batch, Seq] original token IDs.
-            input_embeds: [Batch, Seq, Hidden] embeddings from the base model.
-            router: The SymbolRouter instance.
-            embedding_layer: The base model's embedding layer (e.g., model.model.embed_tokens).
-            
+            input_ids:       [Batch, Seq] original token IDs
+            input_embeds:    [Batch, Seq, Hidden] embeddings from the base model
+            router:          SymbolRouter instance
+            embedding_layer: base model embed_tokens layer
+
         Returns:
-            modified_embeds: [Batch, Seq, Hidden] with differentiable symbols injected.
+            modified_embeds: [Batch, Seq, Hidden] with soft symbol embeddings injected
         """
+        import logging
         device = input_embeds.device
-        
-        # 1. Get the Full Vocabulary Pool Embeddings [Pool_Size, Hidden]
-        # We look up the embeddings for every token in our 'Verified Pool'.
-        pool_indices = router.symbol_pool_indices.to(device)
-        pool_embeds = embedding_layer(pool_indices)
 
-        # 2. Get Differentiable Probabilities from the Router [Num_Slots, Pool_Size]
-        # We use all slots to prepare the full mapping matrix.
+        # Get Gumbel-Softmax probs for all slots at once: [num_slots, K]
         all_slots = list(range(router.num_slots))
-        _, probs = router.get_slot_mappings(all_slots, hard=True)
+        _, probs = router.get_slot_mappings(all_slots, hard=True)  # [num_slots, K]
 
-        # 3. Calculate "Soft Embeddings" for all slots [Num_Slots, Hidden]
-        # This matmul is the 'magic': it connects the graph.
-        # soft_slot_embeds[i] = probs[i] @ pool_embeds
-        soft_slot_embeds = torch.matmul(probs, pool_embeds.to(probs.dtype))
-
-        # 4. Inject into the sequence
-        # We clone to ensure we don't interfere with the base model's original cache
         modified_embeds = input_embeds.clone()
-
-        # Iterate through the slots we have placeholders for
-        # Note: self.slot_token_ids should match the order of indices 0...M in the Router
         injection_count = 0
+
         for i, slot_id in enumerate(self.slot_token_ids):
             if i >= router.num_slots:
                 break
-                
-            # Find positions where this placeholder token exists
+
             mask = (input_ids == slot_id)
-            if mask.any():
-                # Get stats for verification (only for first few injections to avoid log flooding)
-                if injection_count < 5:
-                    soft_val = soft_slot_embeds[i]
-                    import logging
-                    logging.info(f"D-SPO: Injecting Slot {i} at {mask.sum().item()} positions. "
-                                 f"Soft Embed Stats: mean={soft_val.mean().item():.4f}, std={soft_val.std().item():.4f}")
-                
-                # Replace the static placeholder embedding with the differentiable one
-                modified_embeds[mask] = soft_slot_embeds[i].to(modified_embeds.dtype)
-                injection_count += 1
+            if not mask.any():
+                continue
+
+            # Slot i's private K token embeddings: [K, hidden]
+            slot_token_ids_i = router.slot_vocab_indices[i].to(device)  # [K]
+            slot_embeds = embedding_layer(slot_token_ids_i)              # [K, hidden]
+
+            # Soft embedding: weighted sum over this slot's K tokens only
+            soft_embed = torch.matmul(probs[i].to(slot_embeds.dtype), slot_embeds)  # [hidden]
+
+            if injection_count < 5:
+                logging.info(
+                    "D-SPO: Injecting Slot %d at %d positions. "
+                    "Soft Embed Stats: mean=%.4f, std=%.4f",
+                    i, mask.sum().item(),
+                    soft_embed.mean().item(), soft_embed.std().item(),
+                )
+
+            modified_embeds[mask] = soft_embed.to(modified_embeds.dtype)
+            injection_count += 1
 
         return modified_embeds
 

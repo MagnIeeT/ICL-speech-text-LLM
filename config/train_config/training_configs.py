@@ -73,14 +73,20 @@ from utils.environment import get_env_path
 @dataclass
 class DifferentiableSymbolConfig:
     enabled: bool = False
-    num_slots: int = 20
-    pool_size: int = 50
+    num_slots: int = 5
+    slot_vocab_size: int = 5       # K: private vocab tokens per slot (non-overlapping)
     tau: float = 1.0
     tau_min: float = 0.1
     tau_anneal_rate: float = 0.0001
     router_lr: float = 1e-3
-    integrity_alpha: float = 1.0  # ASR integrity weight
-    integrity_beta: float = 1.0   # Linguistic integrity weight
+    rotation_interval: int = 2      # 0 = rotate slot assignments per epoch; >0 = every N global steps
+    integrity_alpha: float = 1.0
+    integrity_beta: float = 1.0
+
+    @property
+    def pool_size(self) -> int:
+        """Total tokens needed: one private vocab per slot."""
+        return self.num_slots * self.slot_vocab_size
 
 
 @dataclass
@@ -198,7 +204,9 @@ class TrainingConfig:
             symbol_config.dynamic_symbols = False
 
         diff_symbol_config = DifferentiableSymbolConfig(
-            enabled=getattr(args, "diff_symbol_enabled", False)
+            enabled=getattr(args, "diff_symbol_enabled", False),
+            slot_vocab_size=getattr(args, "dspo_slot_vocab_size", 10),
+            rotation_interval=getattr(args, "dspo_rotation_interval", 0),
         )
 
         data_config = DataConfig(
@@ -261,6 +269,8 @@ def parse_training_args() -> argparse.Namespace:
 
     parser.add_argument("--dynamic_symbols", action="store_true")
     parser.add_argument("--diff_symbol_enabled", action="store_true", help="Enable Differentiable Symbolic Preference Optimization (D-SPO)")
+    parser.add_argument("--dspo_slot_vocab_size", type=int, default=10, help="D-SPO: private candidate tokens per slot")
+    parser.add_argument("--dspo_rotation_interval", type=int, default=0, help="D-SPO: rotate slot assignments every N global steps (0 = per epoch)")
     parser.add_argument("--no_symbols", action="store_true")
     parser.add_argument("--swap_labels", action="store_true", help="Swap labels (e.g., positive<->negative) during prompt/completion rewriting")
     parser.add_argument(

@@ -111,11 +111,19 @@ python train.py \
 | `--validation_modes` | Comma-separated: `fixed`, `original`, `fresh` (default: all three) |
 
 ### Differentiable Symbolic Preference Optimization (D-SPO)
-| Argument | Description |
-|---|---|
-| `--diff_symbol_enabled` | Enable D-SPO end-to-end differentiable symbol learning |
+| Argument | Default | Description |
+|---|---|---|
+| `--diff_symbol_enabled` | — | Enable D-SPO end-to-end differentiable symbol learning |
+| `--dspo_slot_vocab_size` | `10` | Private candidate tokens per slot |
+| `--dspo_rotation_interval` | `0` | Rotate slot assignments every N global steps (0 = per epoch) |
 
-D-SPO maintains a learnable slot matrix (Preference Matrix Π). During training, soft embeddings are injected into the LLM's input space via Gumbel-Softmax (hard=True, straight-through estimator). During validation, hard argmax token IDs replace slot placeholders. Slot→label assignments are fixed per dataset per validation run for comparable scores across epochs.
+**Architecture:** D-SPO maintains a learnable Slot Matrix Π of shape `[num_slots, K]` where `K = slot_vocab_size`. Each slot owns a **private non-overlapping vocabulary of K tokens** — slots cannot converge on the same token by construction. The total token pool required is `num_slots × K` (default: 20 × 10 = 200 tokens), filtered to ASCII alphabetic single-token candidates to ensure well-formed embeddings.
+
+**Training:** Slot→label assignments are held fixed for a rotation window (per epoch by default, or every N global steps via `--dspo_rotation_interval`). Within each window, consistent gradient signal flows to each slot's router. Gumbel-Softmax (hard=True, straight-through estimator) keeps the forward pass discrete while allowing gradients to flow back through the preference matrix.
+
+**Validation:** The `K` most confident slots (highest `max(softmax(preferences[i]))`) are selected for each dataset's label set, ensuring the most learned slots are used for evaluation. Slot assignments are fixed for the entire validation run so scores are comparable across epochs.
+
+**Cross-task transfer:** After training, each slot's router has converged on a token that functions as a reliable label placeholder. At inference on a new task with `K` classes, select the top-K most confident slots — the model has learned to treat their tokens as in-context label anchors regardless of the specific class semantics.
 
 ## Symbol Adapter Modes
 
@@ -136,7 +144,12 @@ Shuffles which symbol is assigned to which label. Scope is always within the cur
 - Frequency: controlled by `--symbol_update_strategy` (`per_epoch` or `per_instance`)
 
 ### D-SPO (`--diff_symbol_enabled`)
-Learns the optimal symbol-to-label mapping end-to-end. The router randomly samples `k` slots per training batch so all slots get exposure over time. During validation, slot assignments are fixed per dataset.
+Learns the optimal symbol-to-label mapping end-to-end via a differentiable slot matrix.
+
+- Each of `num_slots` slots owns a private pool of `K` candidate tokens (non-overlapping — no two slots compete for the same token)
+- Slot→label assignments rotate on a configurable schedule (per epoch or every N steps) so all slots receive training signal over time
+- At validation, the top-K most converged slots are selected automatically by confidence score
+- Enables **cross-task transfer**: learned slot tokens can be reused as label placeholders on unseen tasks without retraining the router
 
 ## Validation Modes
 
