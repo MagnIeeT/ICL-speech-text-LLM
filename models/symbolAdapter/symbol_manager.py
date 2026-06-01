@@ -138,13 +138,29 @@ class SymbolManager:
     def _apply_mapping_safe(self, text: str, mapping: Dict[str, str], active_keys: Optional[set] = None) -> str:
         if not mapping: return text
         if active_keys is None: active_keys = set(mapping.keys())
-        placeholders, transformed = {}, text
+
+        # Protect description text in bullet lines from label replacement.
+        # "- label: DESCRIPTION" — DESCRIPTION may contain the label word as a regular
+        # English word (e.g. "other: Actions that don't fit other categories") and
+        # must not be replaced. Only the label name (before the colon) is a target.
+        desc_store = {}
+        def _protect_desc(m):
+            key = f"__DESCPROTECT_{len(desc_store):04d}__"
+            desc_store[key] = m.group(2)
+            return m.group(1) + key
+        protected = re.sub(r'(?m)^([ \t]*-[^:\n]+: )(.+)$', _protect_desc, text)
+
+        placeholders, transformed = {}, protected
         sorted_keys = sorted([k for k in mapping.keys() if k in active_keys], key=len, reverse=True)
         for idx, src in enumerate(sorted_keys):
             placeholder = f"__SWAP_PLACEHOLDER_{idx}__"
             placeholders[placeholder] = mapping[src]
             transformed = re.compile(r'\b' + re.escape(src) + r'\b', re.IGNORECASE).sub(placeholder, transformed)
-        for p, d in placeholders.items(): transformed = transformed.replace(p, d)
+        for p, d in placeholders.items():
+            transformed = transformed.replace(p, d)
+
+        for key, val in desc_store.items():
+            transformed = transformed.replace(key, val)
         return transformed
 
     def _apply_mapping_to_prompt_obj(self, prompt_obj: Any, mapping: Dict[str, str], active_keys: set) -> Any:

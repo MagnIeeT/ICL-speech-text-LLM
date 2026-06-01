@@ -78,8 +78,8 @@ class DifferentiableSymbolConfig:
     slot_vocab_size: int = 5       # K: private vocab tokens per slot (non-overlapping)
     tau: float = 1.0
     tau_min: float = 0.1
-    tau_anneal_rate: float = 0.0001
-    router_lr: float = 1e-3
+    tau_anneal_rate: float = 0.001
+    router_lr: float = 1e-2
     rotation_interval: int = 0      # 0 = rotate slot assignments per epoch; >0 = every N global steps
     integrity_alpha: float = 1.0
     integrity_beta: float = 1.0
@@ -109,6 +109,7 @@ class TrainingConfig:
     
     run_name: str = "symbol_training_run"
     checkpoint_frequency: int = 1
+    validate_before_training: bool = True
 
     device: str = "cuda:0"
 
@@ -208,6 +209,8 @@ class TrainingConfig:
             enabled=getattr(args, "diff_symbol_enabled", False),
             slot_vocab_size=getattr(args, "dspo_slot_vocab_size", 10),
             rotation_interval=getattr(args, "dspo_rotation_interval", 0),
+            router_lr=getattr(args, "dspo_router_lr", 1e-3),
+            tau_anneal_rate=getattr(args, "dspo_tau_anneal_rate", 0.0001),
         )
 
         data_config = DataConfig(
@@ -224,6 +227,7 @@ class TrainingConfig:
         )
 
         return cls(
+            validate_before_training=not getattr(args, "no_validate_before_training", False),
             model_type=ModelType(args.model_type),
             salmonn_tokenizer_name=getattr(args, "salmonn_tokenizer_name", "lmsys/vicuna-13b-v1.1"),
             qwen_model_name=getattr(args, "qwen_model_name", "Qwen/Qwen2-Audio-7B-Instruct"),
@@ -278,6 +282,8 @@ def parse_training_args() -> argparse.Namespace:
     parser.add_argument("--diff_symbol_enabled", action="store_true", help="Enable Differentiable Symbolic Preference Optimization (D-SPO)")
     parser.add_argument("--dspo_slot_vocab_size", type=int, default=10, help="D-SPO: private candidate tokens per slot")
     parser.add_argument("--dspo_rotation_interval", type=int, default=0, help="D-SPO: rotate slot assignments every N global steps (0 = per epoch)")
+    parser.add_argument("--dspo_router_lr", type=float, default=1e-3, help="D-SPO: router learning rate")
+    parser.add_argument("--dspo_tau_anneal_rate", type=float, default=0.0001, help="D-SPO: tau annealing rate per step")
     parser.add_argument("--no_symbols", action="store_true")
     parser.add_argument("--swap_labels", action="store_true", help="Swap labels (e.g., positive<->negative) during prompt/completion rewriting")
     parser.add_argument(
@@ -293,6 +299,7 @@ def parse_training_args() -> argparse.Namespace:
         choices=["per_epoch", "per_instance"],
     )
 
+    parser.add_argument("--no_validate_before_training", action="store_true", help="Skip baseline validation before epoch 1")
     parser.add_argument("--output_dir", type=str, default=None)
     parser.add_argument("--checkpoint_dir", type=str, default=None)
     parser.add_argument("--metrics_dir", type=str, default=None)

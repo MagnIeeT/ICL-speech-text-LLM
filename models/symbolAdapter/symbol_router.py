@@ -75,7 +75,7 @@ class SymbolRouter(nn.Module):
         return probs.max(dim=-1).values
 
     def update_tau(self, anneal_rate: float):
-        self.tau = max(self.tau_min, self.tau - anneal_rate)
+        self.tau = max(self.tau_min, self.tau * (1.0 - anneal_rate))
 
     def get_safety_scores(self) -> torch.Tensor:
         """Mean entropy across all slots (lower = more peaked)."""

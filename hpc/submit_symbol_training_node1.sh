@@ -19,20 +19,23 @@ CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
 OUTPUT_DIR="${OUTPUT_DIR:-${HOME}/training/symbol_training}"
 LOG_DIR="${LOGS_DIR:-${HOME}/training/logs}/$(date +"%Y-%m-%d")"
 LORA_LR="${LORA_LR:-1e-5}"
-LORA_EPOCHS="${LORA_EPOCHS:-2}"
+LORA_EPOCHS="${LORA_EPOCHS:-10}"
 BATCH_SIZE="${BATCH_SIZE:-1}"
 VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-1}"
 GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-8}"
-MAX_SAMPLES="${MAX_SAMPLES:-500}"
+MAX_SAMPLES="${MAX_SAMPLES:-0}"
 NUM_EXAMPLES="${NUM_EXAMPLES:-0}"
 VAL_NUM_EXAMPLES="${VAL_NUM_EXAMPLES:-0}"
 NUM_WORKERS="${NUM_WORKERS:-2}"
-VALIDATION_MODES="${VALIDATION_MODES:-original}"
+VALIDATION_MODES="${VALIDATION_MODES:-original,fixed,fresh}"
 SYMBOL_UPDATE_STRATEGY="${SYMBOL_UPDATE_STRATEGY:-per_epoch}"
-NO_SYMBOLS="${NO_SYMBOLS:-false}"
+NO_SYMBOLS="${NO_SYMBOLS:-true}"
 DYNAMIC_SYMBOLS="${DYNAMIC_SYMBOLS:-false}"
-DIFF_SYMBOL_ENABLED="${DIFF_SYMBOL_ENABLED:-true}"
+DIFF_SYMBOL_ENABLED="${DIFF_SYMBOL_ENABLED:-false}"
+DSPO_ROUTER_LR="${DSPO_ROUTER_LR:-1e-2}"
+DSPO_TAU_ANNEAL_RATE="${DSPO_TAU_ANNEAL_RATE:-0.001}"
 SWAP_LABELS="${SWAP_LABELS:-false}"
+VALIDATE_BEFORE_TRAINING="${VALIDATE_BEFORE_TRAINING:-true}"
 
 if [[ "${DIFF_SYMBOL_ENABLED}" == "true" ]]; then
     _MODE="dspo"
@@ -110,5 +113,8 @@ python train.py \
     $( [[ "${NO_SYMBOLS}" == "true" ]] && printf '%s' "--no_symbols" ) \
     $( [[ "${DYNAMIC_SYMBOLS}" == "true" ]] && printf '%s' "--dynamic_symbols" ) \
     $( [[ "${DIFF_SYMBOL_ENABLED}" == "true" ]] && printf '%s' "--diff_symbol_enabled" ) \
+    --dspo_router_lr "${DSPO_ROUTER_LR}" \
+    --dspo_tau_anneal_rate "${DSPO_TAU_ANNEAL_RATE}" \
     $( [[ "${SWAP_LABELS}" == "true" ]] && printf '%s' "--swap_labels" ) \
+    $( [[ "${VALIDATE_BEFORE_TRAINING}" == "false" ]] && printf '%s' "--no_validate_before_training" ) \
     >> "${LOG_FILE}" 2>&1

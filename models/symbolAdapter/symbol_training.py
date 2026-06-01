@@ -285,7 +285,7 @@ class SymbolTrainingOrchestrator:
 
                 if (batch_idx + 1) % accumulation_steps == 0:
                     if self.router is not None:
-                        log_this_step = (self.global_step % 200) < 5
+                        log_this_step = (self.global_step % 50) < 3
                         if log_this_step:
                             params = [p for p in self.router.parameters() if p.grad is not None]
                             if params:
@@ -293,6 +293,19 @@ class SymbolTrainingOrchestrator:
                                 entropy = self.router.get_safety_scores().item()
                                 logging.info("D-SPO step=%d  router_grad_norm=%.4f  slot_entropy=%.4f  tau=%.4f",
                                              self.global_step, router_grad_norm, entropy, self.router.tau)
+                                # Check if preferences are actually changing (direct weight diagnostic)
+                                prefs = self.router.preferences  # [num_slots, K]
+                                pref_norm = prefs.norm().item()
+                                pref_max_diff = (prefs.max(dim=-1).values - prefs.min(dim=-1).values).mean().item()
+                                conf_scores = self.router.get_confidence_scores()
+                                conf_max = conf_scores.max().item()
+                                conf_mean = conf_scores.mean().item()
+                                logging.info(
+                                    "D-SPO step=%d  prefs_norm=%.4f  pref_spread=%.4f  "
+                                    "conf_max=%.3f  conf_mean=%.3f  tau=%.4f",
+                                    self.global_step, pref_norm, pref_max_diff,
+                                    conf_max, conf_mean, self.router.tau,
+                                )
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                     self.optimizer.step()
                     self.optimizer.zero_grad(set_to_none=True)
@@ -343,6 +356,12 @@ class SymbolTrainingOrchestrator:
         self._setup_lora_optimizer()
         self.optimizer.zero_grad(set_to_none=True)
         history = []
+
+        if self.config.validate_before_training:
+            logging.info("Running baseline validation before training (epoch 0)")
+            baseline_scores = self._run_validation(epoch=-1)
+            logging.info(f"Baseline validation (pre-training): {baseline_scores}")
+            history.append({"epoch": 0, "train_loss": None, "validation": baseline_scores})
 
         for epoch in range(self.config.lora_config.epochs):
             self._epoch_log_count = 0
