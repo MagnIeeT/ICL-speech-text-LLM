@@ -285,14 +285,14 @@ class SymbolTrainingOrchestrator:
 
                 if (batch_idx + 1) % accumulation_steps == 0:
                     if self.router is not None:
-                        log_this_step = (self.global_step < 20) or (self.global_step % 10 == 0)
+                        log_this_step = (self.global_step % 200) < 5
                         if log_this_step:
                             params = [p for p in self.router.parameters() if p.grad is not None]
                             if params:
-                                grad_norm = torch.nn.utils.clip_grad_norm_(params, 1.0)
+                                router_grad_norm = sum(p.grad.data.norm(2).item() ** 2 for p in params) ** 0.5
                                 entropy = self.router.get_safety_scores().item()
                                 logging.info("D-SPO step=%d  router_grad_norm=%.4f  slot_entropy=%.4f  tau=%.4f",
-                                             self.global_step, grad_norm, entropy, self.router.tau)
+                                             self.global_step, router_grad_norm, entropy, self.router.tau)
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                     self.optimizer.step()
                     self.optimizer.zero_grad(set_to_none=True)

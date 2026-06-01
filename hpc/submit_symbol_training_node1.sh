@@ -15,20 +15,21 @@ MODEL_TYPE="${MODEL_TYPE:-qwen}"
 DATASET_TYPE="${DATASET_TYPE:-voxceleb-hvb}"
 VAL_DATASET_TYPE="${VAL_DATASET_TYPE:-voxceleb-hvb-voxpopuli-meld_emotion}"
 DEVICE="${DEVICE:-cuda:0}"
-CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
+CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
 OUTPUT_DIR="${OUTPUT_DIR:-${HOME}/training/symbol_training}"
 LOG_DIR="${LOGS_DIR:-${HOME}/training/logs}/$(date +"%Y-%m-%d")"
 LORA_LR="${LORA_LR:-1e-5}"
-LORA_EPOCHS="${LORA_EPOCHS:-10}"
+LORA_EPOCHS="${LORA_EPOCHS:-2}"
 BATCH_SIZE="${BATCH_SIZE:-1}"
+VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-1}"
 GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-8}"
-MAX_SAMPLES="${MAX_SAMPLES:-0}"
+MAX_SAMPLES="${MAX_SAMPLES:-500}"
 NUM_EXAMPLES="${NUM_EXAMPLES:-0}"
 VAL_NUM_EXAMPLES="${VAL_NUM_EXAMPLES:-0}"
 NUM_WORKERS="${NUM_WORKERS:-2}"
-VALIDATION_MODES="${VALIDATION_MODES:-original,fixed,fresh}"
+VALIDATION_MODES="${VALIDATION_MODES:-original}"
 SYMBOL_UPDATE_STRATEGY="${SYMBOL_UPDATE_STRATEGY:-per_epoch}"
-NO_SYMBOLS="${NO_SYMBOLS:-true}"
+NO_SYMBOLS="${NO_SYMBOLS:-false}"
 DYNAMIC_SYMBOLS="${DYNAMIC_SYMBOLS:-false}"
 DIFF_SYMBOL_ENABLED="${DIFF_SYMBOL_ENABLED:-true}"
 SWAP_LABELS="${SWAP_LABELS:-false}"
@@ -40,10 +41,10 @@ elif [[ "${NO_SYMBOLS}" == "true" ]]; then
 elif [[ "${DYNAMIC_SYMBOLS}" == "true" ]]; then
     _MODE="dyn_${SYMBOL_UPDATE_STRATEGY}"
 else
-    _MODE="fixed_${SYMBOL_UPDATE_STRATEGY}"
+    _MODE="fixed"
 fi
-[[ "${SWAP_LABELS}" == "true" ]] && _MODE="${_MODE}+swap"
-RUN_NAME="${RUN_NAME:-$(date +"%Y%m%d_%H%M%S")_${MODEL_TYPE}_${DATASET_TYPE}_${_MODE}}"
+[[ "${SWAP_LABELS}" == "true" ]] && _MODE="${_MODE}_swap_${SYMBOL_UPDATE_STRATEGY}"
+RUN_NAME="${RUN_NAME:-$(date +"%H%M%S")_${MODEL_TYPE}_${DATASET_TYPE}_${_MODE}}"
 
 if [[ -x "${HOME}/miniconda3/bin/conda" ]]; then
     eval "$("${HOME}/miniconda3/bin/conda" shell.bash hook)"
@@ -94,6 +95,7 @@ python train.py \
     --val_dataset_type "${VAL_DATASET_TYPE}" \
     --device "${DEVICE}" \
     --batch_size "${BATCH_SIZE}" \
+    --val_batch_size "${VAL_BATCH_SIZE}" \
     --max_samples "${MAX_SAMPLES}" \
     --num_examples "${NUM_EXAMPLES}" \
     --val_num_examples "${VAL_NUM_EXAMPLES}" \

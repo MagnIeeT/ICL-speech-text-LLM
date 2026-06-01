@@ -58,43 +58,27 @@ class BaseMultiTaskDataset(Dataset):
         self.current_config = self.config
 
         self.audio_lookup = None
-        self.audio_index_map = None
         if self.fewshot_mode == "speech":
             audio_lookup_path = self.config.get_audio_lookup_path(self.split)
             if audio_lookup_path:
                 load_time = time.time()
                 self.audio_lookup = load_from_disk(audio_lookup_path)
-                self.audio_index_map = {str(idx): i for i, idx in enumerate(self.audio_lookup["index"])}
                 logger.info(
-                    "Initialized audio lookup index in %.3fs for %s",
+                    "Loaded audio lookup in %.3fs for %s (%d items)",
                     time.time() - load_time,
                     self.dataset_type,
+                    len(self.audio_lookup),
                 )
 
     def __len__(self):
         return len(self.dataset)
 
-    def _get_audio_by_index(self, index_str: str):
-        if not index_str or self.audio_lookup is None or self.audio_index_map is None:
-            return None
-        lookup_idx = self.audio_index_map.get(index_str)
-        if lookup_idx is None:
-            return None
-        try:
-            return self.audio_lookup[lookup_idx]["audio"]
-        except Exception as exc:
-            logger.error("Error loading audio for index %s: %s", index_str, exc)
-            return None
-
-    def _select_examples(self, few_shot_examples: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        if not few_shot_examples:
+    def _select_examples(self, pool: List) -> List:
+        if not pool:
             return []
         if self.random_examples:
-            count = random.randint(0, self.num_examples)
-            if count == 0:
-                return []
-            return random.sample(few_shot_examples, min(count, len(few_shot_examples)))
-        return few_shot_examples[: self.num_examples]
+            return random.sample(pool, min(self.num_examples, len(pool)))
+        return pool[: self.num_examples]
 
     def _format_label(self, example_or_label, is_example: bool = True, current_mapping=None, text: str = None):
         label = example_or_label["label"] if is_example else example_or_label
@@ -128,40 +112,38 @@ class BaseMultiTaskDataset(Dataset):
         formatted_examples: List[Dict[str, str]] = []
         examples_audio = []
 
-        if self.audio_lookup is not None and self.num_examples > 0:
-            total_examples = len(self.audio_lookup)
-            count = random.randint(0, self.num_examples) if self.random_examples else self.num_examples
-            sampled_indices = random.sample(range(total_examples), min(count, total_examples)) if count > 0 else []
-
-            for sample_idx in sampled_indices:
-                example = self.audio_lookup[sample_idx]
-                formatted_examples.append(
-                    {
-                        "text": example[current_config.text_key],
-                        "label": self._format_label(
-                            example[current_config.completion_key],
-                            is_example=False,
-                            current_mapping=current_config.label_mapping,
-                            text=example[current_config.text_key],
-                        ),
-                    }
-                )
-                if self.fewshot_mode == "speech" and "audio" in example:
+        if self.num_examples > 0:
+            if self.fewshot_mode == "speech" and self.audio_lookup is not None:
+                # Speech few-shot: select indices then fetch from audio lookup
+                indices = self._select_examples(list(range(len(self.audio_lookup))))
+                for sample_idx in indices:
+                    example = self.audio_lookup[sample_idx]
+                    formatted_examples.append(
+                        {
+                            "text": example[current_config.text_key],
+                            "label": self._format_label(
+                                example[current_config.completion_key],
+                                is_example=False,
+                                current_mapping=current_config.label_mapping,
+                                text=example[current_config.text_key],
+                            ),
+                        }
+                    )
                     examples_audio.append(example["audio"]["array"])
-        else:
-            selected_examples = self._select_examples(item.get("few_shot_examples", []))
-            for example in selected_examples:
-                formatted_examples.append(
-                    {
-                        "text": example["text"],
-                        "label": self._format_label(
-                            example,
-                            is_example=True,
-                            current_mapping=current_config.label_mapping,
-                        ),
-                    }
-                )
-            examples_audio = self._get_examples_audio(selected_examples)
+            else:
+                # Text few-shot: use inline examples embedded in each item
+                selected_examples = self._select_examples(item.get("few_shot_examples", []))
+                for example in selected_examples:
+                    formatted_examples.append(
+                        {
+                            "text": example["text"],
+                            "label": self._format_label(
+                                example,
+                                is_example=True,
+                                current_mapping=current_config.label_mapping,
+                            ),
+                        }
+                    )
 
         prompt = self.processor.format_prompt(
             template=current_config.prompt_template,
@@ -179,42 +161,34 @@ class BaseMultiTaskDataset(Dataset):
             text=item[current_config.text_key],
         )
 
-        # IMPORTANT:
-        # Do NOT tokenize here.
-        # Tokenization must happen in processor.collate_batch so SymbolManager can
-        # rewrite prompt/completion BEFORE tokenization.
+        # Process audio → input_features here (audio processing is symbol-independent).
+        # IMPORTANT: Do NOT tokenize here — tokenization is deferred to collate_batch
+        # so SymbolManager can rewrite prompt/completion BEFORE tokenization.
+        inputs = self.processor.process_inputs(
+            data={
+                "prompt": prompt,
+                "completion": formatted_completion,
+                "audio": self._get_main_audio(item),
+                "examples_audio": examples_audio if examples_audio else None,
+            },
+            is_training=self._is_training(),
+        )
+
         return {
             "prompt": prompt,
             "text": item[current_config.text_key],
             "completion": formatted_completion,
-            "audio": self._get_main_audio(item),
-            "examples_audio": examples_audio if examples_audio else None,
             "input_mode": self.input_mode,
             "fewshot_mode": self.fewshot_mode,
             "dataset_type": self.dataset_type,
             "is_training": self._is_training(),
+            **inputs,  # adds input_features (and feature_attention_mask if present)
         }
 
     def _get_main_audio(self, item):
         if "speech" in self.input_mode and "audio" in item:
             return item["audio"]["array"]
         return None
-
-    def _get_examples_audio(self, selected_examples):
-        if self.fewshot_mode != "speech":
-            return None
-
-        examples_audio = []
-        for example in selected_examples:
-            if "index" not in example:
-                continue
-            example_audio = self._get_audio_by_index(example["index"])
-            if example_audio is None:
-                continue
-            array = example_audio["array"]
-            examples_audio.append(np.array(array) if isinstance(array, list) else array)
-
-        return examples_audio or None
 
     def _is_training(self):
         return self.is_training

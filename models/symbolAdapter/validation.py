@@ -177,7 +177,7 @@ class ValidationManager:
 
                 # 2. Tokenization
                 if self.processor is not None:
-                    tokenized_data = self.processor.tokenize_batch(updated_batch["prompt"], completions=None)
+                    tokenized_data = self.processor.tokenize_batch(updated_batch["prompt"], completions=None, padding_side="left")
                     updated_batch.update(tokenized_data)
 
                 # Log one full prompt per dataset per validation mode

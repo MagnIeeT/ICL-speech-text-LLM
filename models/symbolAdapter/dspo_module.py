@@ -19,6 +19,8 @@ class DspoModule(nn.Module):
         # These are the IDs of placeholder tokens added to the tokenizer (e.g., <slot_0>, <slot_1>)
         self.register_buffer("slot_token_ids", torch.tensor(slot_token_ids, dtype=torch.long))
 
+    _inject_log_count: int = 0  # class-level counter; logs first 5 injections ever
+
     def inject_differentiable_symbols(
         self,
         input_ids: torch.Tensor,
@@ -68,13 +70,14 @@ class DspoModule(nn.Module):
             # Soft embedding: weighted sum over this slot's K tokens only
             soft_embed = torch.matmul(probs[i].to(slot_embeds.dtype), slot_embeds)  # [hidden]
 
-            if injection_count < 5:
+            if DspoModule._inject_log_count < 5:
                 logging.info(
                     "D-SPO: Injecting Slot %d at %d positions. "
                     "Soft Embed Stats: mean=%.4f, std=%.4f",
                     i, mask.sum().item(),
                     soft_embed.mean().item(), soft_embed.std().item(),
                 )
+                DspoModule._inject_log_count += 1
 
             modified_embeds[mask] = soft_embed.to(modified_embeds.dtype)
             injection_count += 1

@@ -25,7 +25,7 @@ LOG_DIR="${LOGS_INFERENCE_DIR:-${HOME}/training/symbol_training/logs_inference}/
 
 SAMPLES_TAG="${MAX_VAL_SAMPLES}"
 [[ "${SAMPLES_TAG}" == "0" ]] && SAMPLES_TAG="all"
-RUN_NAME="${RUN_NAME:-$(date +"%Y%m%d_%H%M%S")_inference_${MODEL_TYPE}_${DATASET_TYPE}_${SAMPLES_TAG}}"
+RUN_NAME="${RUN_NAME:-$(date +"%H%M%S")_inference_${MODEL_TYPE}_${DATASET_TYPE}_${SAMPLES_TAG}}"
 
 if [[ -x "${HOME}/miniconda3/bin/conda" ]]; then
     eval "$("${HOME}/miniconda3/bin/conda" shell.bash hook)"

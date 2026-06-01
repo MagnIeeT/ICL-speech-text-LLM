@@ -73,7 +73,7 @@ class CustomQwen(nn.Module):
             lora_config = LoraConfig(
                 r=lora_rank,
                 lora_alpha=lora_alpha,
-                target_modules=["q_proj", "k_proj"],
+                target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
                 lora_dropout=lora_dropout,
                 inference_mode=False,
                 task_type=TaskType.CAUSAL_LM,
@@ -148,6 +148,12 @@ class CustomQwen(nn.Module):
                 input_features = input_features.half()
             elif input_features.dtype == torch.float16:
                 input_features = input_features.float()
+        else:
+            logging.error(
+                "input_features is None — audio was not processed. "
+                "Qwen will crash if prompt contains <|AUDIO|> tokens. "
+                "Check _process_audio: audio may be None or failed to process."
+            )
 
         if feature_attention_mask is not None:
             feature_attention_mask = feature_attention_mask.to(self.device)

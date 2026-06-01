@@ -8,7 +8,7 @@ from config.data_config.master_config import DatasetType
 from .model_processors import ModelProcessor
 
 
-def _pad_sequence(tensors: List[torch.Tensor], pad_value: int = 0) -> torch.Tensor:
+def _pad_sequence(tensors: List[torch.Tensor], pad_value: int = 0, padding_side: str = "right") -> torch.Tensor:
     max_len = max(t.shape[-1] for t in tensors)
     out = []
     for t in tensors:
@@ -16,7 +16,8 @@ def _pad_sequence(tensors: List[torch.Tensor], pad_value: int = 0) -> torch.Tens
             t = t.unsqueeze(0)
         pad_size = max_len - t.shape[-1]
         if pad_size > 0:
-            t = torch.nn.functional.pad(t, (0, pad_size), value=pad_value)
+            pad_args = (pad_size, 0) if padding_side == "left" else (0, pad_size)
+            t = torch.nn.functional.pad(t, pad_args, value=pad_value)
         out.append(t)
     return torch.stack(out)
 
@@ -29,14 +30,20 @@ class QwenProcessor(ModelProcessor):
         self.processor = processor
         self.tokenizer = tokenizer if tokenizer is not None else processor.tokenizer
         self.max_length = max_length
+        self._audio_logged = False
+        self._audio_stats_count = 0
 
     def process_inputs(self, data: Dict[str, Any], is_training: bool = False):
         """Returns audio features and raw text strings. Skips tokenization."""
-        return {
+        input_features, feature_attention_mask = self._process_audio(data.get("audio"), data.get("examples_audio"))
+        result = {
             "prompt": data.get("prompt", ""),
             "completion": data.get("completion", ""),
-            "input_features": self._process_audio(data.get("audio"), data.get("examples_audio")),
+            "input_features": input_features,
         }
+        if feature_attention_mask is not None:
+            result["feature_attention_mask"] = feature_attention_mask
+        return result
 
     def _process_audio(self, audio, examples_audio):
         audios = []
@@ -45,17 +52,34 @@ class QwenProcessor(ModelProcessor):
                 audios.extend(examples_audio)
             else:
                 audios.append(examples_audio)
-        if audio:
+        if audio is not None:
             audios.append(audio)
-            
-        if not audios:
-            return None
-        
-        # We use the processor just to get the audio features
-        inputs = self.processor(text=" ", audios=audios, return_tensors="pt", sampling_rate=16000)
-        return inputs.input_features.squeeze(0).to(torch.float16)
 
-    def tokenize_batch(self, prompts: List[str], completions: Optional[List[str]] = None) -> Dict[str, torch.Tensor]:
+        if not audios:
+            logging.warning("_process_audio: no audio provided, returning None (prompt will have <|AUDIO|> but no features)")
+            return None, None
+
+        inputs = self.processor(text=" ", audios=audios, return_tensors="pt", sampling_rate=16000)
+        features = inputs.input_features.squeeze(0).to(torch.float16)
+        feat_mask = inputs.feature_attention_mask.squeeze(0) if hasattr(inputs, "feature_attention_mask") else None
+
+        if self._audio_stats_count < 5:
+            for i, a in enumerate(audios):
+                arr = np.array(a)
+                logging.info(
+                    "Audio stats [item %d, clip %d/%d]: length=%.2fs  samples=%d  mean=%.4f  std=%.4f  min=%.4f  max=%.4f",
+                    self._audio_stats_count, i + 1, len(audios),
+                    len(arr) / 16000, len(arr),
+                    arr.mean(), arr.std(), arr.min(), arr.max(),
+                )
+            logging.info("Audio features shape=%s  dtype=%s  mask=%s",
+                         list(features.shape), str(features.dtype),
+                         list(feat_mask.shape) if feat_mask is not None else None)
+            self._audio_stats_count += 1
+
+        return features, feat_mask
+
+    def tokenize_batch(self, prompts: List[str], completions: Optional[List[str]] = None, padding_side: str = "right") -> Dict[str, torch.Tensor]:
         """
         Unified tokenization for Qwen. 
         - If completions provided: [Prompt] + [Completion] + [EOS] (Training)
@@ -118,8 +142,8 @@ class QwenProcessor(ModelProcessor):
             new_masks.append(torch.tensor(tokenized.attention_mask))
             
         return {
-            "input_ids": _pad_sequence(new_ids, pad_value=self.tokenizer.pad_token_id),
-            "attention_mask": _pad_sequence(new_masks, pad_value=0),
+            "input_ids": _pad_sequence(new_ids, pad_value=self.tokenizer.pad_token_id, padding_side=padding_side),
+            "attention_mask": _pad_sequence(new_masks, pad_value=0, padding_side=padding_side),
             "prompt_length": torch.tensor(prompt_lens)
         }
 
@@ -164,11 +188,32 @@ class QwenProcessor(ModelProcessor):
         if not batch_items:
             return {}
 
-        # If not tokenized yet, just collect into lists
+        # Items are not yet tokenized — collect raw fields into lists,
+        # stack pre-computed input_features tensors (processed per-item in dataset).
         if "input_ids" not in batch_items[0]:
             batch: Dict[str, Any] = {}
             for key in batch_items[0].keys():
-                batch[key] = [item.get(key) for item in batch_items]
+                values = [item.get(key) for item in batch_items]
+                if key in ("input_features", "feature_attention_mask"):
+                    valid = [v for v in values if v is not None]
+                    if valid:
+                        batch[key] = torch.stack(valid)
+                else:
+                    batch[key] = values
+
+            if "input_features" in batch and not self._audio_logged:
+                feat = batch["input_features"]
+                logging.info(
+                    "Audio [first batch]: input_features shape=%s  dtype=%s",
+                    list(feat.shape), str(feat.dtype),
+                )
+                if "feature_attention_mask" in batch:
+                    mask = batch["feature_attention_mask"]
+                    logging.info(
+                        "Audio [first batch]: feature_attention_mask shape=%s  active_frames=%s",
+                        list(mask.shape), mask.sum(dim=-1).tolist(),
+                    )
+                self._audio_logged = True
             return batch
 
         # If tokenized, pad and stack
@@ -186,7 +231,7 @@ class QwenProcessor(ModelProcessor):
             elif key == "attention_mask":
                 batch[key] = _pad_sequence(values, pad_value=0)
             elif key == "input_features":
-                batch[key] = torch.stack(values) if values[0].dim() == 3 else torch.cat(values, dim=0)
+                batch[key] = torch.stack(values)
             elif key == "prompt_length":
                 batch[key] = torch.tensor([int(v) for v in values])
             else:

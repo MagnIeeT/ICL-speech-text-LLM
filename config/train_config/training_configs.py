@@ -214,6 +214,7 @@ class TrainingConfig:
             dataset_type=args.dataset_type,
             val_dataset_type=args.val_dataset_type if args.val_dataset_type else args.dataset_type,
             batch_size=args.batch_size,
+            val_batch_size=getattr(args, "val_batch_size", None),
             max_samples=args.max_samples,
             val_max_samples=200 if args.max_samples == 0 else min(200, args.max_samples),
             split=getattr(args, "split", "test"),
@@ -262,6 +263,7 @@ def parse_training_args() -> argparse.Namespace:
     parser.add_argument("--val_dataset_type", type=str, default=None)
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--batch_size", type=int, default=1)
+    parser.add_argument("--val_batch_size", type=int, default=None, help="Validation batch size (default: same as batch_size)")
     parser.add_argument("--max_samples", type=int, default=100)
     parser.add_argument("--num_examples", type=int, default=5, help="Few-shot examples per training prompt")
     parser.add_argument("--val_num_examples", type=int, default=5, help="Few-shot examples per validation prompt")
