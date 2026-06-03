@@ -134,6 +134,7 @@ def _evaluate_multi_label(predictions: List[Dict[str, Any]], valid_labels: List[
         return {
             "accuracy": 0.0,
             "macro_f1": 0.0,
+            "macro_f1_with_invalid": 0.0,
             "invalid_samples": invalid_samples,
             "total_samples": len(predictions),
             "valid_samples": 0,
@@ -148,6 +149,7 @@ def _evaluate_multi_label(predictions: List[Dict[str, Any]], valid_labels: List[
     return {
         "accuracy": exact_match,
         "macro_f1": float(macro_f1),
+        "macro_f1_with_invalid": float(macro_f1),
         "invalid_samples": int(invalid_samples),
         "total_samples": len(predictions),
         "valid_samples": int(len(y_true)),
