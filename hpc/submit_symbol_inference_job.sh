@@ -24,11 +24,11 @@ BASE_OUTPUT_DIR="${BASE_OUTPUT_DIR:-$PROJECT_ROOT/results/symbol_training}"
 # ------------------------------------------------------------
 model_type="qwen"
 dataset_type="hvb-voxceleb-voxpopuli-meld_emotion"
-CHECKPOINT_PATH="/home/leapers/weights/anmola/ICL-speech-text-LLM/training/checkpoints/2605_1309_qwen_voxceleb-hvb_per_epoch/lora_epoch2_final.pt"
+CHECKPOINT_PATH="/home/leapers/weights/anmola/ICL-speech-text-LLM/training/checkpoints/0206_2201_qwen_meld_emotion-voxpopuli_per_epoch/lora_epoch2_periodic.pt"
 no_symbols=false
 swap_labels=false
-num_examples=3
-max_val_samples=10
+num_examples=10
+max_val_samples=0
 validation_modes="original"
 device="cuda:0"
 
@@ -36,8 +36,8 @@ device="cuda:0"
 # 3. HPC / Queue Settings
 # ------------------------------------------------------------
 queue_name="workq"
-hostname="n6"
-cuda_device=2
+hostname="n9"
+cuda_device=0
 walltime="72:00:00"
 
 # ------------------------------------------------------------

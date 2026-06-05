@@ -43,10 +43,10 @@ class SymbolTrainingOrchestrator:
         self.train_dataset_names = train_dataset_names or set()
         self.optimizer = None
         self.global_step = 0
-        self._epoch_log_count = 0  # logs first 2 batches per epoch
-        self._swap_cache: dict = {}       # per-dataset swap mapping; reset each epoch
-        self._slot_assignments: dict = {} # ds_name → list[slot_idx]; reset per rotation
-        self._assignment_steps: dict = {} # ds_name → global_step when last assigned
+        self._epoch_log_count = 0
+        self._swap_cache: dict = {}
+        self._slot_assignments: dict = {}
+        self._assignment_steps: dict = {}
 
         self.validator = ValidationManager(
             config=config,
@@ -76,11 +76,10 @@ class SymbolTrainingOrchestrator:
                     len(symbol_pool), required_pool, num_slots, K,
                 )
                 K = len(symbol_pool) // num_slots
-                symbol_pool = symbol_pool[:num_slots * K]
+                symbol_pool = symbol_pool[: num_slots * K]
 
-            # Partition pool into non-overlapping groups of K, one per slot
             random.shuffle(symbol_pool)
-            slot_vocab_indices = [symbol_pool[i * K:(i + 1) * K] for i in range(num_slots)]
+            slot_vocab_indices = [symbol_pool[i * K : (i + 1) * K] for i in range(num_slots)]
             logging.info(
                 "D-SPO: %d slots × %d private tokens each (pool=%d)",
                 num_slots, K, len(symbol_pool),
@@ -92,6 +91,7 @@ class SymbolTrainingOrchestrator:
                 slot_vocab_indices=slot_vocab_indices,
                 initial_tau=self.config.diff_symbol_config.tau,
                 tau_min=self.config.diff_symbol_config.tau_min,
+                tau_anneal_rate=self.config.diff_symbol_config.tau_anneal_rate,
             ).to(self.config.device)
 
             slot_tokens = [f"<slot_{i}>" for i in range(num_slots)]
@@ -111,11 +111,51 @@ class SymbolTrainingOrchestrator:
             self.dspo_module = DspoModule(slot_token_ids).to(self.config.device)
             logging.info("D-SPO initialized: %d slots, %d tokens/slot", num_slots, K)
 
-            # Attach to model so validation.py can find them via getattr(model, "router")
             self.model.router = self.router
             self.model.dspo_module = self.dspo_module
 
         self._setup_training_environment()
+
+    # ------------------------------------------------------------------
+    # Prompt-type detection (Change 3)
+    # ------------------------------------------------------------------
+
+    def _is_flamingo_prompt_batch(self, prompts: Any) -> bool:
+        """
+        Detect Flamingo prompts by structure:
+        Flamingo prompts are dicts with a 'conversation' key.
+        Qwen/Salmonn prompts are plain strings.
+        """
+        if not isinstance(prompts, list) or not prompts:
+            return False
+        p0 = prompts[0]
+        return isinstance(p0, dict) and "conversation" in p0
+
+    # ------------------------------------------------------------------
+    # Flamingo audio recovery helper (mirrors ValidationManager)
+    # ------------------------------------------------------------------
+
+    def _extract_audio_from_batch(self, batch: Dict[str, Any]) -> List[Any]:
+        """
+        Build a per-item list of raw audio arrays for use as the
+        `original_audios` fallback in FlamingoProcessor.tokenize_batch().
+
+        Priority:
+          1. batch["audio"]  — top-level list populated by the dataloader
+          2. batch["prompt"][i]["audio"] — audio embedded in each prompt dict
+             by FlamingoProcessor.format_prompt()
+        """
+        if "audio" in batch and isinstance(batch["audio"], (list, tuple)):
+            audios = list(batch["audio"])
+            if any(a is not None for a in audios):
+                return audios
+
+        prompts = batch.get("prompt", [])
+        return [p.get("audio") if isinstance(p, dict) else None for p in prompts]
+
+    # ------------------------------------------------------------------
+    # Setup
+    # ------------------------------------------------------------------
 
     def _setup_training_environment(self):
         os.makedirs(self.config.checkpoint_dir, exist_ok=True)
@@ -137,36 +177,49 @@ class SymbolTrainingOrchestrator:
             trainable_params.append({"params": lora_params, "lr": self.config.lora_config.learning_rate})
         if self.router is not None:
             trainable_params.append({"params": self.router.parameters(), "lr": self.config.diff_symbol_config.router_lr})
-        if not trainable_params: raise ValueError("No trainable parameters found")
-        self.optimizer = torch.optim.AdamW(trainable_params, lr=self.config.lora_config.learning_rate, betas=(0.9, 0.999), eps=1e-8, weight_decay=self.config.lora_config.weight_decay)
+        if not trainable_params:
+            raise ValueError("No trainable parameters found")
+        self.optimizer = torch.optim.AdamW(
+            trainable_params,
+            lr=self.config.lora_config.learning_rate,
+            betas=(0.9, 0.999),
+            eps=1e-8,
+            weight_decay=self.config.lora_config.weight_decay,
+        )
 
     def _move_batch_to_device(self, batch: Dict[str, Any]) -> Dict[str, Any]:
         device_batch = {}
         for key, value in batch.items():
-            if isinstance(value, torch.Tensor): device_batch[key] = value.to(self.config.device)
+            if isinstance(value, torch.Tensor):
+                device_batch[key] = value.to(self.config.device)
             elif isinstance(value, list) and len(value) > 0 and isinstance(value[0], torch.Tensor):
                 device_batch[key] = [v.to(self.config.device) for v in value]
-            else: device_batch[key] = value
+            else:
+                device_batch[key] = value
         return device_batch
 
+    # ------------------------------------------------------------------
+    # Symbol replacement + tokenization
+    # ------------------------------------------------------------------
+
     def _apply_symbol_replacement(self, batch: Dict[str, Any], epoch: int, batch_idx: int) -> Dict[str, Any]:
-        """Coordination logic: identify labels, bind slots, and Use MODULAR Tokenization."""
+        """Coordination logic: identify labels, bind slots, and use modular tokenization."""
         dataset_types = batch.get("dataset_type", [])
         ds_name = dataset_types[0] if isinstance(dataset_types, list) and len(dataset_types) > 0 else "unknown"
         ds_name_str = ds_name.value if hasattr(ds_name, "value") else str(ds_name)
-        
+
         relevant_labels = []
         for dt_enum, ds_cfg in DATASET_CONFIGS.items():
             if dt_enum.value == ds_name_str:
                 relevant_labels = sorted(list(ds_cfg.valid_labels))
                 break
-        if not relevant_labels: relevant_labels = self.symbol_manager.original_labels
+        if not relevant_labels:
+            relevant_labels = self.symbol_manager.original_labels
 
         p_mappings, c_mappings = None, None
+
         if self.router is not None:
-            # D-SPO Mode — slot assignments rotate on a schedule instead of every batch.
-            # rotation_interval=0 → per-epoch (reset at epoch start, assign on first batch).
-            # rotation_interval>0 → every N global steps.
+            # D-SPO Mode
             num_labels = len(relevant_labels)
             num_slots_available = self.config.diff_symbol_config.num_slots
             rotation_interval = self.config.diff_symbol_config.rotation_interval
@@ -204,19 +257,14 @@ class SymbolTrainingOrchestrator:
                 logging.info("D-SPO mapping (epoch=%d batch=%d dataset=%s):", epoch + 1, batch_idx, ds_name_str)
                 for label in relevant_labels:
                     logging.info("  %-20s -> prompt: %-12s  completion: %s", label, p_mappings[label], c_mappings[label])
+
         elif self.config.symbol_config.swap_labels:
             per_instance = self.config.symbol_config.update_strategy == SymbolUpdateStrategy.PER_INSTANCE
-            # per_instance: new shuffle every batch
-            # per_epoch: one shuffle per dataset per epoch (cached after first batch)
             if per_instance or ds_name_str not in self._swap_cache:
                 base_mapping = None
                 if not self.config.symbol_config.no_symbols:
-                    # Use _pure_symbol_mappings — always label→symbol, never affected by
-                    # swap_labels. Filter to this dataset's labels only.
                     full_base = self.symbol_manager._pure_symbol_mappings
                     base_mapping = {l: full_base[l] for l in relevant_labels if l in full_base}
-                # per_epoch: pass epoch so shuffle is seeded → guaranteed different each epoch
-                # per_instance: pass None so global random state → varies each batch
                 mapping = self.symbol_manager.generate_swap_mapping_for_labels(
                     relevant_labels,
                     base_symbol_mapping=base_mapping,
@@ -229,25 +277,56 @@ class SymbolTrainingOrchestrator:
             p_mappings = c_mappings = mapping
             if batch_idx < 2:
                 mode = "symbol-swap" if not self.config.symbol_config.no_symbols else "label-swap"
-                logging.info("Swap mapping [%s] (epoch=%d batch=%d dataset=%s): %s",
-                             mode, epoch + 1, batch_idx, ds_name_str, p_mappings)
-        else:
-            force_new = (self.config.symbol_config.update_strategy == SymbolUpdateStrategy.PER_INSTANCE) or (batch_idx == 0)
-            p_mappings = c_mappings = self.symbol_manager.get_symbols_for_epoch(epoch, force_new_symbols=force_new)
-            if batch_idx < 2:
-                logging.info("Symbol mapping (epoch=%d batch=%d dataset=%s): %s", epoch + 1, batch_idx, ds_name_str, p_mappings)
+                logging.info(
+                    "Swap mapping [%s] (epoch=%d batch=%d dataset=%s): %s",
+                    mode, epoch + 1, batch_idx, ds_name_str, p_mappings,
+                )
 
-        updated_batch = self.symbol_manager.replace_symbols_in_batch(batch, prompt_mappings=p_mappings, completion_mappings=c_mappings)
+        else:
+            force_new = (
+                self.config.symbol_config.update_strategy == SymbolUpdateStrategy.PER_INSTANCE
+            ) or (batch_idx == 0)
+            p_mappings = c_mappings = self.symbol_manager.get_symbols_for_epoch(
+                epoch, force_new_symbols=force_new
+            )
+            if batch_idx < 2:
+                logging.info(
+                    "Symbol mapping (epoch=%d batch=%d dataset=%s): %s",
+                    epoch + 1, batch_idx, ds_name_str, p_mappings,
+                )
+
+        updated_batch = self.symbol_manager.replace_symbols_in_batch(
+            batch, prompt_mappings=p_mappings, completion_mappings=c_mappings
+        )
+
         if self.processor is not None and "prompt" in updated_batch:
-            tokenized_data = self.processor.tokenize_batch(updated_batch["prompt"], updated_batch["completion"])
+            prompts = updated_batch.get("prompt", [])
+            completions = updated_batch.get("completion", None)
+
+            if self._is_flamingo_prompt_batch(prompts):
+                tokenized_data = self.processor.tokenize_batch(
+                    prompts,
+                    completions,
+                    original_audios=self._extract_audio_from_batch(batch),
+                )
+            else:
+                tokenized_data = self.processor.tokenize_batch(
+                    prompts,
+                    completions,
+                )
+
             updated_batch.update(tokenized_data)
+
         return updated_batch
+
+    # ------------------------------------------------------------------
+    # Training loop
+    # ------------------------------------------------------------------
 
     def _train_one_epoch(self, epoch: int) -> float:
         self.model.train()
-        self._swap_cache = {}  # reset per-epoch swap assignments
+        self._swap_cache = {}
         if self.router is not None and self.config.diff_symbol_config.rotation_interval == 0:
-            # Per-epoch rotation: clear assignments so first batch of each epoch rotates
             self._slot_assignments = {}
             self._assignment_steps = {}
         total_loss, num_batches = 0.0, 0
@@ -258,18 +337,26 @@ class SymbolTrainingOrchestrator:
             try:
                 if "completion" not in raw_batch or not raw_batch["completion"]:
                     for key in ["label", "true_label", "target"]:
-                        if key in raw_batch and raw_batch[key]: raw_batch["completion"] = raw_batch[key]; break
+                        if key in raw_batch and raw_batch[key]:
+                            raw_batch["completion"] = raw_batch[key]
+                            break
 
                 updated_batch = self._apply_symbol_replacement(raw_batch, epoch, batch_idx)
+
                 if self._epoch_log_count < 2:
-                    ids   = updated_batch["input_ids"][0]
+                    ids = updated_batch["input_ids"][0]
                     p_len = int(updated_batch["prompt_length"][0])
-                    full_prompt  = self.tokenizer.decode(ids[:p_len],  skip_special_tokens=False)
-                    completion_ids = [t for t in ids[p_len:].tolist() if t != -100 and t != self.tokenizer.pad_token_id]
+                    full_prompt = self.tokenizer.decode(ids[:p_len], skip_special_tokens=False)
+                    completion_ids = [
+                        t for t in ids[p_len:].tolist()
+                        if t != -100 and t != self.tokenizer.pad_token_id
+                    ]
                     completion_txt = self.tokenizer.decode(completion_ids, skip_special_tokens=True)
                     logging.info("=" * 60)
-                    logging.info("TRAIN epoch=%d batch=%d  prompt_len=%d  seq_len=%d",
-                                 epoch + 1, batch_idx, p_len, len(ids))
+                    logging.info(
+                        "TRAIN epoch=%d batch=%d  prompt_len=%d  seq_len=%d",
+                        epoch + 1, batch_idx, p_len, len(ids),
+                    )
                     logging.info("--- Full prompt ---\n%s", full_prompt)
                     logging.info("--- Completion text : %r", completion_txt)
                     logging.info("--- Completion IDs  : %s", completion_ids)
@@ -278,9 +365,10 @@ class SymbolTrainingOrchestrator:
 
                 updated_batch = self._move_batch_to_device(updated_batch)
                 outputs = self.model(updated_batch, router=self.router, dspo_module=self.dspo_module)
-                
+
                 loss = outputs.get("loss")
-                if loss is None or torch.isnan(loss): continue
+                if loss is None or torch.isnan(loss):
+                    continue
                 (loss / accumulation_steps).backward()
 
                 if (batch_idx + 1) % accumulation_steps == 0:
@@ -291,10 +379,11 @@ class SymbolTrainingOrchestrator:
                             if params:
                                 router_grad_norm = sum(p.grad.data.norm(2).item() ** 2 for p in params) ** 0.5
                                 entropy = self.router.get_safety_scores().item()
-                                logging.info("D-SPO step=%d  router_grad_norm=%.4f  slot_entropy=%.4f  tau=%.4f",
-                                             self.global_step, router_grad_norm, entropy, self.router.tau)
-                                # Check if preferences are actually changing (direct weight diagnostic)
-                                prefs = self.router.preferences  # [num_slots, K]
+                                logging.info(
+                                    "D-SPO step=%d  router_grad_norm=%.4f  slot_entropy=%.4f  tau=%.4f",
+                                    self.global_step, router_grad_norm, entropy, self.router.tau,
+                                )
+                                prefs = self.router.preferences
                                 pref_norm = prefs.norm().item()
                                 pref_max_diff = (prefs.max(dim=-1).values - prefs.min(dim=-1).values).mean().item()
                                 conf_scores = self.router.get_confidence_scores()
@@ -316,9 +405,11 @@ class SymbolTrainingOrchestrator:
                 total_loss += loss.item()
                 num_batches += 1
                 progress_bar.set_postfix({"loss": f"{total_loss / num_batches:.6f}"})
-            except Exception as exc: logging.error(f"Batch {batch_idx} failed: {exc}")
-        
-        # Accumulation Cleanup
+
+            except Exception as exc:
+                import traceback
+                logging.error("Batch %d failed: %s\n%s", batch_idx, exc, traceback.format_exc())
+
         if num_batches > 0 and (num_batches % accumulation_steps) != 0:
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
             self.optimizer.step()
@@ -328,14 +419,28 @@ class SymbolTrainingOrchestrator:
         progress_bar.close()
         return total_loss / max(num_batches, 1)
 
+    # ------------------------------------------------------------------
+    # Validation / checkpointing
+    # ------------------------------------------------------------------
+
     def _run_validation(self, epoch: int) -> Dict[str, Any]:
-        return self.validator.run_comprehensive_validation(model=self.model, val_dataloader=self.val_dataloader, epoch=epoch)
+        return self.validator.run_comprehensive_validation(
+            model=self.model,
+            val_dataloader=self.val_dataloader,
+            epoch=epoch,
+        )
 
     def _save_checkpoint(self, epoch: int, checkpoint_type: str):
         checkpoint_dir = self.config.get_training_output_dir()
         os.makedirs(checkpoint_dir, exist_ok=True)
-        checkpoint_path = os.path.join(checkpoint_dir, f"lora_epoch{epoch + 1}_{checkpoint_type}.pt")
-        trainable_state = {n: p.data.clone() for n, p in self.model.named_parameters() if p.requires_grad}
+        checkpoint_path = os.path.join(
+            checkpoint_dir, f"lora_epoch{epoch + 1}_{checkpoint_type}.pt"
+        )
+        trainable_state = {
+            n: p.data.clone()
+            for n, p in self.model.named_parameters()
+            if p.requires_grad
+        }
         checkpoint_data = {
             "model_state": trainable_state,
             "router_state": self.router.state_dict() if self.router else None,
@@ -346,10 +451,14 @@ class SymbolTrainingOrchestrator:
                 "original_labels": self.symbol_manager.original_labels if self.symbol_manager else [],
                 "symbol_type": self.symbol_manager.symbol_type if self.symbol_manager else "",
                 "dynamic_per_epoch": self.symbol_manager.dynamic_per_epoch if self.symbol_manager else False,
-            }
+            },
         }
         torch.save(checkpoint_data, checkpoint_path)
         logging.info(f"Saved checkpoint: {os.path.basename(checkpoint_path)}")
+
+    # ------------------------------------------------------------------
+    # Main entry point
+    # ------------------------------------------------------------------
 
     def run_complete_training(self) -> Dict[str, Any]:
         logging.info("Starting simple LoRA training (no phases, no cycles, no steps)")
@@ -374,17 +483,18 @@ class SymbolTrainingOrchestrator:
             history.append({"epoch": epoch + 1, "train_loss": epoch_loss, "validation": validation_scores})
             if self.config.checkpoint_frequency > 0 and (epoch + 1) % self.config.checkpoint_frequency == 0:
                 self._save_checkpoint(epoch, "periodic")
-        
-        # 1. Consolidated Validation Summary Table
+
         logging.info("=" * 30 + " Consolidated Validation Summary " + "=" * 30)
         all_ds_names, all_mode_names = [], []
         for entry in history:
             modes = entry.get("validation", {}).get("all_modes", {})
             for mode, datasets in modes.items():
-                if mode not in all_mode_names: all_mode_names.append(mode)
+                if mode not in all_mode_names:
+                    all_mode_names.append(mode)
                 for ds in datasets.keys():
-                    if ds not in all_ds_names: all_ds_names.append(ds)
-        
+                    if ds not in all_ds_names:
+                        all_ds_names.append(ds)
+
         if all_ds_names:
             train_ds = [n for n in all_ds_names if n in self.train_dataset_names]
             val_ds = [n for n in all_ds_names if n not in self.train_dataset_names]
@@ -392,8 +502,10 @@ class SymbolTrainingOrchestrator:
             for ds in all_ds_names:
                 col = f"{ds}(T)" if ds in train_ds else ds
                 header += f" | {col:<15}"
-            if len(train_ds) > 1: header += " | Avg (train)"
-            if len(val_ds) > 1: header += " | Avg (val)"
+            if len(train_ds) > 1:
+                header += " | Avg (train)"
+            if len(val_ds) > 1:
+                header += " | Avg (val)"
             logging.info(header)
             logging.info("-" * len(header))
             for i, entry in enumerate(history):
@@ -405,11 +517,15 @@ class SymbolTrainingOrchestrator:
                     for ds in all_ds_names:
                         s = datasets.get(ds, {}).get("score")
                         row += f" | {s:<15.6f}" if s is not None else " | -"
-                        if s is not None: (t_scores if ds in train_ds else v_scores).append(s)
-                    if len(train_ds) > 1: row += f" | {sum(t_scores)/len(t_scores):<12.6f}" if t_scores else " | -"
-                    if len(val_ds) > 1: row += f" | {sum(v_scores)/len(v_scores):<12.6f}" if v_scores else " | -"
+                        if s is not None:
+                            (t_scores if ds in train_ds else v_scores).append(s)
+                    if len(train_ds) > 1:
+                        row += f" | {sum(t_scores)/len(t_scores):<12.6f}" if t_scores else " | -"
+                    if len(val_ds) > 1:
+                        row += f" | {sum(v_scores)/len(v_scores):<12.6f}" if v_scores else " | -"
                     logging.info(row)
-                if i < len(history) - 1: logging.info("-" * len(header))
+                if i < len(history) - 1:
+                    logging.info("-" * len(header))
         logging.info("=" * 80)
 
         self._save_checkpoint(self.config.lora_config.epochs - 1, "final")

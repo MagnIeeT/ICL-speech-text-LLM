@@ -55,6 +55,7 @@ def setup_tokenizer_and_processor(config):
         processor = get_processor(config.model_type.value, processor=input_processor)
         tokenizer = input_processor.tokenizer
         tokenizer.add_special_tokens({"pad_token": "[PAD]"})
+        tokenizer = setup_dspo_tokenizer(tokenizer, config)
         tokenizer.padding_side = "right"
         return tokenizer, processor
 
@@ -89,19 +90,20 @@ def initialize_model(config: TrainingConfig, tokenizer, symbol_manager, raw_proc
         model = CustomSalmonn(device=config.device, lora=True, lora_rank=config.lora_config.rank,
                               lora_alpha=config.lora_config.alpha, lora_dropout=config.lora_config.dropout)
         return setup_dspo_model(model, tokenizer, config)
-    
+
     if model_type == "qwen":
         from models.backends.custom_qwen import CustomQwen
-        model = CustomQwen(model_path=config.qwen_model_name, input_processor=raw_processor, 
-                           device=config.device, lora=True, lora_rank=config.lora_config.rank, 
+        model = CustomQwen(model_path=config.qwen_model_name, input_processor=raw_processor,
+                           device=config.device, lora=True, lora_rank=config.lora_config.rank,
                            lora_alpha=config.lora_config.alpha, lora_dropout=config.lora_config.dropout)
         return setup_dspo_model(model, tokenizer, config)
 
     if model_type == "flamingo":
         from models.backends.custom_flamingo import CustomFlamingo
-        return CustomFlamingo(model_path=config.flamingo_model_name, device=config.device, lora=True,
+        model = CustomFlamingo(model_path=config.flamingo_model_name, device=config.device, lora=True,
                                lora_rank=config.lora_config.rank, lora_alpha=config.lora_config.alpha,
                                lora_dropout=config.lora_config.dropout)
+        return setup_dspo_model(model, tokenizer, config)
 
     raise ValueError(f"Unknown model_type: {model_type}")
 
@@ -118,7 +120,7 @@ def main():
         logging.info("Starting training with config: %s", config.run_name)
 
         tokenizer, processor = setup_tokenizer_and_processor(config)
-        
+
         dataset_labels = extract_dataset_labels(config)
         symbol_manager = SymbolManager(
             original_labels=dataset_labels,

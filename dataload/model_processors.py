@@ -23,21 +23,44 @@ class ModelProcessor(abc.ABC):
         input_mode: str = "speech_only",
         fewshot_mode: str = "text",
         dataset_type: Optional[Any] = None,
+        **kwargs,
     ) -> Any:
         """
         Return type is model-dependent:
-        - Qwen/Salmonn: typically a rendered string prompt
-        - Flamingo: a structured prompt object (dict with "conversation")
+        - Qwen/Salmonn: a rendered string prompt
+        - Flamingo: a structured prompt dict {"conversation": ..., "input_mode": ..., "audio": ...}
+
+        **kwargs allows callers to pass model-specific extras without breaking
+        processors that don't need them. In particular:
+          audio=<np.ndarray>  — passed by BaseMultiTaskDataset for Flamingo so
+                                the audio array is embedded in the prompt dict
+                                and survives symbol replacement intact.
+                                Qwen/Salmonn processors safely ignore this kwarg.
         """
         pass
 
     @abc.abstractmethod
-    def tokenize_batch(self, prompts: List[str], completions: Optional[List[str]] = None, padding_side: str = "right") -> Dict[str, torch.Tensor]:
-        """Unified tokenization method for training and validation."""
+    def tokenize_batch(
+        self,
+        prompts: List[Any],
+        completions: Optional[List[str]] = None,
+        padding_side: str = "right",
+        **kwargs,
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Unified tokenization for training and validation.
+
+        **kwargs allows processor-specific parameters without breaking the
+        shared call sites. In particular:
+          original_audios=List[Any]  — Flamingo only. A fallback list of raw
+                                       audio arrays used when audio has been
+                                       stripped from prompt dicts during symbol
+                                       replacement. Qwen/Salmonn ignore this.
+        """
         pass
 
     @abc.abstractmethod
-    def collate_batch(self, batch_items: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def collate_batch(self, batch_items: List[Dict[str, Any]], **kwargs) -> Dict[str, Any]:
         pass
 
 
@@ -55,7 +78,6 @@ def get_processor(model_type: str, processor=None, tokenizer=None, symbol_manage
 
     if model_type in ["flamingo", "audioflamingo", "audioflamingo3"]:
         from .flamingo_processor import FlamingoProcessor
-        # Keep Flamingo identical to remote version
         return FlamingoProcessor(processor)
 
     raise ValueError(f"Unsupported model type: {model_type}")

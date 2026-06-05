@@ -102,15 +102,28 @@ def setup_dspo_model(model, tokenizer, config):
         import logging
         new_size = len(tokenizer)
 
-        # Determine the actual model object based on the wrapper type
+        # 1. Check if the wrapped model has a direct resize method (Standard HF / AudioFlamingo3)
         if hasattr(model, "model") and hasattr(model.model, "resize_token_embeddings"):
-            # Standard transformers model (like Qwen)
             model.model.resize_token_embeddings(new_size)
             logging.info("D-SPO: Resized base model embeddings to %d", new_size)
+            
+        # 2. Salmonn style fallback
         elif hasattr(model, "model") and hasattr(model.model, "llama_model"):
-            # Salmonn style
             model.model.llama_model.resize_token_embeddings(new_size)
             logging.info("D-SPO: Resized Salmonn (Llama) embeddings to %d", new_size)
+            
+        # 3. Explicit fallback for Flamingo variants where language model is nested under lang_encoder
+        elif hasattr(model, "model") and hasattr(model.model, "lang_encoder") and hasattr(model.model.lang_encoder, "resize_token_embeddings"):
+            model.model.lang_encoder.resize_token_embeddings(new_size)
+            logging.info("D-SPO: Resized Flamingo lang_encoder embeddings to %d", new_size)
+            
+        # 4. Final safety fallback to prevent silent failures
         else:
-            logging.warning("D-SPO: Could not find standard resize_token_embeddings method on model.")
+            if hasattr(model, "resize_token_embeddings"):
+                model.resize_token_embeddings(new_size)
+                logging.info("D-SPO: Resized outer wrapper embeddings to %d", new_size)
+            else:
+                logging.error("D-SPO: CRITICAL ERROR - Could not find a valid resize_token_embeddings method. Model will crash.")
+                raise AttributeError("The current model architecture does not support token embedding resizing.")
+                
     return model

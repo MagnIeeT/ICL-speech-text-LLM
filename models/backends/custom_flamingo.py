@@ -4,11 +4,11 @@ from typing import Any, Dict, List
 
 import torch
 import torch.nn as nn
+from peft import LoraConfig, TaskType, get_peft_model
 from transformers import AutoProcessor, AudioFlamingo3ForConditionalGeneration
-from peft import LoraConfig, get_peft_model, TaskType
 
-from utils.training_utils import load_checkpoint
 from utils.environment import get_env_path
+from utils.training_utils import load_checkpoint
 
 logging.basicConfig(
     level=logging.INFO,
@@ -22,10 +22,12 @@ class CustomFlamingo(nn.Module):
 
     Notes:
     - Uses torch.autocast(device_type="cuda", dtype=torch.bfloat16) for bf16.
-    - Label construction is robust:
-        * masks padding with attention_mask
-        * masks prompt portion using prompt_length
-        * avoids NaN loss by skipping batches where all labels are -100
+    - Supports D-SPO (router + dspo_module) injection.
+    - Defensive fix for multi-audio (few-shot) batches:
+        When a prompt contains multiple audio clips, apply_chat_template stacks them,
+        producing input_features of shape [B, num_audios, 128, T] (4D).
+        HF AudioFlamingo3's conv1d expects [total_audios, 128, T] (3D).
+        Fix: flatten dims 0 and 1 before the model call.
     """
 
     def __init__(
@@ -97,7 +99,8 @@ class CustomFlamingo(nn.Module):
 
         if ckpt_path:
             checkpoint = load_checkpoint(ckpt_path, map_location=self.device)
-            self.model.load_state_dict(checkpoint["model"], strict=False)
+            state = checkpoint.get("model_state", checkpoint.get("model", {}))
+            self.model.load_state_dict(state, strict=False)
 
         self.prompt_template = prompt_template
         self.max_txt_len = max_txt_len
@@ -117,16 +120,12 @@ class CustomFlamingo(nn.Module):
             total,
         )
 
-    def get_speech_embeddings(self, samples):
-        logging.debug("get_speech_embeddings: not used by AF3")
-        return None, None, None, None
-
     _SKIP_KEYS = frozenset(["prompt_length", "prompt", "text", "true_label", "dataset_type", "completion"])
 
     def _prepare_model_inputs(self, samples: Dict[str, Any]) -> Dict[str, torch.Tensor]:
         model_inputs: Dict[str, torch.Tensor] = {}
         for key, value in samples.items():
-            if key in self._SKIP_KEYS or key == "prompt_length":
+            if key in self._SKIP_KEYS:
                 continue
             if not isinstance(value, torch.Tensor):
                 continue
@@ -142,14 +141,49 @@ class CustomFlamingo(nn.Module):
 
     def _autocast_ctx(self):
         from contextlib import nullcontext
+
         if str(self.device).startswith("cuda") and self.use_bf16:
             return torch.autocast(device_type="cuda", dtype=torch.bfloat16)
         return nullcontext()
 
-    def forward(self, samples: Dict[str, Any]) -> Dict[str, torch.Tensor]:
-        start_time = time.time()
-        logging.debug("Forward pass – batch %d", self.batch_counter)
+    @staticmethod
+    def _fix_audio_shapes(model_inputs: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        """
+        Flatten multi-audio batch dimensions before passing to HF AudioFlamingo3.
 
+        apply_chat_template stacks multiple audio clips per item, producing:
+          input_features:      [B, num_audios, mel_bins, time]  (4D)
+          input_features_mask: [B, num_audios, time]            (3D)
+
+        HF conv1d expects:
+          input_features:      [B * num_audios, mel_bins, time] (3D)
+          input_features_mask: [B * num_audios, time]           (2D)
+
+        Single-audio batches are already 3D/2D and pass through unchanged.
+        """
+        if "input_features" in model_inputs:
+            x = model_inputs["input_features"]
+            if x.dim() == 4:
+                # [B, num_audios, mel, time] -> [B*num_audios, mel, time]
+                logging.debug(
+                    "Flattening input_features: %s -> %s",
+                    tuple(x.shape),
+                    (x.shape[0] * x.shape[1], x.shape[2], x.shape[3]),
+                )
+                model_inputs["input_features"] = x.flatten(0, 1).contiguous()
+
+        if "input_features_mask" in model_inputs:
+            m = model_inputs["input_features_mask"]
+            if m.dim() == 3:
+                # [B, num_audios, time] -> [B*num_audios, time]
+                model_inputs["input_features_mask"] = m.flatten(0, 1).contiguous()
+            elif m.dim() == 4:
+                # [B, num_audios, 1, time] or similar -> [B*num_audios, time]
+                model_inputs["input_features_mask"] = m.flatten(0, 1).squeeze(1).contiguous()
+
+        return model_inputs
+
+    def forward(self, samples: Dict[str, Any], router=None, dspo_module=None) -> Dict[str, torch.Tensor]:
         input_ids = samples["input_ids"].to(self.device).long()
         attention_mask = samples["attention_mask"].to(self.device)
 
@@ -158,7 +192,7 @@ class CustomFlamingo(nn.Module):
 
         for i, prompt_len in enumerate(samples["prompt_length"]):
             pl = int(prompt_len)
-            pl = max(0, min(pl, labels.size(1)))  # clamp
+            pl = max(0, min(pl, labels.size(1)))
             labels[i, :pl] = -100
 
         # Avoid NaN loss by providing a dummy_loss with a valid grad_fn
@@ -169,50 +203,68 @@ class CustomFlamingo(nn.Module):
                 samples.get("prompt_length"),
                 input_ids.size(1),
             )
-
             self.batch_counter += 1
             dummy_loss = sum(p.sum() for p in self.model.parameters() if p.requires_grad) * 0.0
             return {"loss": dummy_loss, "logits": None, "labels": labels}
 
-        if self.batch_counter == 0:
-            logging.info("=== First Batch Token Debug ===")
-            logging.info("Last 20 input_ids : %s", input_ids[0][-20:].tolist())
-            logging.info("Last 20 labels    : %s", labels[0][-20:].tolist())
-            decoded_input = self.input_processor.tokenizer.decode(input_ids[0][-20:])
-            decoded_labels = self.input_processor.tokenizer.decode([x for x in labels[0][-20:] if x != -100])
-            logging.info("Last 20 input tokens decoded : %s", decoded_input)
-            logging.info("Last 20 labels decoded       : %s", decoded_labels)
-            logging.info("==============================")
-
         model_inputs = self._prepare_model_inputs(samples)
-        model_inputs["input_ids"] = input_ids
         model_inputs["attention_mask"] = attention_mask
         model_inputs["labels"] = labels
+
+        # Flatten [B, num_audios, mel, time] -> [B*num_audios, mel, time] for HF conv1d
+        model_inputs = self._fix_audio_shapes(model_inputs)
+
+        # Log shapes for first few batches to confirm correctness
+        if self.batch_counter < 3:
+            if "input_features" in model_inputs:
+                x = model_inputs["input_features"]
+                logging.info("AF3 forward: input_features shape=%s dtype=%s", tuple(x.shape), x.dtype)
+            if "input_features_mask" in model_inputs:
+                m = model_inputs["input_features_mask"]
+                logging.info("AF3 forward: input_features_mask shape=%s dtype=%s", tuple(m.shape), m.dtype)
+
+        # D-SPO injection
+        if router is not None and dspo_module is not None:
+            embedding_layer = self.model.get_input_embeddings()
+            inputs_embeds = embedding_layer(input_ids)
+            inputs_embeds = dspo_module.inject_differentiable_symbols(
+                input_ids=input_ids,
+                input_embeds=inputs_embeds,
+                router=router,
+                embedding_layer=embedding_layer,
+            )
+            model_inputs["inputs_embeds"] = inputs_embeds
+            model_inputs.pop("input_ids", None)
+        else:
+            model_inputs["input_ids"] = input_ids
 
         with self._autocast_ctx():
             outputs = self.model(**model_inputs, return_dict=True)
 
-        logging.debug("Forward done in %.2fs", time.time() - start_time)
-
-        if self.batch_counter < 5:
-            loss_val = outputs.loss.item() if outputs.loss is not None else float("nan")
-            logging.info("Batch %d loss: %.4f", self.batch_counter, loss_val)
-
         self.batch_counter += 1
         return {"loss": outputs.loss, "logits": outputs.logits, "labels": labels}
 
-    def generate_output(self, batch: Dict[str, Any]) -> List[str]:
+    def generate_output(self, batch: Dict[str, Any], slot_replacement=None) -> List[str]:
         input_ids = batch["input_ids"].to(self.device).long()
         attention_mask = batch["attention_mask"].to(self.device)
+
+        # D-SPO inference: swap placeholder token IDs with hard vocab tokens
+        if slot_replacement:
+            input_ids = input_ids.clone()
+            for placeholder_id, hard_vocab_id in slot_replacement.items():
+                input_ids[input_ids == placeholder_id] = hard_vocab_id
 
         model_inputs = self._prepare_model_inputs(batch)
         model_inputs["input_ids"] = input_ids
         model_inputs["attention_mask"] = attention_mask
 
+        # Flatten [B, num_audios, mel, time] -> [B*num_audios, mel, time] for HF conv1d
+        model_inputs = self._fix_audio_shapes(model_inputs)
+
         with self._autocast_ctx():
             generated_ids = self.model.generate(
                 **model_inputs,
-                max_new_tokens=10,
+                max_new_tokens=20,
             )
 
         if generated_ids.size(1) <= input_ids.size(1):

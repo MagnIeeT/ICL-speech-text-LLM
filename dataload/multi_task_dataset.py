@@ -145,6 +145,22 @@ class BaseMultiTaskDataset(Dataset):
                         }
                     )
 
+        # Extract main audio once so it can be passed to both format_prompt and
+        # process_inputs without calling _get_main_audio twice.
+        main_audio = self._get_main_audio(item)
+
+        # FLAMINGO FIX: pass audio as a kwarg so FlamingoProcessor.format_prompt()
+        # can embed it at the top level of the prompt dict:
+        #   prompt_dict = {"conversation": ..., "input_mode": ..., "audio": audio}
+        #
+        # This is essential because Flamingo's apply_chat_template dynamically
+        # injects exactly N <sound> tokens based on the audio array's duration.
+        # If audio is missing at tokenization time, only 1 token is emitted
+        # instead of N → forward pass assertion failure:
+        #   "Audio features and audio tokens do not match, tokens: 1, features: N"
+        #
+        # For Qwen/Salmonn, format_prompt returns a plain string and ignores
+        # extra kwargs, so passing audio here is a no-op for those processors.
         prompt = self.processor.format_prompt(
             template=current_config.prompt_template,
             text=item[current_config.text_key],
@@ -152,6 +168,7 @@ class BaseMultiTaskDataset(Dataset):
             input_mode=self.input_mode,
             fewshot_mode=self.fewshot_mode,
             dataset_type=self.dataset_type,
+            audio=main_audio,      # ← Flamingo embeds this; Qwen/Salmonn ignore it
         )
 
         formatted_completion = self._format_label(
@@ -162,13 +179,13 @@ class BaseMultiTaskDataset(Dataset):
         )
 
         # Process audio → input_features here (audio processing is symbol-independent).
-        # IMPORTANT: Do NOT tokenize here — tokenization is deferred to collate_batch
-        # so SymbolManager can rewrite prompt/completion BEFORE tokenization.
+        # IMPORTANT: Do NOT tokenize here — tokenization is deferred to collate_batch /
+        # tokenize_batch so SymbolManager can rewrite prompt/completion BEFORE tokenization.
         inputs = self.processor.process_inputs(
             data={
                 "prompt": prompt,
                 "completion": formatted_completion,
-                "audio": self._get_main_audio(item),
+                "audio": main_audio,
                 "examples_audio": examples_audio if examples_audio else None,
             },
             is_training=self._is_training(),
@@ -182,7 +199,7 @@ class BaseMultiTaskDataset(Dataset):
             "fewshot_mode": self.fewshot_mode,
             "dataset_type": self.dataset_type,
             "is_training": self._is_training(),
-            **inputs,  # adds input_features (and feature_attention_mask if present)
+            **inputs,
         }
 
     def _get_main_audio(self, item):

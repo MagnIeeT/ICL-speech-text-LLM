@@ -7,6 +7,7 @@ import random
 import re
 import string
 from typing import Any, Dict, List, Optional
+
 from transformers import PreTrainedTokenizer
 
 
@@ -56,33 +57,48 @@ class SymbolManager:
             logging.info("Dynamic mode enabled - mappings will be generated per epoch")
 
     def get_symbols_for_epoch(self, epoch: int, force_new_symbols: bool = False) -> Dict[str, str]:
-        if self.no_symbols and not self.swap_labels: return {}
-        if not self.dynamic_per_epoch: return self.fixed_mappings
+        if self.no_symbols and not self.swap_labels:
+            return {}
+        if not self.dynamic_per_epoch:
+            return self.fixed_mappings
         if force_new_symbols or epoch not in self.epoch_mappings_history:
             self.epoch_mappings_history[epoch] = self._generate_symbol_mappings()
         self.current_epoch = epoch
         return self.epoch_mappings_history[epoch]
 
     def get_current_symbols(self) -> Dict[str, str]:
-        if not self.dynamic_per_epoch: return self.fixed_mappings
+        if not self.dynamic_per_epoch:
+            return self.fixed_mappings
         return self.epoch_mappings_history.get(self.current_epoch, {})
 
-    def get_reverse_mappings(self, epoch: Optional[int] = None, mappings: Optional[Dict[str, str]] = None) -> Dict[str, str]:
-        if mappings is not None: active = mappings
-        elif epoch is not None: active = self.get_symbols_for_epoch(epoch)
-        else: active = self.get_current_symbols()
+    def get_reverse_mappings(
+        self,
+        epoch: Optional[int] = None,
+        mappings: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, str]:
+        if mappings is not None:
+            active = mappings
+        elif epoch is not None:
+            active = self.get_symbols_for_epoch(epoch)
+        else:
+            active = self.get_current_symbols()
         return {v.lower(): k for k, v in active.items()}
 
     def _generate_symbol_mappings(self, force: bool = False) -> Dict[str, str]:
-        if self.swap_labels: return self._generate_swap_mappings()
-        if self.no_symbols and not force: return {}
-        if self.symbol_type == "two_token": symbols = self._generate_two_token_symbols(len(self.original_labels))
-        else: symbols = ["".join(random.choices(string.ascii_lowercase, k=4)) for _ in self.original_labels]
+        if self.swap_labels:
+            return self._generate_swap_mappings()
+        if self.no_symbols and not force:
+            return {}
+        if self.symbol_type == "two_token":
+            symbols = self._generate_two_token_symbols(len(self.original_labels))
+        else:
+            symbols = ["".join(random.choices(string.ascii_lowercase, k=4)) for _ in self.original_labels]
         return dict(zip(self.original_labels, symbols))
 
     def _generate_swap_mappings(self) -> Dict[str, str]:
         labels = list(self.original_labels)
-        if len(labels) <= 1: return {l: l for l in labels}
+        if len(labels) <= 1:
+            return {l: l for l in labels}
         shuffled = labels[:]
         random.shuffle(shuffled)
         return dict(zip(labels, shuffled))
@@ -128,34 +144,41 @@ class SymbolManager:
         while len(words) < num_symbols and attempts < 10000:
             attempts += 1
             w = "".join(random.choice(string.ascii_lowercase) for _ in range(random.choice([4, 5])))
-            if w in used: continue
+            if w in used:
+                continue
             used.add(w)
             try:
-                if len(self.tokenizer.encode(w, add_special_tokens=False)) == 2: words.append(w)
-            except: continue
+                if len(self.tokenizer.encode(w, add_special_tokens=False)) == 2:
+                    words.append(w)
+            except Exception:
+                continue
         return words[:num_symbols]
 
     def _apply_mapping_safe(self, text: str, mapping: Dict[str, str], active_keys: Optional[set] = None) -> str:
-        if not mapping: return text
-        if active_keys is None: active_keys = set(mapping.keys())
+        if not mapping:
+            return text
+        if active_keys is None:
+            active_keys = set(mapping.keys())
 
         # Protect description text in bullet lines from label replacement.
         # "- label: DESCRIPTION" — DESCRIPTION may contain the label word as a regular
         # English word (e.g. "other: Actions that don't fit other categories") and
         # must not be replaced. Only the label name (before the colon) is a target.
         desc_store = {}
+
         def _protect_desc(m):
             key = f"__DESCPROTECT_{len(desc_store):04d}__"
             desc_store[key] = m.group(2)
             return m.group(1) + key
-        protected = re.sub(r'(?m)^([ \t]*-[^:\n]+: )(.+)$', _protect_desc, text)
+
+        protected = re.sub(r"(?m)^([ \t]*-[^:\n]+: )(.+)$", _protect_desc, text)
 
         placeholders, transformed = {}, protected
         sorted_keys = sorted([k for k in mapping.keys() if k in active_keys], key=len, reverse=True)
         for idx, src in enumerate(sorted_keys):
             placeholder = f"__SWAP_PLACEHOLDER_{idx}__"
             placeholders[placeholder] = mapping[src]
-            transformed = re.compile(r'\b' + re.escape(src) + r'\b', re.IGNORECASE).sub(placeholder, transformed)
+            transformed = re.compile(r"\b" + re.escape(src) + r"\b", re.IGNORECASE).sub(placeholder, transformed)
         for p, d in placeholders.items():
             transformed = transformed.replace(p, d)
 
@@ -164,34 +187,116 @@ class SymbolManager:
         return transformed
 
     def _apply_mapping_to_prompt_obj(self, prompt_obj: Any, mapping: Dict[str, str], active_keys: set) -> Any:
-        if isinstance(prompt_obj, str): return self._apply_mapping_safe(prompt_obj, mapping, active_keys)
+        if isinstance(prompt_obj, str):
+            return self._apply_mapping_safe(prompt_obj, mapping, active_keys)
         if isinstance(prompt_obj, dict) and "conversation" in prompt_obj:
             new_obj = dict(prompt_obj)
             new_conv = []
             for msg in prompt_obj.get("conversation", []):
                 new_msg = dict(msg)
-                if isinstance(new_msg.get("content"), str): new_msg["content"] = self._apply_mapping_safe(new_msg["content"], mapping, active_keys)
+                if isinstance(new_msg.get("content"), str):
+                    new_msg["content"] = self._apply_mapping_safe(new_msg["content"], mapping, active_keys)
                 elif isinstance(new_msg.get("content"), list):
-                    new_msg["content"] = [{"type": p["type"], "text": self._apply_mapping_safe(p["text"], mapping, active_keys)} if p.get("type") == "text" else p for p in new_msg["content"]]
+                    new_msg["content"] = [
+                        {"type": p["type"], "text": self._apply_mapping_safe(p["text"], mapping, active_keys)}
+                        if p.get("type") == "text"
+                        else p
+                        for p in new_msg["content"]
+                    ]
                 new_conv.append(new_msg)
             new_obj["conversation"] = new_conv
             return new_obj
         return prompt_obj
 
-    def replace_symbols_in_batch(self, batch, epoch=None, prompt_mappings=None, completion_mappings=None, random_mask=False, force_new_symbols=False):
-        if prompt_mappings is not None: p_map, c_map = prompt_mappings, (completion_mappings or prompt_mappings)
-        elif epoch is not None: p_map = c_map = self.get_symbols_for_epoch(epoch, force_new_symbols=force_new_symbols)
-        else: p_map = c_map = self.get_current_symbols()
-        if not p_map: return batch
+    def replace_symbols_in_batch(
+        self,
+        batch,
+        epoch=None,
+        prompt_mappings=None,
+        completion_mappings=None,
+        random_mask=False,
+        force_new_symbols=False,
+    ):
+        if prompt_mappings is not None:
+            p_map, c_map = prompt_mappings, (completion_mappings or prompt_mappings)
+        elif epoch is not None:
+            p_map = c_map = self.get_symbols_for_epoch(epoch, force_new_symbols=force_new_symbols)
+        else:
+            p_map = c_map = self.get_current_symbols()
+        if not p_map:
+            return batch
         updated = batch.copy()
-        mask = set(random.sample(list(p_map.keys()), max(1, len(p_map)//8))) if random_mask else set(p_map.keys())
-        if "prompt" in batch: updated["prompt"] = [self._apply_mapping_to_prompt_obj(p, p_map, mask) for p in batch["prompt"]]
-        if "completion" in batch: updated["completion"] = [self._apply_mapping_safe(c, c_map, set(c_map.keys())) for c in batch["completion"]]
+        mask = set(random.sample(list(p_map.keys()), max(1, len(p_map) // 8))) if random_mask else set(p_map.keys())
+        if "prompt" in batch:
+            updated["prompt"] = [self._apply_mapping_to_prompt_obj(p, p_map, mask) for p in batch["prompt"]]
+        if "completion" in batch:
+            updated["completion"] = [self._apply_mapping_safe(c, c_map, set(c_map.keys())) for c in batch["completion"]]
         return updated
 
-    def convert_symbols_back(self, text: str, epoch: Optional[int] = None, mappings: Optional[Dict[str, str]] = None) -> str:
-        if mappings is None and epoch is None and self.no_symbols and not self.swap_labels: return text
-        rev = self.get_reverse_mappings(epoch=epoch, mappings=mappings)
-        for s, l in rev.items():
-            if s in text.lower(): text = re.compile(re.escape(s), re.IGNORECASE).sub(l, text)
-        return text
+    # ------------------------------------------------------------------
+    # Symbol → label conversion (FIXED)
+    # ------------------------------------------------------------------
+
+    def convert_symbols_back(
+        self,
+        text: str,
+        epoch: Optional[int] = None,
+        mappings: Optional[Dict[str, str]] = None,
+    ) -> str:
+        """
+        Convert model-generated symbol text back into label text.
+
+        Handles:
+          - exact symbol match: "ulyo" -> "neutral"
+          - truncated symbol outputs due to max_new_tokens: "uly", "uly,", "Answer: uly" -> "neutral"
+          - symbols embedded in longer strings (replacement)
+        """
+        if mappings is None and epoch is None and self.no_symbols and not self.swap_labels:
+            return text
+
+        if text is None:
+            return ""
+
+        rev = self.get_reverse_mappings(epoch=epoch, mappings=mappings)  # symbol(lower) -> label
+        if not rev:
+            return str(text)
+
+        raw = str(text)
+        text_stripped = raw.strip()
+        text_lower = text_stripped.lower()
+
+        # Sort longest-first to reduce accidental partial matches
+        items = sorted(rev.items(), key=lambda kv: len(kv[0]), reverse=True)
+
+        # 1) Exact match fast path
+        if text_lower in rev:
+            return rev[text_lower]
+
+        # 2) Truncated symbol handling (robust to punctuation / chatty output)
+        frag = None
+
+        # Prefer leading fragment if present: "uly,", "  uly.", "Answer: uly"
+        m0 = re.match(r"^[^a-z]*([a-z]{2,6})\b", text_lower)
+        if m0:
+            frag = m0.group(1)
+        else:
+            # Fall back to any short fragment somewhere: "pred=uly"
+            m1 = re.search(r"\b([a-z]{2,6})\b", text_lower)
+            if m1:
+                frag = m1.group(1)
+
+        if frag and len(frag) >= 3:
+            for sym, label in items:
+                # truncated generation: e.g. "uly" for "ulyo"
+                if sym.startswith(frag):
+                    return label
+
+        # 3) Replace full symbol occurrences inside longer text.
+        out = text_stripped
+        out_lower = out.lower()
+        for sym, label in items:
+            if sym in out_lower:
+                out = re.compile(re.escape(sym), re.IGNORECASE).sub(label, out)
+                out_lower = out.lower()
+
+        return out
