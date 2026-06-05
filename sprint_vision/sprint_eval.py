@@ -78,15 +78,34 @@ VALID_DATASETS = [e.value for e in DatasetName]
 def _parse_binary_pred(text: str) -> str:
     """
     Extract '0' or '1' from decoded model output.
-    Returns the raw (truncated) text if no digit is found.
+
+    Handles:
+      - bare digit: "0", "1"
+      - Yes/No variants: maps yes→"1", no→"0" so that models fine-tuned on
+        Yes/No prompts (e.g. chest LoRA cross-evaluated on colon) are still
+        scored rather than returning unscored garbage strings.
+
+    Returns the raw (truncated) text only if nothing can be extracted.
     """
     cleaned = text.split("ASSISTANT:")[-1].strip() if "ASSISTANT:" in text else text.strip()
+    lower = cleaned.lower()
+
+    # Priority 1: explicit digit token
     for tok in cleaned.split():
         t = tok.strip(".,;:()")
         if t in ("0", "1"):
             return t
     if cleaned and cleaned[0] in ("0", "1"):
         return cleaned[0]
+
+    # Priority 2: yes/no → 1/0 (handles cross-domain models that output Yes/No)
+    for tok in lower.split():
+        t = tok.strip(".,;:()")
+        if t in ("yes",):
+            return "1"
+        if t in ("no",):
+            return "0"
+
     return cleaned[:20]
 
 
@@ -544,12 +563,22 @@ def eval_model(args):
     # ── Load model ────────────────────────────────────────────────────────────
     model_path = os.path.expanduser(args.model_path)
     model_name = get_model_name_from_path(model_path)
+    # builder.py branches on "lora" in model_name to choose LoRA vs standalone loading.
+    # Our checkpoint dirs are named llava-{dataset}-{strategy}-... (no "lora") so we
+    # inject the suffix whenever model_base is provided — which always means LoRA here.
+    if args.model_base is not None and "lora" not in model_name.lower():
+        model_name = model_name + "_lora"
     print(f"Loading model: {model_name} ...")
     tokenizer, model, image_processor, _ = load_pretrained_model(
         model_path=model_path,
         model_base=args.model_base,
         model_name=model_name,
     )
+    total_params = sum(p.numel() for p in model.parameters())
+    print(f"  Base model   : {os.path.basename(args.model_base or model_path)}")
+    if args.model_base is not None:
+        print(f"  Checkpoint   : {os.path.basename(model_path)}")
+    print(f"  Total params : {total_params:,}  ({total_params / 1e9:.2f}B)")
 
     # ── Symbol manager ────────────────────────────────────────────────────────
     is_regular = args.strategy in ("regular", "rft")
@@ -611,10 +640,13 @@ def eval_model(args):
 
     # ── Load test data ────────────────────────────────────────────────────────
     question_file = os.path.expanduser(args.question_file)
+    print(f"Loading test split for {dataset}")
     questions = json.load(open(question_file))
+    total_in_file = len(questions)
+    print(f"Loaded {total_in_file} examples from {dataset} test")
     if args.num_samples > 0:
         questions = questions[: args.num_samples]
-    print(f"Loaded {len(questions)} test samples  [{dataset}]")
+    print(f"Loaded {dataset} TEST: {len(questions)} samples")
 
     # ── ICL setup ─────────────────────────────────────────────────────────────
     example_selector = None

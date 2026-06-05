@@ -3,13 +3,24 @@ Convert MedFMC dataset label files to LLaVA JSON format.
 
 Usage
 -----
-Shot-based (fixed few-shot split):
+Shot-based — MedFMC pre-defined single split (train_20.txt only):
     python medfmc_to_llava.py \
         --medfmc_root /home/harinis/MedFM/data/MedFMC \
         --output_dir  /home/harinis/LLaVA/sprint_vision/data \
         --tasks       colon,chest,endo \
         --shot        20
-    → writes: colon_train_shot20.json, colon_test.json, chest_train_shot20.json, ...
+    → writes: colon_train_shot20.json, colon_test.json, ...
+
+Shot-based — MedFMC repeated-experiment splits (1/5/10-shot, exp 1–5):
+    python medfmc_to_llava.py \
+        --medfmc_root /home/harinis/MedFM/data/MedFMC \
+        --output_dir  /home/harinis/LLaVA/sprint_vision/data \
+        --tasks       colon \
+        --shot 10 --exp 1
+    → reads: colon_10-shot_train_exp1.txt
+    → writes: colon_train_shot10_exp1.json, colon_test.json
+
+    Repeat with --exp 2, --exp 3 (or 1–5 for the full paper protocol).
 
 Percentage-based training subset (P% of trainval.txt, stratified by label):
     python medfmc_to_llava.py \
@@ -17,13 +28,26 @@ Percentage-based training subset (P% of trainval.txt, stratified by label):
         --output_dir  /home/harinis/LLaVA/sprint_vision/data \
         --tasks       colon,chest,endo \
         --train_percent 100
-    → writes: colon_train_percent100.json, colon_test.json, chest_train_percent100.json, ...
+    → writes: colon_train_percent100.json, colon_test.json, ...
+
+Random N-shot (repeat experiment — matches MedFMC paper §4):
+    python medfmc_to_llava.py \
+        --medfmc_root /home/harinis/MedFM/data/MedFMC \
+        --output_dir  /home/harinis/LLaVA/sprint_vision/data \
+        --tasks       colon \
+        --n_shot 10 --seed 1
+    → writes: colon_train_rshot10_seed1.json, colon_test.json
+
+    Re-run with --seed 2, --seed 3, ... to get independent random subsets.
+    For binary tasks (colon): samples are balanced (5 from class 0, 5 from class 1).
 
 Output naming convention
 ------------------------
-    Training (shot-based):    {task}_train_shot{N}.json
-    Training (percent-based): {task}_train_percent{P}.json
-    Test (always full):       {task}_test.json
+    Training (shot-based, legacy):     {task}_train_shot{N}.json
+    Training (shot-based, exp split):  {task}_train_shot{N}_exp{K}.json
+    Training (percent-based):          {task}_train_percent{P}.json
+    Training (random N-shot):          {task}_train_rshot{N}_seed{S}.json
+    Test (always full):                {task}_test.json
 
 Dataset types
 -------------
@@ -117,6 +141,58 @@ def _parse_label_from_parts(parts: List[str], cfg) -> Optional[str]:
 # Stratified subsampling
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _absolute_sample(
+    samples: List[Dict],
+    n_shot: int,
+    seed: int,
+) -> List[Dict]:
+    """
+    Return exactly n_shot samples, balanced across label classes.
+
+    For binary tasks (2 classes): floor(n_shot / 2) from each class, with the
+    remainder (0 or 1) given to the first sorted class.
+    For tasks with more unique label combinations than n_shot: n_shot random
+    samples are drawn from the full pool (no per-class guarantee).
+
+    Each call with the same seed is deterministic and reproducible.
+    """
+    rng = random.Random(seed)
+
+    by_label: Dict[str, List[Dict]] = {}
+    for entry in samples:
+        label = str(entry["conversations"][1]["value"]).strip()
+        by_label.setdefault(label, []).append(entry)
+
+    n_classes = len(by_label)
+    if n_classes == 0:
+        return []
+
+    if n_classes > n_shot:
+        pool = list(samples)
+        rng.shuffle(pool)
+        return pool[:n_shot]
+
+    sorted_labels = sorted(by_label.keys())
+    base      = n_shot // n_classes
+    remainder = n_shot  % n_classes
+
+    sampled: List[Dict] = []
+    for i, label in enumerate(sorted_labels):
+        want = base + (1 if i < remainder else 0)
+        pool = list(by_label[label])
+        rng.shuffle(pool)
+        have = min(want, len(pool))
+        if have < want:
+            print(
+                f"  ⚠️  Class '{label}': only {len(pool)} sample(s),"
+                f" wanted {want} — taking all {have}."
+            )
+        sampled.extend(pool[:have])
+
+    rng.shuffle(sampled)
+    return sampled
+
+
 def _stratified_sample(
     samples: List[Dict],
     train_percent: int,
@@ -159,6 +235,7 @@ def convert_to_llava(
     img_rel_prefix: str,
     output_json: str,
     train_percent: Optional[int] = None,
+    n_shot: Optional[int] = None,
     seed: int = 42,
 ) -> int:
     """
@@ -171,9 +248,10 @@ def convert_to_llava(
         img_rel_prefix : Image path prefix relative to --medfmc_root,
                          e.g. "colon/images".
         output_json    : Absolute path to write the output JSON.
-        train_percent  : If set (1–100), keep only that percentage of samples,
-                         sampled stratified by label.  None → keep all.
-        seed           : RNG seed for stratified subsampling.
+        train_percent  : If set (1–100), keep that percentage (stratified).
+        n_shot         : If set, keep exactly n_shot samples (balanced).
+                         Mutually exclusive with train_percent.
+        seed           : RNG seed for subsampling.
 
     Returns:
         Number of samples written.
@@ -199,7 +277,12 @@ def convert_to_llava(
                 skipped += 1
                 continue
 
-            img_name = parts[0].strip()
+            if cfg.is_multi_label:
+                # chest/endo filenames have no spaces; first token is the full filename
+                img_name = parts[0].strip()
+            else:
+                # colon filenames contain spaces (datetime in name); last token is the label
+                img_name = " ".join(parts[:-1]).strip()
             label = _parse_label_from_parts(parts, cfg)
             if label is None:
                 skipped += 1
@@ -225,6 +308,13 @@ def convert_to_llava(
         llava_data = _stratified_sample(llava_data, train_percent, seed)
         print(
             f"  📊 Stratified subset: {train_percent}% of {full_count}"
+            f" → {len(llava_data)} samples  (seed={seed})"
+        )
+    elif n_shot is not None:
+        full_count = len(llava_data)
+        llava_data = _absolute_sample(llava_data, n_shot, seed)
+        print(
+            f"  🎯 Random {n_shot}-shot of {full_count}"
             f" → {len(llava_data)} samples  (seed={seed})"
         )
 
@@ -277,12 +367,29 @@ def main():
     parser.add_argument("--tasks", default="colon,chest,endo")
     parser.add_argument("--shot", default="20")
     parser.add_argument(
+        "--exp", type=int, default=None, metavar="K",
+        help=(
+            "Experiment index 1–5.  When set with --shot N, reads "
+            "{task}_{N}-shot_train_exp{K}.txt (MedFMC repeated-experiment splits). "
+            "Output: {task}_train_shot{N}_exp{K}.json."
+        ),
+    )
+    parser.add_argument(
         "--train_percent", type=int, default=None, metavar="P",
         help="Percent of trainval.txt to use for fine-tuning (1–100).",
     )
     parser.add_argument(
+        "--n_shot", type=int, default=None, metavar="N",
+        help=(
+            "Randomly sample exactly N training examples from trainval.txt "
+            "(balanced across classes). Use --seed to get different subsets. "
+            "Output: {task}_train_rshot{N}_seed{S}.json. "
+            "Mutually exclusive with --train_percent."
+        ),
+    )
+    parser.add_argument(
         "--base-file", default="trainval.txt",
-        help="Source file for percent mode (default: trainval.txt).",
+        help="Source file for percent/n_shot mode (default: trainval.txt).",
     )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--test-file", default="test_WithLabel.txt")
@@ -290,6 +397,14 @@ def main():
 
     if args.train_percent is not None and not (1 <= args.train_percent <= 100):
         parser.error("--train_percent must be between 1 and 100.")
+    if args.train_percent is not None and args.n_shot is not None:
+        parser.error("--train_percent and --n_shot are mutually exclusive.")
+    if args.n_shot is not None and args.n_shot < 1:
+        parser.error("--n_shot must be >= 1.")
+    if args.exp is not None and not (1 <= args.exp <= 10):
+        parser.error("--exp must be between 1 and 10.")
+    if args.exp is not None and (args.train_percent is not None or args.n_shot is not None):
+        parser.error("--exp is only valid with --shot (not --train_percent or --n_shot).")
 
     tasks = [t.strip() for t in args.tasks.split(",") if t.strip()]
 
@@ -300,6 +415,10 @@ def main():
     if args.train_percent is not None:
         print(f"   mode        : percent-based  ({args.train_percent}% of {args.base_file})")
         print(f"   seed        : {args.seed}")
+    elif args.n_shot is not None:
+        print(f"   mode        : random {args.n_shot}-shot from {args.base_file}  (seed={args.seed})")
+    elif args.exp is not None:
+        print(f"   mode        : {args.shot}-shot experiment {args.exp}  (reads {{task}}_{args.shot}-shot_train_exp{args.exp}.txt)")
     else:
         print(f"   mode        : shot-based  (reads train_{args.shot}.txt)")
 
@@ -326,6 +445,19 @@ def main():
                 f"{task}_train_percent{args.train_percent}.json",
             )
             base_txt = os.path.join(task_dir, args.base_file)
+        elif args.n_shot is not None:
+            train_json = os.path.join(
+                args.output_dir,
+                f"{task}_train_rshot{args.n_shot}_seed{args.seed}.json",
+            )
+            base_txt = os.path.join(task_dir, args.base_file)
+        elif args.exp is not None:
+            # MedFMC repeated-experiment split: {task}_{N}-shot_train_exp{K}.txt
+            train_json = os.path.join(
+                args.output_dir,
+                f"{task}_train_shot{args.shot}_exp{args.exp}.json",
+            )
+            base_txt = os.path.join(task_dir, f"{task}_{args.shot}-shot_train_exp{args.exp}.txt")
         else:
             train_json = os.path.join(
                 args.output_dir,
@@ -340,6 +472,7 @@ def main():
             img_rel_prefix=img_rel_prefix,
             output_json=train_json,
             train_percent=args.train_percent,
+            n_shot=args.n_shot,
             seed=args.seed,
         )
         total += n

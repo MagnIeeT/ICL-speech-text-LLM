@@ -40,23 +40,27 @@ class SymbolManager:
         original_labels: List[str],
         tokenizer: PreTrainedTokenizer,
         dynamic_per_epoch: bool = False,
+        dynamic_per_instance: bool = False,
         symbol_type: str = "two_token",
         no_symbols: bool = False,
         swap_labels: bool = False,
     ):
         """
         Args:
-            original_labels:   e.g. ["0", "1"]
-            tokenizer:         Used to validate two-token symbols.
-            dynamic_per_epoch: True → regenerate symbols each epoch (ED-FT).
-            symbol_type:       "two_token" or "regular" (identity, kept for
-                               backward-compat — prefer no_symbols=True for RFT).
-            no_symbols:        True → disable all symbol replacement (RFT).
-            swap_labels:       True → swap labels via derangement (LF-FT).
+            original_labels:      e.g. ["0", "1"] or 19 chest class names.
+            tokenizer:            Used to validate two-token symbols.
+            dynamic_per_epoch:    True → regenerate symbols each epoch (ED-FT).
+            dynamic_per_instance: True → regenerate symbols each sample (ID-FT).
+                                  Overrides dynamic_per_epoch and fixed_mappings.
+            symbol_type:          "two_token" or "regular" (identity, kept for
+                                  backward-compat — prefer no_symbols=True for RFT).
+            no_symbols:           True → disable all symbol replacement (RFT).
+            swap_labels:          True → swap labels via derangement (LF-FT).
         """
         self.original_labels = original_labels
         self.tokenizer = tokenizer
         self.dynamic_per_epoch = dynamic_per_epoch
+        self.dynamic_per_instance = dynamic_per_instance
         self.symbol_type = symbol_type
         self.no_symbols = no_symbols
         self.swap_labels = swap_labels
@@ -67,6 +71,8 @@ class SymbolManager:
 
         if self.no_symbols and not self.swap_labels:
             logging.info("No-symbol mode enabled — symbol replacement disabled (RFT)")
+        elif self.dynamic_per_instance:
+            logging.info("Per-instance dynamic symbol mode — fresh mappings every call (ID-FT)")
         elif not self.dynamic_per_epoch:
             self.fixed_mappings = self._generate_symbol_mappings()
             self.list_of_symbols = list(self.fixed_mappings.values())
@@ -80,6 +86,10 @@ class SymbolManager:
         """Return symbol mappings for the given epoch."""
         if self.no_symbols and not self.swap_labels:
             return {}
+
+        # Per-instance mode: fresh mappings every call, no state retained.
+        if self.dynamic_per_instance:
+            return self._generate_symbol_mappings()
 
         if not self.dynamic_per_epoch:
             return self.fixed_mappings
@@ -104,6 +114,9 @@ class SymbolManager:
         """Return the currently active symbol mappings."""
         if self.no_symbols and not self.swap_labels:
             return {}
+        # Per-instance: fresh mapping each call (no state).
+        if self.dynamic_per_instance:
+            return self._generate_symbol_mappings()
         if not self.dynamic_per_epoch:
             return self.fixed_mappings
         return self.epoch_mappings_history.get(self.current_epoch, {})
@@ -227,6 +240,7 @@ class SymbolManager:
         data = {
             "original_labels": self.original_labels,
             "dynamic_per_epoch": self.dynamic_per_epoch,
+            "dynamic_per_instance": self.dynamic_per_instance,
             "symbol_type": self.symbol_type,
             "no_symbols": self.no_symbols,
             "swap_labels": self.swap_labels,
@@ -244,6 +258,7 @@ class SymbolManager:
             data = json.load(f)
         self.original_labels = data["original_labels"]
         self.dynamic_per_epoch = data["dynamic_per_epoch"]
+        self.dynamic_per_instance = data.get("dynamic_per_instance", False)
         self.symbol_type = data["symbol_type"]
         self.no_symbols = data.get("no_symbols", False)
         self.swap_labels = data.get("swap_labels", False)
@@ -431,6 +446,8 @@ class SymbolManager:
             mode = "NoSymbols"
         elif self.swap_labels:
             mode = "SwapLabels"
+        elif self.dynamic_per_instance:
+            mode = "DynamicPerInstance"
         return (
             f"SymbolManager({mode}, {len(self.get_current_symbols())} mappings, "
             f"epoch={self.current_epoch})"

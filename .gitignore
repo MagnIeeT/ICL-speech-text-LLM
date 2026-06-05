@@ -36,3 +36,4 @@ serve_images/
 playground/data/eval/scienceqa/ScienceQA
 llava_clean.tar.gz
 llava/eval/table/results/
+sprint.code-workspace

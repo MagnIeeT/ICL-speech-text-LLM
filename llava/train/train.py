@@ -15,7 +15,9 @@
 #    limitations under the License.
 
 import os
+import shutil
 import copy
+import math
 import random
 import re
 from dataclasses import dataclass, field
@@ -36,17 +38,32 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "sprint_vision")))
 try:
     from models.symbolAdapter.symbol_manager import SymbolManager
+    from models.symbolAdapter.validation import SPRInTValidationManager
     from dataload.example_selector import ExampleSelector
     from dataload.prompt_builder import LLaVAPromptBuilder
 except ImportError:
     logging.warning("SymbolManager / ExampleSelector / LLaVAPromptBuilder not found. Check sprint_vision/ path.")
     SymbolManager = None
+    SPRInTValidationManager = None
     ExampleSelector = None
     LLaVAPromptBuilder = None
 # -----------------------------------
 
 from llava.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 from torch.utils.data import Dataset
+
+# Compatibility shim: older accelerate lacks clear_device_cache (added ~0.26).
+# Must be patched before peft is imported (peft.utils.loftq_utils imports it).
+try:
+    from accelerate.utils.memory import clear_device_cache as _cdc  # noqa: F401
+except ImportError:
+    import accelerate.utils.memory as _acc_mem
+    import torch as _torch
+    def _clear_device_cache():
+        if _torch.cuda.is_available():
+            _torch.cuda.empty_cache()
+    _acc_mem.clear_device_cache = _clear_device_cache
+
 from llava.train.llava_trainer import LLaVATrainer
 
 from llava import conversation as conversation_lib
@@ -99,6 +116,8 @@ class DataArguments:
                            metadata={"help": "JSON pool for ICL example selection. Defaults to data_path."})
     icl_seed: int = field(default=42,
                            metadata={"help": "Base seed for per-item ICL selection (seed + item_index used per sample)."})
+    max_train_samples: int = field(default=0,
+                           metadata={"help": "Cap training to first N samples. 0 = use all samples."})
     # -----------------------------------------
 
 
@@ -138,6 +157,8 @@ class TrainingArguments(transformers.TrainingArguments):
     group_by_modality_length: bool = field(default=False)
     # --- SPRInT MODIFICATION: STRATEGY FLAG ---
     sprint_strategy: str = field(default="regular")
+    sprint_dataset: str = field(default="colon",
+                                metadata={"help": "Dataset name (colon|chest|endo). Drives the label vocabulary for SymbolManager."})
     # --- SPRInT MODIFICATION: VALIDATION FIELDS ---
     eval_data_path: Optional[str] = field(
         default=None,
@@ -146,6 +167,16 @@ class TrainingArguments(transformers.TrainingArguments):
     max_val_samples: int = field(
         default=100,
         metadata={"help": "Max validation samples per epoch. 0 = use all."}
+    )
+    validation_modes: str = field(
+        default="fixed,original,fresh",
+        metadata={"help": "Comma-separated modes to run each epoch: fixed,original,fresh. "
+                           "For RFT (no symbol_manager), only 'original' ever runs regardless."}
+    )
+    compute_val_auc_map: bool = field(
+        default=True,
+        metadata={"help": "Compute AUC (colon) or mAP+AUC (chest/endo) during validation. "
+                           "Adds ~1-6 extra minutes per epoch. Set False to skip."}
     )
 
 
@@ -441,20 +472,20 @@ def preprocess_v1(
     symbol_manager: Optional[SymbolManager] = None # --- SPRInT MODIFICATION ---
 ) -> Dict:
     # --- SPRInT MODIFICATION: SYMBOLIC SWAP ---
+    # Use apply_to_text (two-pass safe replacement) for BOTH human and GPT turns.
+    # Same mapping is used across both turns of one sample (called once outside loop)
+    # so the model sees consistent prompt-hint ↔ target pairing.
+    # Works for:
+    #   - Binary colon GPT turn  "0"                        → "kxzy"
+    #   - Multi-label chest turn "pleural_effusion, nodule" → "abcd, efgh"
+    #   - Human prompt           "(0 for No, 1 for Yes)"    → "(kxzy for No, wxab for Yes)"
     if symbol_manager is not None:
         mappings = symbol_manager.get_current_symbols()
-        for source in sources:
-            for sentence in source:
-                if sentence["from"] == "gpt":
-                    # Exact match: label turn is always a bare "0" or "1"
-                    current_val = sentence["value"].strip()
-                    if current_val in mappings:
-                        sentence["value"] = mappings[current_val]
-                elif sentence["from"] == "human":
-                    # Substring replace: symbol mapping hint in the instruction text
-                    # e.g. "(0 for No, 1 for Yes)" → "(kxzy for No, wxab for Yes)"
-                    # Uses two-pass safe replacement to prevent cascade corruption.
-                    sentence["value"] = symbol_manager.apply_to_text(sentence["value"], mappings)
+        if mappings:
+            for source in sources:
+                for sentence in source:
+                    if sentence["from"] in ("gpt", "human"):
+                        sentence["value"] = symbol_manager.apply_to_text(sentence["value"], mappings)
     # ------------------------------------------
 
     conv = conversation_lib.default_conversation.copy()
@@ -723,6 +754,11 @@ class LazySupervisedDataset(Dataset):
         super(LazySupervisedDataset, self).__init__()
         list_data_dict = json.load(open(data_path, "r"))
 
+        max_n = getattr(data_args, "max_train_samples", 0)
+        if max_n > 0:
+            list_data_dict = list_data_dict[:max_n]
+            rank0_print(f"[SPRInT] max_train_samples={max_n}: using {len(list_data_dict)} samples")
+
         rank0_print("Formatting inputs...Skip in lazy mode")
         self.tokenizer = tokenizer
         self.list_data_dict = list_data_dict
@@ -917,6 +953,11 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer,
                 data_collator=data_collator)
 
 
+# Shared mutable cell: LLaVATrainer.compute_loss writes the latest microbatch
+# loss here so SPRInTProgressCallback.on_substep_end can read it and keep the
+# tqdm postfix fresh on every raw batch, not just every optimizer step.
+_sprint_microbatch_loss: list = [None]
+
 # ─────────────────────────────────────────────────────────────────────────────
 # SPRInT Trainer Callbacks
 # ─────────────────────────────────────────────────────────────────────────────
@@ -946,126 +987,284 @@ class SPRInTSymbolEpochCallback(transformers.TrainerCallback):
             )
 
 
+class SPRInTProgressCallback(transformers.ProgressCallback):
+    """
+    Replaces HF's ProgressCallback to exactly match ICI's per-epoch tqdm format:
+
+      Epoch 2/5:   0%|          | 0/100 [loss=0.797097]  ← resets to 0% each epoch
+      Epoch 2/5:   1%|          | 1/100 [loss=0.797097]  ← on_step_end / on_substep_end advance
+      Epoch 2/5:   1%|          | 1/100 [loss=0.419798]  ← on_log updates loss in-place
+
+    Bar total = raw dataloader batches (samples / per_device_batch_size), NOT optimizer steps.
+    Both on_step_end and on_substep_end advance the bar by 1 so every micro-batch is counted,
+    matching ICI which always counts individual batch forward passes.
+    Bar is RECREATED each epoch. Loss shows inside the bar only.
+    """
+
+    def __init__(self, train_dataset_len: int = 0):
+        super().__init__()
+        self._epoch_counter = 0
+        self._steps_per_epoch = None
+        self._train_dataset_len = train_dataset_len
+
+    def on_epoch_end(self, args, state, control, **kwargs):
+        """Close the bar at epoch end so it doesn't reappear with inflated time later."""
+        if state.is_local_process_zero and self.training_bar is not None:
+            self.training_bar.close()
+            self.training_bar = None
+
+    def on_epoch_begin(self, args, state, control, **kwargs):
+        self._epoch_counter += 1
+        total_epochs = int(args.num_train_epochs)
+
+        if state.is_local_process_zero:
+            # Bar was already closed by on_epoch_end; just ensure it's gone
+            if self.training_bar is not None:
+                self.training_bar.close()
+                self.training_bar = None
+            if self._steps_per_epoch is None:
+                import math
+                if self._train_dataset_len > 0:
+                    num_processes = max(1, getattr(args, 'world_size', 1))
+                    self._steps_per_epoch = math.ceil(
+                        self._train_dataset_len / args.per_device_train_batch_size / num_processes
+                    )
+                else:
+                    # Fallback when dataset length unknown
+                    self._steps_per_epoch = max(1, state.max_steps // total_epochs) * args.gradient_accumulation_steps
+            from tqdm.auto import tqdm as _tqdm
+            self.training_bar = _tqdm(
+                total=self._steps_per_epoch,
+                desc=f"Epoch {self._epoch_counter}/{total_epochs}",
+                dynamic_ncols=True,
+            )
+
+    def on_step_end(self, args, state, control, **kwargs):
+        """Advance bar by 1 for each optimizer step (the last micro-batch in each accum cycle)."""
+        if state.is_local_process_zero and self.training_bar is not None:
+            self.training_bar.update(1)
+        self.current_step = state.global_step
+
+    def on_substep_end(self, args, state, control, **kwargs):
+        """Advance bar by 1 for each intermediate micro-batch; refresh loss from the cache."""
+        if state.is_local_process_zero and self.training_bar is not None:
+            self.training_bar.update(1)
+            if _sprint_microbatch_loss[0] is not None:
+                self.training_bar.set_postfix({"loss": f"{_sprint_microbatch_loss[0]:.6f}"})
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if not state.is_local_process_zero or self.training_bar is None:
+            return
+        logs = (logs or {}).copy()
+        logs.pop("total_flos", None)
+        if "loss" in logs:
+            self.training_bar.set_postfix({"loss": f"{logs['loss']:.6f}"})
+        elif logs:
+            self.training_bar.write(str(logs))
+
+    def on_train_end(self, args, state, control, **kwargs):
+        # HF 4.37.2's inherited on_train_end calls training_bar.close() without a None guard.
+        # Our on_epoch_end already closes the bar, so training_bar is None here → crash.
+        if state.is_local_process_zero and self.training_bar is not None:
+            self.training_bar.close()
+        self.training_bar = None
+
+
+class SPRInTEpochLogCallback(transformers.TrainerCallback):
+    """Prints epoch header at start of each epoch — mirrors ICI's 'Epoch N/Total' line."""
+
+    def __init__(self, total_epochs: int):
+        self.total_epochs = total_epochs
+        self._epoch_num = 0
+
+    def on_epoch_begin(self, args, state, control, **kwargs):
+        self._epoch_num += 1
+        rank0_print(f"\n{'='*80}")
+        rank0_print(f"Epoch {self._epoch_num}/{self.total_epochs}")
+        rank0_print(f"{'='*80}")
+
+
 class SPRInTValidationCallback(transformers.TrainerCallback):
     """
-    Runs a lightweight symbol-aware accuracy check on a validation subset
-    after each epoch.  Saves results to {output_dir}/val_epoch{N}.json.
+    Thin HF Trainer wrapper — delegates all validation logic to SPRInTValidationManager.
 
-    Only active when training_args.eval_data_path is set.
-    Skipped on non-rank-0 processes in distributed training.
+    Responsibilities kept here (HF lifecycle only):
+      - on_epoch_begin : reset step-loss accumulator
+      - on_log         : accumulate per-step losses for avg-loss computation
+      - on_epoch_end   : build mode_symbols dict, call manager, track best epoch
+      - on_train_end   : call manager.print_consolidated_summaries()
+
+    All inference, metric computation, and logging live in:
+      sprint_vision/models/symbolAdapter/validation.py  (SPRInTValidationManager)
+      sprint_vision/utils/evaluation_utils.py           (pure metric functions)
     """
 
     def __init__(self, model, tokenizer, image_processor, data_args, training_args, symbol_manager):
-        self.model = model
-        self.tokenizer = tokenizer
-        self.image_processor = image_processor
-        self.data_args = data_args
-        self.training_args = training_args
+        self.training_args  = training_args
         self.symbol_manager = symbol_manager
-        self._val_data = None
+        self._step_losses   = []
+        self._epoch_counter = 0
+        self._epoch_history = []
+        self._best_score    = -1.0
+        self._best_epoch    = None
+        self._is_new_best   = False
 
-    def _load_val_data(self):
-        if self._val_data is not None:
-            return self._val_data
-        path = self.training_args.eval_data_path
-        if not path or not os.path.exists(path):
-            return []
-        with open(path, "r") as f:
-            data = json.load(f)
-        n = self.training_args.max_val_samples
-        if n > 0 and len(data) > n:
-            rng = random.Random(42)
-            data = rng.sample(data, n)
-        self._val_data = data
-        return data
+        # Load dataset config to determine label vocabulary, multi-label flag, and primary metric.
+        try:
+            _sprint_dir = os.path.abspath(
+                os.path.join(os.path.dirname(__file__), "..", "..", "sprint_vision")
+            )
+            if _sprint_dir not in sys.path:
+                sys.path.insert(0, _sprint_dir)
+            from config.data_config import get_dataset_config as _get_cfg
+            _ds  = getattr(training_args, "sprint_dataset", "colon")
+            _cfg = _get_cfg(_ds)
+            label_names    = [l.lower() for l in _cfg.label_names]
+            is_multi_label = _cfg.is_multi_label
+        except Exception as _e:
+            rank0_print(f"[SPRInT Val] Warning: could not load dataset config ({_e}). Using binary fallback.")
+            label_names    = ["0", "1"]
+            is_multi_label = False
+
+        dataset_name          = getattr(training_args, "sprint_dataset", "colon")
+        # MedFMC paper save_best criteria (from configs/_base_/datasets/*.py):
+        #   chest.py:     metric='mAP',          save_best='auto'
+        #   colon.py:     metric='accuracy',      save_best='auto'  (topk=1)
+        #   endoscopy.py: metric='AUC_multilabel',save_best='auto'  (= macro_auc in our code)
+        if dataset_name == "chest":
+            self._primary_metric = "mAP"
+        elif dataset_name == "endo":
+            self._primary_metric = "macro_auc"   # AUC_multilabel in paper
+        else:                                     # colon
+            self._primary_metric = "accuracy"
+        self._validation_modes = getattr(training_args, "validation_modes", "fixed,original,fresh")
+
+        self._val_manager = SPRInTValidationManager(
+            model           = model,
+            tokenizer       = tokenizer,
+            image_processor = image_processor,
+            data_args       = data_args,
+            symbol_manager  = symbol_manager,
+            label_names     = label_names,
+            is_multi_label  = is_multi_label,
+            dataset_name    = dataset_name,
+            primary_metric  = self._primary_metric,
+            validation_modes = self._validation_modes,
+            max_val_samples = getattr(training_args, "max_val_samples", 200),
+            eval_data_path  = getattr(training_args, "eval_data_path", None),
+            print_fn        = rank0_print,
+        )
+
+    # ── Loss tracking ─────────────────────────────────────────────────────────
+
+    def on_epoch_begin(self, args, state, control, **kwargs):
+        self._step_losses = []
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if logs and "loss" in logs:
+            self._step_losses.append(logs["loss"])
+
+    # ── Per-epoch validation ──────────────────────────────────────────────────
 
     def on_epoch_end(self, args, state, control, **kwargs):
         if args.local_rank not in (-1, 0):
             return
-        val_data = self._load_val_data()
-        if not val_data:
+        if not self._val_manager._load_val_data():
             return
 
-        epoch = int(state.epoch) if state.epoch is not None else 0
-        symbols = self.symbol_manager.get_current_symbols() if self.symbol_manager else {}
-        strategy = args.sprint_strategy
+        self._epoch_counter += 1
+        epoch        = self._epoch_counter
+        total_epochs = int(self.training_args.num_train_epochs)
+        strategy     = getattr(args, "sprint_strategy", "regular")
 
-        self.model.eval()
-        correct = total = 0
-        results = []
+        # Build mode → symbols dict filtered to requested modes
+        _all_mode_syms = {"original": {}}
+        if self.symbol_manager is not None:
+            _all_mode_syms["fixed"] = self.symbol_manager.get_current_symbols()
+            _all_mode_syms["fresh"] = self.symbol_manager._generate_symbol_mappings()
+        requested    = [m.strip() for m in self._validation_modes.split(",")]
+        mode_symbols = {m: v for m, v in _all_mode_syms.items() if m in requested}
+        if not mode_symbols:
+            mode_symbols = {"original": {}}
 
-        with torch.no_grad():
-            for item in val_data:
-                # Load image
-                img_path = os.path.join(self.data_args.image_folder, item.get("image", ""))
-                try:
-                    image = Image.open(img_path).convert("RGB")
-                    image_tensor = process_images([image], self.image_processor, self.data_args)[0]
-                    image_tensor = image_tensor.unsqueeze(0).to(self.model.device, dtype=torch.float16)
-                except Exception:
-                    continue
-
-                # Build prompt (human turn only, with image token)
-                human_text = item["conversations"][0]["value"]
-                if self.symbol_manager is not None:
-                    human_text = self.symbol_manager.apply_to_text(human_text)
-
-                from llava.conversation import conv_templates
-                from llava.mm_utils import tokenizer_image_token
-                from llava.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN
-
-                conv = conv_templates["v1"].copy()
-                if DEFAULT_IMAGE_TOKEN not in human_text:
-                    human_text = DEFAULT_IMAGE_TOKEN + "\n" + human_text
-                conv.append_message(conv.roles[0], human_text)
-                conv.append_message(conv.roles[1], None)
-                prompt = conv.get_prompt()
-
-                input_ids = tokenizer_image_token(
-                    prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt"
-                ).unsqueeze(0).to(self.model.device)
-
-                out = self.model.generate(
-                    input_ids,
-                    images=image_tensor,
-                    max_new_tokens=8,
-                    do_sample=False,
-                )
-                pred_text = self.tokenizer.decode(
-                    out[0][input_ids.shape[1]:], skip_special_tokens=True
-                ).strip()
-
-                # Ground truth
-                gt_symbol = item["conversations"][1]["value"].strip()
-                if symbols:
-                    gt_orig = self.symbol_manager.convert_symbols_back(gt_symbol) if self.symbol_manager else gt_symbol
-                else:
-                    gt_orig = gt_symbol
-
-                # Decode prediction back to original label
-                if self.symbol_manager is not None and symbols:
-                    pred_orig = self.symbol_manager.convert_symbols_back(pred_text)
-                else:
-                    m = re.search(r"\b([01])\b", pred_text)
-                    pred_orig = m.group(1) if m else pred_text[:1]
-
-                correct += int(pred_orig == gt_orig)
-                total += 1
-                results.append({"gt": gt_orig, "pred": pred_orig, "pred_raw": pred_text})
-
-        acc = correct / total if total else 0.0
-        rank0_print(f"[SPRInT Val] Epoch {epoch}: accuracy={acc:.4f} ({correct}/{total})")
-
-        out_path = os.path.join(
-            args.output_dir,
-            f"val_epoch{epoch}_{strategy}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        entry = self._val_manager.run_comprehensive_validation(
+            epoch          = epoch,
+            total_epochs   = total_epochs,
+            mode_symbols   = mode_symbols,
+            strategy       = strategy,
+            output_dir     = args.output_dir,
+            step_losses    = self._step_losses,
+            compute_auc_map = getattr(self.training_args, "compute_val_auc_map", True),
         )
-        os.makedirs(args.output_dir, exist_ok=True)
-        with open(out_path, "w") as f:
-            json.dump({"epoch": epoch, "accuracy": acc, "correct": correct, "total": total, "results": results}, f, indent=2)
-        rank0_print(f"[SPRInT Val] Saved to {out_path}")
+        self._epoch_history.append(entry)
 
-        self.model.train()
+        # Best-epoch tracking — metric per MedFMC paper save_best criteria
+        auc_map = entry.get("auc_map", {})
+        if self._primary_metric == "accuracy":
+            # colon: accuracy from text-gen original mode (top-1 accuracy)
+            combined_score   = entry["modes"].get("original", {}).get("accuracy", 0.0)
+            best_metric_name = "accuracy"
+        elif auc_map:
+            combined_score   = auc_map.get(self._primary_metric,
+                               auc_map.get("macro_auc", auc_map.get("AUC", 0.0)))
+            best_metric_name = self._primary_metric
+        else:
+            combined_score   = entry["modes"].get("original", {}).get("macro_f1", 0.0)
+            best_metric_name = "macro_f1"
+
+        if combined_score > self._best_score:
+            self._best_score  = combined_score
+            self._best_epoch  = epoch
+            self._is_new_best = True
+            rank0_print(
+                f"★  New best: epoch {epoch}/{total_epochs}  {best_metric_name}={combined_score:.4f}"
+            )
+        else:
+            self._is_new_best = False
+            rank0_print(
+                f"   No improvement  (best so far: epoch {self._best_epoch}, "
+                f"{best_metric_name}={self._best_score:.4f})"
+            )
+
+    # ── Best-checkpoint copy ──────────────────────────────────────────────────
+    # on_save fires AFTER HF Trainer writes checkpoint-{step} to disk.
+    # on_epoch_end (above) sets _is_new_best; we copy here where the file exists.
+
+    def on_save(self, args, state, control, **kwargs):
+        if args.local_rank not in (-1, 0):
+            return
+        if not self._is_new_best:
+            return
+        self._is_new_best = False
+        latest_ckpt = os.path.join(args.output_dir, f"checkpoint-{state.global_step}")
+        best_ckpt   = os.path.join(args.output_dir, "checkpoint-best")
+        if not os.path.isdir(latest_ckpt):
+            rank0_print(
+                f"[SPRInT] WARNING: checkpoint-{state.global_step} not found on disk; "
+                f"checkpoint-best not updated. Ensure --save_strategy epoch is set."
+            )
+            return
+        if os.path.exists(best_ckpt):
+            shutil.rmtree(best_ckpt)
+        shutil.copytree(latest_ckpt, best_ckpt)
+        rank0_print(
+            f"[SPRInT] checkpoint-best updated → checkpoint-{state.global_step}"
+            f"  (epoch {self._best_epoch}, score={self._best_score:.4f})"
+        )
+
+    # ── End-of-training summaries ─────────────────────────────────────────────
+
+    def on_train_end(self, args, state, control, **kwargs):
+        if args.local_rank not in (-1, 0):
+            return
+        if not self._epoch_history:
+            return
+        self._val_manager.print_consolidated_summaries(
+            epoch_history  = self._epoch_history,
+            primary_metric = self._primary_metric,
+            best_epoch     = self._best_epoch,
+            best_score     = self._best_score,
+        )
 
 
 def train(attn_implementation=None):
@@ -1242,16 +1441,26 @@ def train(attn_implementation=None):
     # --- SPRInT MODIFICATION: INITIALIZE SYMBOL MANAGER ---
     sprint_manager = None
     _strategy = training_args.sprint_strategy
+
+    # Resolve label vocabulary from dataset config — supports colon/chest/endo
+    try:
+        from config.data_config.master_config import get_dataset_config as _get_ds_cfg
+        _original_labels = _get_ds_cfg(training_args.sprint_dataset).label_names
+        rank0_print(f"SPRInT: dataset='{training_args.sprint_dataset}', labels={_original_labels}")
+    except Exception as _e:
+        rank0_print(f"SPRInT: dataset config load failed ({_e}), falling back to ['0','1']")
+        _original_labels = ["0", "1"]
+
     if SymbolManager is not None and _strategy not in ("regular", "rft"):
         if _strategy == "lf_ft":
             sprint_manager = SymbolManager(
-                original_labels=["0", "1"],
+                original_labels=_original_labels,
                 tokenizer=tokenizer,
                 swap_labels=True,
             )
         elif _strategy == "ed_ft":
             sprint_manager = SymbolManager(
-                original_labels=["0", "1"],
+                original_labels=_original_labels,
                 tokenizer=tokenizer,
                 dynamic_per_epoch=True,
                 symbol_type="two_token",
@@ -1263,16 +1472,20 @@ def train(attn_implementation=None):
             # as RFT with no error.
             sprint_manager.get_symbols_for_epoch(0, force_new_symbols=True)
         elif _strategy == "id_ft":
-            raise NotImplementedError(
-                "id_ft (per-instance dynamic symbols) is not implemented in this "
-                "training path.  It requires pre-generated per-instance JSON files "
-                "and a custom data pipeline.  Use two_token (ss_ft) for static "
-                "symbols or ed_ft for epoch-dynamic symbols."
+            # Per-instance dynamic: fresh symbols are generated inside
+            # preprocess_v1 each time get_current_symbols() is called.
+            # Each sample's prompt + GPT turn share the same fresh mapping
+            # because preprocess_v1 reads mappings ONCE per sample.
+            sprint_manager = SymbolManager(
+                original_labels=_original_labels,
+                tokenizer=tokenizer,
+                dynamic_per_instance=True,
+                symbol_type="two_token",
             )
         else:
             # ss_ft / two_token: static fixed symbols, same mapping for the full run.
             sprint_manager = SymbolManager(
-                original_labels=["0", "1"],
+                original_labels=_original_labels,
                 tokenizer=tokenizer,
                 dynamic_per_epoch=False,
                 symbol_type="two_token",
@@ -1287,7 +1500,8 @@ def train(attn_implementation=None):
                                               symbol_manager=sprint_manager) # --- SPRInT MODIFICATION ---
 
     # --- SPRInT MODIFICATION: BUILD CALLBACKS ---
-    sprint_callbacks = []
+    sprint_callbacks = [SPRInTEpochLogCallback(total_epochs=int(training_args.num_train_epochs))]
+    rank0_print(f"[SPRInT] Registered SPRInTEpochLogCallback for {training_args.num_train_epochs} epochs.")
     if sprint_manager is not None and _strategy == "ed_ft":
         sprint_callbacks.append(SPRInTSymbolEpochCallback(sprint_manager))
         rank0_print("[SPRInT] Registered SPRInTSymbolEpochCallback for ED-FT epoch rotation.")
@@ -1309,6 +1523,12 @@ def train(attn_implementation=None):
                     args=training_args,
                     callbacks=sprint_callbacks if sprint_callbacks else None,
                     **data_module)
+
+    # Replace HF's ProgressCallback with ICI-style SPRInTProgressCallback.
+    # This gives per-batch 'Batch N loss: X.XXXX' lines and epoch/loss in the tqdm bar.
+    trainer.remove_callback(transformers.ProgressCallback)
+    _train_ds_len = len(data_module.get('train_dataset', [])) if data_module else 0
+    trainer.add_callback(SPRInTProgressCallback(train_dataset_len=_train_ds_len))
 
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
         trainer.train(resume_from_checkpoint=True)
@@ -1336,6 +1556,15 @@ def train(attn_implementation=None):
             model.config.save_pretrained(training_args.output_dir)
             model.save_pretrained(training_args.output_dir, state_dict=state_dict)
             torch.save(non_lora_state_dict, os.path.join(training_args.output_dir, 'non_lora_trainables.bin'))
+            # Copy non_lora_trainables.bin into checkpoint-best/ so it can be used for
+            # inference directly. The projector is frozen so the value is epoch-independent.
+            best_ckpt = os.path.join(training_args.output_dir, "checkpoint-best")
+            if os.path.isdir(best_ckpt):
+                shutil.copy2(
+                    os.path.join(training_args.output_dir, 'non_lora_trainables.bin'),
+                    os.path.join(best_ckpt, 'non_lora_trainables.bin'),
+                )
+                rank0_print(f"[SPRInT] Copied non_lora_trainables.bin → checkpoint-best/")
     else:
         safe_save_model_for_hf_trainer(trainer=trainer,
                                        output_dir=training_args.output_dir)

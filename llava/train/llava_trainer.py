@@ -132,6 +132,16 @@ class LengthGroupedSampler(Sampler):
 
 class LLaVATrainer(Trainer):
 
+    def compute_loss(self, model, inputs, return_outputs=False):
+        result = super().compute_loss(model, inputs, return_outputs)
+        loss = result[0] if return_outputs else result
+        try:
+            from llava.train.train import _sprint_microbatch_loss
+            _sprint_microbatch_loss[0] = loss.item()
+        except Exception:
+            pass
+        return result
+
     def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
         if self.train_dataset is None or not has_length(self.train_dataset):
             return None

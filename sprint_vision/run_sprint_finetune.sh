@@ -9,6 +9,13 @@
 #   --icl-shots in sprint_eval.py   →  controls in-context examples at inference.
 #   These are completely separate and independent.
 #
+# Strategies:
+#   regular / rft       Standard fine-tuning, original labels (no substitution)
+#   two_token / ss_ft   Fixed two-token symbols throughout training
+#   ed_ft               Epoch-dynamic: new symbols every epoch (NUM_WORKERS=0 auto)
+#   id_ft               Instance-dynamic: fresh symbols every sample
+#   lf_ft               Label-flip via derangement (binary: 0↔1; multi-class: shuffled)
+#
 # Usage — shot-based training split:
 #   STRATEGY=regular    TRAINING_SHOTS=1   bash run_sprint_finetune.sh
 #   STRATEGY=regular    TRAINING_SHOTS=5   bash run_sprint_finetune.sh
@@ -30,19 +37,18 @@ LLAVA_DIR="${LLAVA_DIR:-/home/harinis/LLaVA}"
 PROJECT_DIR="${LLAVA_DIR}/sprint_vision"
 MEDFMC_ROOT="${MEDFMC_ROOT:-/home/harinis/MedFM/data/MedFMC}"
 
-MODEL_CACHE="${HOME}/.cache/huggingface/hub/models--liuhaotian--llava-v1.5-13b/snapshots"
-MODEL_PATH="${MODEL_PATH:-${MODEL_CACHE}/$(ls ${MODEL_CACHE} 2>/dev/null | head -1)}"
+MODEL_PATH="${MODEL_PATH:-/home/harinis/.cache/huggingface/hub/llava-v1.5-13b}"
 
 # ============================================================
 # 2. EXPERIMENT SETTINGS  (override via env vars)
 # ============================================================
 DATASET="${DATASET:-colon}"
-STRATEGY="${STRATEGY:-two_token}"
+STRATEGY="${STRATEGY:-regular}"
 
 # ── Training duration ─────────────────────────────────────────────────────────
 # ED-FT benefits from multiple epochs so symbols rotate.  Default 1 for all
 # other strategies to preserve existing single-epoch behaviour.
-NUM_TRAIN_EPOCHS="${NUM_TRAIN_EPOCHS:-1}"
+NUM_TRAIN_EPOCHS="${NUM_TRAIN_EPOCHS:-5}"
 
 # ── ICL during training ───────────────────────────────────────────────────────
 # ICL_SHOTS: number of in-context examples embedded in each training prompt.
@@ -51,35 +57,67 @@ NUM_TRAIN_EPOCHS="${NUM_TRAIN_EPOCHS:-1}"
 # Set ICL_POOL_PATH to a different JSON to use a separate pool.
 ICL_SHOTS="${ICL_SHOTS:-0}"
 ICL_POOL_PATH="${ICL_POOL_PATH:-}"
+MAX_TRAIN_SAMPLES="${MAX_TRAIN_SAMPLES:-0}"   # 0 = use all samples
 
-# ── Validation (optional) ─────────────────────────────────────────────────────
-# Set EVAL_DATA_PATH to a LLaVA-format JSON to enable per-epoch accuracy probes.
-# E.g.: EVAL_DATA_PATH="${PROJECT_DIR}/data/colon_test.json"
-# MAX_VAL_SAMPLES: 0 = use all samples; any positive int caps the subset.
-EVAL_DATA_PATH="${EVAL_DATA_PATH:-}"
-MAX_VAL_SAMPLES="${MAX_VAL_SAMPLES:-100}"
+# ── LoRA hyperparameters ──────────────────────────────────────────────────────
+LORA_R="${LORA_R:-8}"
+LORA_ALPHA="${LORA_ALPHA:-32}"
+
+# ── Validation — mirrors ICI: always runs after every epoch ───────────────────
+# When TRAINING_SHOTS + SHOT_EXP are both set (MedFMC repeated-experiment protocol),
+# default to the official val split (rest of few-shot pool, 789 images for chest).
+# Otherwise fall back to the test set. Override with EVAL_DATA_PATH=path or "none".
+if [ -z "${EVAL_DATA_PATH:-}" ]; then
+    if [ -n "${TRAINING_SHOTS:-}" ] && [ -n "${SHOT_EXP:-}" ]; then
+        EVAL_DATA_PATH="${PROJECT_DIR}/data/${DATASET}_val_shot${TRAINING_SHOTS}_exp${SHOT_EXP}.json"
+    else
+        EVAL_DATA_PATH="${PROJECT_DIR}/data/${DATASET}_test.json"
+    fi
+fi
+[ "${EVAL_DATA_PATH}" = "none" ] && EVAL_DATA_PATH=""
+MAX_VAL_SAMPLES="${MAX_VAL_SAMPLES:-0}"
+# Comma-separated validation modes: fixed,original,fresh
+# For RFT (no symbols), only 'original' ever runs regardless of this setting.
+VALIDATION_MODES="${VALIDATION_MODES:-fixed,original,fresh}"
+# Whether to compute AUC (colon) or mAP+AUC (chest/endo) during validation.
+# Adds ~1-6 extra minutes per epoch. Set to "false" to skip (use macro_F1 only).
+COMPUTE_VAL_AUC_MAP="${COMPUTE_VAL_AUC_MAP:-true}"
 
 # ── Set EXACTLY ONE of these to control the fine-tuning dataset size ──────────
 #
-# TRAINING_SHOTS: use a fixed MedFMC few-shot split.
-#   Reads: {DATASET}_train_shot{N}.json
-#   Generate: python data/medfmc_to_llava.py --shot N
+# TRAINING_SHOTS: fixed MedFMC few-shot split.
+#   Without SHOT_EXP: reads train_{N}.txt  → {task}_train_shot{N}.json
+#   With    SHOT_EXP: reads {task}_{N}-shot_train_exp{K}.txt → {task}_train_shot{N}_exp{K}.json
+#   Generate: python data/medfmc_to_llava.py --shot N [--exp K]
 TRAINING_SHOTS="${TRAINING_SHOTS:-}"
+SHOT_EXP="${SHOT_EXP:-}"         # experiment index 1-5 for MedFMC repeated splits
 
-# TRAIN_PERCENT: use a percentage subset of the base shot-20 file.
-#   Reads: {DATASET}_train_percent{P}.json
-#   Generate: python data/medfmc_to_llava.py --shot 20 --train_percent P
+# TRAIN_PERCENT: percentage of trainval.txt, stratified by label.
+#   Generate: python data/medfmc_to_llava.py --train_percent P
 TRAIN_PERCENT="${TRAIN_PERCENT:-}"
 
-# ── Default and mutual-exclusion check ───────────────────────────────────────
-if [ -z "${TRAINING_SHOTS}" ] && [ -z "${TRAIN_PERCENT}" ]; then
-    TRAINING_SHOTS="20"
+# RANDOM_SHOT: random N samples from trainval.txt — one repetition of the
+#   few-shot experiment (matches MedFMC paper repeated-random-split protocol).
+#   Run 2-3 times with different SHOT_SEED values and average the results.
+#   Generate: python data/medfmc_to_llava.py --n_shot N --seed S
+RANDOM_SHOT="${RANDOM_SHOT:-}"
+SHOT_SEED="${SHOT_SEED:-1}"
+
+# ── Default: TRAIN_PERCENT=100 when nothing is specified ─────────────────────
+if [ -z "${TRAINING_SHOTS}" ] && [ -z "${TRAIN_PERCENT}" ] && [ -z "${RANDOM_SHOT}" ]; then
+    TRAIN_PERCENT="100"
 fi
 
-if [ -n "${TRAINING_SHOTS}" ] && [ -n "${TRAIN_PERCENT}" ]; then
-    echo "ERROR: Set TRAINING_SHOTS or TRAIN_PERCENT — not both."
-    echo "  TRAINING_SHOTS  → fixed few-shot split    (e.g. TRAINING_SHOTS=20)"
-    echo "  TRAIN_PERCENT   → percentage subset       (e.g. TRAIN_PERCENT=20)"
+# ── Mutual-exclusion check ────────────────────────────────────────────────────
+_modes_set=0
+[ -n "${TRAINING_SHOTS}" ] && _modes_set=$((_modes_set + 1))
+[ -n "${TRAIN_PERCENT}" ]  && _modes_set=$((_modes_set + 1))
+[ -n "${RANDOM_SHOT}" ]    && _modes_set=$((_modes_set + 1))
+if [ "$_modes_set" -gt 1 ]; then
+    echo "ERROR: Set exactly one of TRAINING_SHOTS, TRAIN_PERCENT, or RANDOM_SHOT."
+    echo "  TRAINING_SHOTS → fixed MedFMC split   e.g. TRAINING_SHOTS=20"
+    echo "  TRAIN_PERCENT  → percentage subset     e.g. TRAIN_PERCENT=100"
+    echo "  RANDOM_SHOT    → random N-shot         e.g. RANDOM_SHOT=10 SHOT_SEED=1"
     exit 1
 fi
 
@@ -87,25 +125,50 @@ fi
 # 3. DERIVED PATHS  (do not edit)
 # ============================================================
 if [ -n "${TRAIN_PERCENT}" ]; then
-    # Percentage-based: reads trainval.txt (the full colon training pool), keeps P%.
+    # Percentage-based: reads trainval.txt, keeps P%.
     DATA_SUFFIX="percent${TRAIN_PERCENT}"
     DATA_PATH="${PROJECT_DIR}/data/${DATASET}_train_percent${TRAIN_PERCENT}.json"
     REGEN_CMD="python ${PROJECT_DIR}/data/medfmc_to_llava.py \\
        --medfmc_root ${MEDFMC_ROOT} \\
        --output_dir  ${PROJECT_DIR}/data \\
        --tasks ${DATASET} --train_percent ${TRAIN_PERCENT}"
-else
-    # Shot-based: reads train_{N}.txt (only train_20.txt exists in standard layout).
-    DATA_SUFFIX="shot${TRAINING_SHOTS}"
-    DATA_PATH="${PROJECT_DIR}/data/${DATASET}_train_shot${TRAINING_SHOTS}.json"
+elif [ -n "${RANDOM_SHOT}" ]; then
+    # Random N-shot: reads trainval.txt, samples exactly N (balanced by class).
+    DATA_SUFFIX="rshot${RANDOM_SHOT}_seed${SHOT_SEED}"
+    DATA_PATH="${PROJECT_DIR}/data/${DATASET}_train_rshot${RANDOM_SHOT}_seed${SHOT_SEED}.json"
     REGEN_CMD="python ${PROJECT_DIR}/data/medfmc_to_llava.py \\
        --medfmc_root ${MEDFMC_ROOT} \\
        --output_dir  ${PROJECT_DIR}/data \\
-       --tasks ${DATASET} --shot ${TRAINING_SHOTS}"
+       --tasks ${DATASET} --n_shot ${RANDOM_SHOT} --seed ${SHOT_SEED}"
+else
+    # Shot-based: MedFMC pre-defined split.
+    if [ -n "${SHOT_EXP}" ]; then
+        # Repeated-experiment split: {task}_{N}-shot_train_exp{K}.txt
+        DATA_SUFFIX="shot${TRAINING_SHOTS}_exp${SHOT_EXP}"
+        DATA_PATH="${PROJECT_DIR}/data/${DATASET}_train_shot${TRAINING_SHOTS}_exp${SHOT_EXP}.json"
+        REGEN_CMD="python ${PROJECT_DIR}/data/medfmc_to_llava.py \\
+           --medfmc_root ${MEDFMC_ROOT} \\
+           --output_dir  ${PROJECT_DIR}/data \\
+           --tasks ${DATASET} --shot ${TRAINING_SHOTS} --exp ${SHOT_EXP}"
+    else
+        # Legacy single split: train_{N}.txt
+        DATA_SUFFIX="shot${TRAINING_SHOTS}"
+        DATA_PATH="${PROJECT_DIR}/data/${DATASET}_train_shot${TRAINING_SHOTS}.json"
+        REGEN_CMD="python ${PROJECT_DIR}/data/medfmc_to_llava.py \\
+           --medfmc_root ${MEDFMC_ROOT} \\
+           --output_dir  ${PROJECT_DIR}/data \\
+           --tasks ${DATASET} --shot ${TRAINING_SHOTS}"
+    fi
 fi
 
 # Checkpoint directory name mirrors DATA_SUFFIX — no silent name/data mismatch.
-OUTPUT_DIR="${PROJECT_DIR}/checkpoints/llava-${DATASET}-${STRATEGY}-${DATA_SUFFIX}"
+# ICL_SHOTS suffix added when > 0 so different ICL-during-training runs don't overwrite each other.
+BASE_OUTPUT_DIR="/home/leapers/weights/harinis/llava"   # mirrors ICI BASE_OUTPUT_DIR
+if [ "${ICL_SHOTS}" -gt 0 ] 2>/dev/null; then
+    OUTPUT_DIR="${BASE_OUTPUT_DIR}/checkpoints/llava-${DATASET}-${STRATEGY}-${DATA_SUFFIX}-icl${ICL_SHOTS}"
+else
+    OUTPUT_DIR="${BASE_OUTPUT_DIR}/checkpoints/llava-${DATASET}-${STRATEGY}-${DATA_SUFFIX}"
+fi
 
 # ============================================================
 # 4. PRE-FLIGHT CHECKS
@@ -116,11 +179,14 @@ echo "=================================================="
 echo "  Dataset         : ${DATASET}"
 echo "  Strategy        : ${STRATEGY}"
 if [ -n "${TRAIN_PERCENT}" ]; then
-    echo "  Fine-tune subset: ${TRAIN_PERCENT}% of base shot-20 training file"
-    echo "                    (fine-tuning data size — NOT inference ICL shots)"
+    echo "  Fine-tune subset: ${TRAIN_PERCENT}% of trainval.txt"
+    echo "                    (fine-tuning data size -- NOT inference ICL shots)"
+elif [ -n "${RANDOM_SHOT}" ]; then
+    echo "  Fine-tune mode  : random ${RANDOM_SHOT}-shot  (seed=${SHOT_SEED})"
+    echo "                    (one repetition of the few-shot experiment)"
 else
     echo "  Fine-tune split : ${TRAINING_SHOTS}-shot training file"
-    echo "                    (fine-tuning data size — NOT inference ICL shots)"
+    echo "                    (fine-tuning data size -- NOT inference ICL shots)"
 fi
 echo "  Data file       : ${DATA_PATH}"
 echo "  Images root     : ${MEDFMC_ROOT}"
@@ -128,6 +194,9 @@ echo "  Base model      : ${MODEL_PATH}"
 echo "  Output dir      : ${OUTPUT_DIR}"
 echo "  Epochs          : ${NUM_TRAIN_EPOCHS}"
 echo "  ICL shots       : ${ICL_SHOTS} (0 = no ICL context in training prompts)"
+echo "  Max samples     : ${MAX_TRAIN_SAMPLES} (0 = all samples)"
+echo "  LoRA r          : ${LORA_R}"
+echo "  LoRA alpha      : ${LORA_ALPHA}"
 if [ -n "${EVAL_DATA_PATH}" ]; then
     echo "  Val data        : ${EVAL_DATA_PATH} (max ${MAX_VAL_SAMPLES} samples/epoch)"
 else
@@ -181,7 +250,7 @@ fi
 # Optional validation args — only passed when EVAL_DATA_PATH is set.
 EVAL_ARGS=""
 if [ -n "${EVAL_DATA_PATH}" ]; then
-    EVAL_ARGS="--eval_data_path ${EVAL_DATA_PATH} --max_val_samples ${MAX_VAL_SAMPLES}"
+    EVAL_ARGS="--eval_data_path ${EVAL_DATA_PATH} --max_val_samples ${MAX_VAL_SAMPLES} --validation_modes ${VALIDATION_MODES} --compute_val_auc_map ${COMPUTE_VAL_AUC_MAP}"
 fi
 
 # Optional ICL training args — only non-zero icl_shots adds arguments.
@@ -196,13 +265,27 @@ fi
 # ============================================================
 # 7. TRAINING
 # ============================================================
-deepspeed llava/train/train_mem.py \
+# If CUDA_VISIBLE_DEVICES is set (e.g. cuda_device=2 from the submit script),
+# DeepSpeed auto-detection would add --include=localhost:2 while the env var
+# simultaneously remaps that GPU to logical index 0 — causing "No slot '2'" error.
+# Fix: convert CUDA_VISIBLE_DEVICES to an explicit --include and then unset it
+# so DeepSpeed sees all physical GPUs and the --include picks the right one.
+if [ -n "${CUDA_VISIBLE_DEVICES}" ]; then
+    DS_INCLUDE="--include=localhost:${CUDA_VISIBLE_DEVICES}"
+    unset CUDA_VISIBLE_DEVICES
+else
+    DS_INCLUDE=""
+fi
+
+MASTER_PORT=$(( 29500 + RANDOM % 500 ))
+deepspeed ${DS_INCLUDE} --master_port ${MASTER_PORT} llava/train/train_mem.py \
     --deepspeed "${LLAVA_DIR}/scripts/zero2.json" \
     --lora_enable True \
-    --lora_r 128 \
-    --lora_alpha 256 \
+    --lora_r "${LORA_R}" \
+    --lora_alpha "${LORA_ALPHA}" \
     --mm_projector_lr 2e-5 \
     --sprint_strategy "${STRATEGY}" \
+    --sprint_dataset "${DATASET}" \
     --model_name_or_path "${MODEL_PATH}" \
     --version v1 \
     --data_path "${DATA_PATH}" \
@@ -217,10 +300,10 @@ deepspeed llava/train/train_mem.py \
     --bf16 True \
     --output_dir "${OUTPUT_DIR}" \
     --num_train_epochs "${NUM_TRAIN_EPOCHS}" \
-    --per_device_train_batch_size 16 \
-    --gradient_accumulation_steps 1 \
+    --per_device_train_batch_size 1 \
+    --gradient_accumulation_steps 8 \
     --learning_rate 2e-4 \
-    --weight_decay 0. \
+    --weight_decay 0.01 \
     --warmup_ratio 0.03 \
     --lr_scheduler_type cosine \
     --logging_steps 1 \
@@ -229,9 +312,20 @@ deepspeed llava/train/train_mem.py \
     --gradient_checkpointing True \
     --dataloader_num_workers "${NUM_WORKERS}" \
     --lazy_preprocess True \
-    --report_to wandb \
+    --save_strategy epoch \
+    --report_to none \
     ${EVAL_ARGS} \
-    ${ICL_ARGS}
+    ${ICL_ARGS} \
+    --max_train_samples "${MAX_TRAIN_SAMPLES}"
+TRAIN_EXIT=$?
+
+if [ ${TRAIN_EXIT} -ne 0 ]; then
+    echo "=================================================="
+    echo "ERROR: Training FAILED (deepspeed exit code ${TRAIN_EXIT})."
+    echo "   Check log for traceback above."
+    echo "=================================================="
+    exit ${TRAIN_EXIT}
+fi
 
 echo "=================================================="
 echo "Training complete."

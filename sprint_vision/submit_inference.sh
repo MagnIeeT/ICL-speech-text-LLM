@@ -4,51 +4,51 @@ set -e
 # ============================================================
 # LLaVA Inference Submit Script
 # ============================================================
-# HOW TO USE:
+# Submits ONE job that runs all specified datasets sequentially
+# into a single log file.
 #
-#   Single run:
-#       dataset=colon strategy=regular icl_shots=0 bash submit_inference.sh
-#       dataset=chest  strategy=regular icl_shots=0 bash submit_inference.sh
-#       dataset=endo   strategy=regular icl_shots=0 bash submit_inference.sh
-#
-#   Chain 0/1/5-shot jobs (each waits for previous):
-#       JOB1=$(dataset=colon icl_shots=0 bash submit_inference.sh --print-id)
-#       JOB2=$(hold_job_id="$JOB1" dataset=colon icl_shots=1 bash submit_inference.sh --print-id)
-#       JOB3=$(hold_job_id="$JOB2" dataset=colon icl_shots=5 bash submit_inference.sh --print-id)
-#
-#   Run multiple datasets:
-#       for ds in colon chest endo; do
-#           dataset=$ds icl_shots=0 bash submit_inference.sh
-#       done
+# Usage:
+#   bash submit_inference.sh             (submit job)
+#   bash submit_inference.sh --dry-run   (preview only)
+#   bash submit_inference.sh --print-id  (submit + print job ID)
 # ============================================================
 
 # ========================================
 # Configuration — edit these values
 # ========================================
-dataset=endo                       # colon | chest | endo
-strategy=regular                  # regular | two_token
-model_type="llava-v1.5-13b"
+datasets=colon-chest-endo          # hyphen-separated: "chest" or "colon-chest-endo"
+strategy=regular                 # regular | two_token
+model_type="${model_type:-llava-v1.5-13b}"
 
-num_samples=0      # 0 = ALL samples
+num_samples=0              # 0 = ALL samples
 icl_shots=0
 
-hostname="n10"
+hostname=n10
 cuda_device=0
 
-# Set to a job ID (e.g. "12345.cluster") to wait for that job first.
-hold_job_id=11787.eehpc
+# Fine-tuned checkpoint (LoRA adapter dir) — same checkpoint used for all datasets
+CHECKPOINT_PATH=/home/leapers/weights/harinis/llava/checkpoints/llava-chest-regular-shot10_exp2
 
+# Set to a job ID (e.g. "12093.eehpc") to wait for that job first.
+hold_job_id=
+
+# ========================================
 # Paths
+# ========================================
 LLAVA_DIR="${LLAVA_DIR:-/home/harinis/LLaVA}"
+MODEL_BASE="${MODEL_BASE:-/home/harinis/.cache/huggingface/hub/llava-v1.5-13b}"
 output_dir="${LLAVA_DIR}/logs"
 orchestrator_path="${LLAVA_DIR}/sprint_vision/vision_orchestrator.py"
+
+# convert hyphens to spaces for the loop inside the job script
+datasets_loop=$(echo "${datasets}" | tr '-' ' ')
 
 # ========================================
 # Auto setup
 # ========================================
 CURRENT_DATETIME=$(date +"%d%m_%H%M")
 TODAY=$(date +"%Y-%m-%d")
-RUN_NAME="${CURRENT_DATETIME}_infer_${dataset}_${strategy}_${icl_shots}shot_${model_type}"
+RUN_NAME="${CURRENT_DATETIME}_infer_${strategy}_${icl_shots}shot_${model_type}"
 
 LOG_DIR="${output_dir}/${TODAY}"
 mkdir -p "$LOG_DIR"
@@ -67,16 +67,22 @@ echo "=========================================="
 echo "LLaVA Inference Configuration"
 echo "=========================================="
 echo "Run Name:    ${RUN_NAME}"
-echo "Dataset:     ${dataset}"
+echo "Datasets:    ${datasets}"
 echo "Strategy:    ${strategy}"
 echo "Model:       ${model_type}"
 echo "Shots:       ${icl_shots}"
 echo "Samples:     ${num_samples} (0 = ALL)"
 echo "Hostname:    ${hostname}"
 echo "CUDA Device: ${cuda_device}"
+echo "Checkpoint:  ${CHECKPOINT_PATH}"
 echo "Dependency:  ${HOLD_MSG}"
 echo "Log File:    ${LOG_FILE}"
 echo "=========================================="
+
+if [[ "${1}" == "--dry-run" ]]; then
+    echo "DRY-RUN — no job submitted"
+    exit 0
+fi
 
 # ========================================
 # Write job script
@@ -95,7 +101,8 @@ exec > >(stdbuf -oL tee -a ${LOG_FILE}) 2>&1
 echo "=========================================="
 echo "Job started at: \$(date)"
 echo "Running on host: \$(hostname)"
-echo "Dataset: ${dataset}  Strategy: ${strategy}  Shots: ${icl_shots}"
+echo "Datasets: ${datasets}  Strategy: ${strategy}  Shots: ${icl_shots}"
+echo "Checkpoint: ${CHECKPOINT_PATH}"
 echo "=========================================="
 
 eval "\$(conda shell.bash hook)"
@@ -108,20 +115,14 @@ echo "GPU Status:"
 echo "=========================================="
 nvidia-smi
 
-echo "=========================================="
-echo "Running LLaVA Inference via vision_orchestrator.py..."
-echo "=========================================="
-
 stdbuf -oL -eL python -u "${orchestrator_path}" \\
     --mode inference \\
-    --dataset "${dataset}" \\
+    --datasets "${datasets}" \\
     --strategy "${strategy}" \\
     --num-samples "${num_samples}" \\
-    --icl-shots "${icl_shots}"
-
-echo "=========================================="
-echo "Job completed at: \$(date)"
-echo "=========================================="
+    --icl-shots "${icl_shots}" \\
+    --checkpoint-path "${CHECKPOINT_PATH}" \\
+    --model-base "${MODEL_BASE}"
 EOF
 
 chmod +x ${TMPJOB}
@@ -146,7 +147,7 @@ echo "  Monitor: tail -f ${LOG_FILE}"
 echo "  Status:  qstat | grep harinis"
 echo ""
 echo "To chain another job after this one:"
-echo "  hold_job_id=${JOB_ID} dataset=${dataset} icl_shots=5 bash submit_inference.sh"
+echo "  hold_job_id=${JOB_ID} bash submit_inference.sh"
 echo "=========================================="
 
 if [[ "${1}" == "--print-id" ]]; then
