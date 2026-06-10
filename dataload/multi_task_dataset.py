@@ -144,28 +144,34 @@ class BaseMultiTaskDataset(Dataset):
         effective_fewshot_mode = self.fewshot_mode
 
         if self.num_examples > 0:
-            if self.fewshot_mode == "speech" and self.audio_lookup is not None:
-                # Speech few-shot: select indices from the safe validated pool
-                indices = self._select_examples(self.valid_fewshot_indices)
-                for sample_idx in indices:
-                    example = self.audio_lookup[sample_idx]
-                    
-                    # >>> NEW: Fetch using our pre-calculated mapped row index!
-                    dataset_row_idx = self.audio_idx_to_dataset_idx[sample_idx]
-                    main_example = self.dataset[dataset_row_idx]
-                    
-                    formatted_examples.append(
-                        {
-                            "text": main_example[current_config.text_key],
-                            "label": self._format_label(
-                                main_example[current_config.completion_key],
-                                is_example=False,
-                                current_mapping=current_config.label_mapping,
-                                text=main_example[current_config.text_key],
-                            ),
-                        }
+            if self.fewshot_mode == "speech":
+                if self.audio_lookup is not None:
+                    # Speech few-shot: select indices from the safe validated pool
+                    indices = self._select_examples(self.valid_fewshot_indices)
+                    for sample_idx in indices:
+                        example = self.audio_lookup[sample_idx]
+                        
+                        # >>> NEW: Fetch using our pre-calculated mapped row index!
+                        dataset_row_idx = self.audio_idx_to_dataset_idx[sample_idx]
+                        main_example = self.dataset[dataset_row_idx]
+                        
+                        formatted_examples.append(
+                            {
+                                "text": main_example[current_config.text_key],
+                                "label": self._format_label(
+                                    main_example[current_config.completion_key],
+                                    is_example=False,
+                                    current_mapping=current_config.label_mapping,
+                                    text=main_example[current_config.text_key],
+                                ),
+                            }
+                        )
+                        examples_audio.append(example["audio"]["array"])
+                else:
+                    logger.warning(
+                        "Few-shot mode is 'speech' but no valid audio lookup found for %s. Falling back to text few-shot.",
+                        self.dataset_type,
                     )
-                    examples_audio.append(example["audio"]["array"])
             else:
                 effective_fewshot_mode = "text"
                 
