@@ -56,12 +56,14 @@ class QwenProcessor(ModelProcessor):
             audios.append(audio)
 
         if not audios:
-            logging.warning("_process_audio: no audio provided, returning None (prompt will have <|AUDIO|> but no features)")
+            logging.debug("_process_audio: no audio provided, returning None")
             return None, None
 
         inputs = self.processor(text=" ", audios=audios, return_tensors="pt", sampling_rate=16000)
-        features = inputs.input_features.squeeze(0).to(torch.float16)
-        feat_mask = inputs.feature_attention_mask.squeeze(0) if hasattr(inputs, "feature_attention_mask") else None
+        
+        # Removed .squeeze(0) to support multiple audios correctly
+        features = inputs.input_features.to(torch.float16)
+        feat_mask = inputs.feature_attention_mask if hasattr(inputs, "feature_attention_mask") else None
 
         if self._audio_stats_count < 5:
             for i, a in enumerate(audios):
@@ -188,8 +190,18 @@ class QwenProcessor(ModelProcessor):
         if not batch_items:
             return {}
 
-        # Items are not yet tokenized — collect raw fields into lists,
-        # stack pre-computed input_features tensors (processed per-item in dataset).
+        # HELPER: Safely pad the sequence length dimension before concatenating
+        def pad_and_cat(tensor_list):
+            max_len = max(t.shape[-1] for t in tensor_list)
+            padded = []
+            for t in tensor_list:
+                pad_size = max_len - t.shape[-1]
+                if pad_size > 0:
+                    t = torch.nn.functional.pad(t, (0, pad_size), value=0)
+                padded.append(t)
+            return torch.cat(padded, dim=0)
+
+        # Items are not yet tokenized
         if "input_ids" not in batch_items[0]:
             batch: Dict[str, Any] = {}
             for key in batch_items[0].keys():
@@ -197,7 +209,7 @@ class QwenProcessor(ModelProcessor):
                 if key in ("input_features", "feature_attention_mask"):
                     valid = [v for v in values if v is not None]
                     if valid:
-                        batch[key] = torch.stack(valid)
+                        batch[key] = pad_and_cat(valid)
                 else:
                     batch[key] = values
 
@@ -230,8 +242,8 @@ class QwenProcessor(ModelProcessor):
                 batch[key] = _pad_sequence(values, pad_value=self.tokenizer.pad_token_id)
             elif key == "attention_mask":
                 batch[key] = _pad_sequence(values, pad_value=0)
-            elif key == "input_features":
-                batch[key] = torch.stack(values)
+            elif key in ("input_features", "feature_attention_mask"):
+                batch[key] = pad_and_cat(values)
             elif key == "prompt_length":
                 batch[key] = torch.tensor([int(v) for v in values])
             else:
