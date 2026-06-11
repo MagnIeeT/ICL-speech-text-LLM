@@ -68,7 +68,7 @@ class SPRInTValidationManager:
         dataset_name: str,
         primary_metric: str,       # "accuracy" for colon, "mAP" for chest, "macro_auc" for endo
         validation_modes: str = "fixed,original,fresh",
-        max_val_samples: int = 200,
+        max_val_samples: int = 100,
         eval_data_path: str = None,
         print_fn=None,
         cfg=None,

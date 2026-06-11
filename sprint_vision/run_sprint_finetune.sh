@@ -66,6 +66,8 @@ LORA_ALPHA="${LORA_ALPHA:-32}"
 # ── Validation — mirrors ICI: always runs after every epoch ───────────────────
 # When TRAINING_SHOTS + SHOT_EXP are both set (MedFMC repeated-experiment protocol),
 # default to the official val split (rest of few-shot pool, 789 images for chest).
+# Validation subsamples to MAX_VAL_SAMPLES (default 100) per sir's directive — a
+# seeded random.Random(42).sample, so it is representative, not the first N.
 # Otherwise fall back to the test set. Override with EVAL_DATA_PATH=path or "none".
 if [ -z "${EVAL_DATA_PATH:-}" ]; then
     if [ -n "${TRAINING_SHOTS:-}" ] && [ -n "${SHOT_EXP:-}" ]; then
@@ -75,7 +77,7 @@ if [ -z "${EVAL_DATA_PATH:-}" ]; then
     fi
 fi
 [ "${EVAL_DATA_PATH}" = "none" ] && EVAL_DATA_PATH=""
-MAX_VAL_SAMPLES="${MAX_VAL_SAMPLES:-0}"
+MAX_VAL_SAMPLES="${MAX_VAL_SAMPLES:-100}"   # 0 = use all; 100 = seeded random subsample (sir's directive)
 # Comma-separated validation modes: fixed,original,fresh
 # For RFT (no symbols), only 'original' ever runs regardless of this setting.
 VALIDATION_MODES="${VALIDATION_MODES:-fixed,original,fresh}"
@@ -164,10 +166,14 @@ fi
 # Checkpoint directory name mirrors DATA_SUFFIX — no silent name/data mismatch.
 # ICL_SHOTS suffix added when > 0 so different ICL-during-training runs don't overwrite each other.
 BASE_OUTPUT_DIR="/home/leapers/weights/harinis/llava"   # mirrors ICI BASE_OUTPUT_DIR
+# RUN_TAG: optional suffix to keep a NEW run from colliding with an existing
+# checkpoint dir (e.g. RUN_TAG=v2). Leave empty to reuse the canonical name.
+RUN_TAG="${RUN_TAG:-}"
+[ -n "${RUN_TAG}" ] && RUN_TAG="-${RUN_TAG}"
 if [ "${ICL_SHOTS}" -gt 0 ] 2>/dev/null; then
-    OUTPUT_DIR="${BASE_OUTPUT_DIR}/checkpoints/llava-${DATASET}-${STRATEGY}-${DATA_SUFFIX}-icl${ICL_SHOTS}"
+    OUTPUT_DIR="${BASE_OUTPUT_DIR}/checkpoints/llava-${DATASET}-${STRATEGY}-${DATA_SUFFIX}-icl${ICL_SHOTS}${RUN_TAG}"
 else
-    OUTPUT_DIR="${BASE_OUTPUT_DIR}/checkpoints/llava-${DATASET}-${STRATEGY}-${DATA_SUFFIX}"
+    OUTPUT_DIR="${BASE_OUTPUT_DIR}/checkpoints/llava-${DATASET}-${STRATEGY}-${DATA_SUFFIX}${RUN_TAG}"
 fi
 
 # ============================================================

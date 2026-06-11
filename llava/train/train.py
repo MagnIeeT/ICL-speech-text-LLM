@@ -1358,9 +1358,19 @@ def train(attn_implementation=None):
     _train_ds_len = len(data_module.get('train_dataset', [])) if data_module else 0
     trainer.add_callback(SPRInTProgressCallback(train_dataset_len=_train_ds_len))
 
-    if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
+    # Resume is OPT-IN. Set SPRINT_RESUME=true ONLY when you deliberately want to
+    # continue an interrupted run from this exact output_dir. Otherwise we always
+    # start fresh — a leftover/incompatible checkpoint-* (e.g. a prior LoRA run)
+    # must never silently force resume_from_checkpoint and crash with "Missing key(s)".
+    _want_resume = os.environ.get("SPRINT_RESUME", "false").lower() in ("1", "true", "yes")
+    _has_ckpt = bool(list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")))
+    if _want_resume and _has_ckpt:
+        rank0_print("[SPRInT] SPRINT_RESUME=true and checkpoint-* present → resuming from checkpoint.")
         trainer.train(resume_from_checkpoint=True)
     else:
+        if _has_ckpt:
+            rank0_print("[SPRInT] checkpoint-* found in output_dir but SPRINT_RESUME not set "
+                        "→ starting FRESH (existing checkpoint left untouched, not resumed).")
         trainer.train()
     trainer.save_state()
 

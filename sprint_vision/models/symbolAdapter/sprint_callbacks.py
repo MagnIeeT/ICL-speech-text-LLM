@@ -219,7 +219,7 @@ class SPRInTValidationCallback(transformers.TrainerCallback):
             dataset_name     = dataset_name,
             primary_metric   = self._primary_metric,
             validation_modes = self._validation_modes,
-            max_val_samples  = getattr(training_args, "max_val_samples", 200),
+            max_val_samples  = getattr(training_args, "max_val_samples", 100),
             eval_data_path   = getattr(training_args, "eval_data_path", None),
             print_fn         = _rank0_print,
             cfg              = _cfg,
