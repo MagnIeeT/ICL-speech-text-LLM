@@ -155,3 +155,163 @@ def compute_ap(scores: list, labels: list) -> float:
         else:
             fp += 1
     return precision_sum / n_pos
+
+
+# ── Tie-correct reference metrics (verified to match sklearn to 1e-16, incl. ties)
+# These are NOT yet used for the reported metric — they exist only so the tie
+# diagnostic below can estimate how far the current (tie-naive) metric is from
+# the sklearn-correct value on our own predictions, with no sklearn dependency.
+
+def auc_avg_rank(scores: list, labels: list) -> float:
+    """
+    Tie-correct ROC-AUC via the Mann-Whitney U formula with AVERAGE ranks for
+    tied scores.  Equals sklearn roc_auc_score exactly, including under ties.
+    Returns nan if a single class.
+    """
+    n = len(scores)
+    n_pos = sum(labels)
+    n_neg = n - n_pos
+    if n_pos == 0 or n_neg == 0:
+        return float("nan")
+    order = sorted(range(n), key=lambda i: scores[i])
+    ranks = [0.0] * n
+    i = 0
+    while i < n:
+        j = i
+        while j + 1 < n and scores[order[j + 1]] == scores[order[i]]:
+            j += 1
+        avg_rank = (i + 1 + j + 1) / 2.0   # 1-based average rank for this tie group
+        for k in range(i, j + 1):
+            ranks[order[k]] = avg_rank
+        i = j + 1
+    rank_sum_pos = sum(ranks[i] for i in range(n) if labels[i] == 1)
+    return (rank_sum_pos - n_pos * (n_pos + 1) / 2) / (n_pos * n_neg)
+
+
+def ap_tie_correct(scores: list, labels: list) -> float:
+    """
+    Tie-correct Average Precision: positives/negatives at the SAME score are
+    grouped at one threshold before precision/recall are read off.  Equals
+    sklearn average_precision_score exactly, including under ties.
+    Returns 0.0 if no positives.
+    """
+    n = len(scores)
+    n_pos = sum(labels)
+    if n_pos == 0:
+        return 0.0
+    order = sorted(range(n), key=lambda i: -scores[i])
+    ap = 0.0
+    prev_recall = 0.0
+    tp = fp = 0
+    i = 0
+    while i < n:
+        j = i
+        while j + 1 < n and scores[order[j + 1]] == scores[order[i]]:
+            j += 1
+        for k in range(i, j + 1):
+            if labels[order[k]] == 1:
+                tp += 1
+            else:
+                fp += 1
+        precision = tp / (tp + fp)
+        recall = tp / n_pos
+        ap += (recall - prev_recall) * precision
+        prev_recall = recall
+        i = j + 1
+    return ap
+
+
+def _fmt(x, width, prec=None):
+    """Right-justified fixed-width cell; blank for None, fixed precision for floats."""
+    if x is None:
+        return " " * width
+    if prec is not None:
+        return ("{:>%d.%df}" % (width, prec)).format(x)
+    return ("{:>%d}" % width).format(x)
+
+
+def tie_diagnostics(scores_matrix, labels_matrix, label_names,
+                    auc_fn=None, ap_fn=None, print_fn=print, header=""):
+    """
+    Per-class P(Yes) tie report + estimated metric impact, on OUR OWN predictions.
+
+    For each class column it reports:
+      n        : number of scored samples
+      unique   : number of distinct P(Yes) values
+      dups     : n - unique  (count of samples sharing a value with another)
+      %P=1     : percent of samples with P(Yes) exactly 1.0  (softmax saturation)
+      %P=0     : percent of samples with P(Yes) exactly 0.0
+    and, for classes with both labels present, the AUC/AP computed by the CURRENT
+    (tie-naive) functions vs the tie-correct (sklearn-equivalent) reference, so
+    the delta shows whether ties actually move the reported metric.
+
+    Args:
+      scores_matrix : [n_samples][n_classes] of P(Yes) floats.
+      labels_matrix : [n_samples][n_classes] of 0/1 ground truth.
+      auc_fn/ap_fn  : the CURRENT functions used by the calling path
+                      (validation: compute_auc_trapz/compute_ap;
+                       inference: sprint_eval._compute_auc/_compute_average_precision).
+                      Defaults to compute_auc_trapz/compute_ap.
+    Returns a dict with per-class rows and macro current/reference/delta.
+    """
+    auc_fn = auc_fn or compute_auc_trapz
+    ap_fn  = ap_fn  or compute_ap
+    n = len(scores_matrix)
+    rows = []
+    auc_cur_l = []; auc_ref_l = []; ap_cur_l = []; ap_ref_l = []
+
+    for j, lbl in enumerate(label_names):
+        col = [scores_matrix[i][j] for i in range(n)]
+        lab = [labels_matrix[i][j] for i in range(n)]
+        ns = len(col)
+        uniq = len(set(col))
+        dups = ns - uniq
+        pct1 = round(100.0 * sum(1 for s in col if s == 1.0) / ns, 1) if ns else 0.0
+        pct0 = round(100.0 * sum(1 for s in col if s == 0.0) / ns, 1) if ns else 0.0
+        npos = sum(lab)
+        row = {"class": lbl, "n": ns, "unique": uniq, "dups": dups,
+               "pct_p1": pct1, "pct_p0": pct0,
+               "auc_cur": None, "auc_ref": None, "d_auc": None,
+               "ap_cur": None, "ap_ref": None, "d_ap": None}
+        if 0 < npos < ns:
+            ac = auc_fn(col, lab); ar = auc_avg_rank(col, lab)
+            pc = ap_fn(col, lab);  pr = ap_tie_correct(col, lab)
+            ac_ok = ac == ac  # not nan
+            row["auc_cur"] = round(ac, 4) if ac_ok else None
+            row["auc_ref"] = round(ar, 4)
+            row["d_auc"]   = round(ac - ar, 4) if ac_ok else None
+            row["ap_cur"]  = round(pc, 4)
+            row["ap_ref"]  = round(pr, 4)
+            row["d_ap"]    = round(pc - pr, 4)
+            if ac_ok:
+                auc_cur_l.append(ac); auc_ref_l.append(ar)
+            ap_cur_l.append(pc); ap_ref_l.append(pr)
+        rows.append(row)
+
+    print_fn("=" * 110)
+    print_fn(f"[SPRINT::TIE-DIAG] {header}per-class P(Yes) ties + metric impact (current vs tie-correct/sklearn-equiv reference)")
+    print_fn(f"  {'class':<22}{'n':>5}{'uniq':>6}{'dups':>6}{'%P=1':>7}{'%P=0':>7}"
+             f"{'AUCcur':>8}{'AUCref':>8}{'dAUC':>8}{'APcur':>8}{'APref':>8}{'dAP':>8}")
+    for r in rows:
+        print_fn(
+            f"  {r['class']:<22}{r['n']:>5}{r['unique']:>6}{r['dups']:>6}"
+            f"{r['pct_p1']:>7}{r['pct_p0']:>7}"
+            f"{_fmt(r['auc_cur'],8,4)}{_fmt(r['auc_ref'],8,4)}{_fmt(r['d_auc'],8,4)}"
+            f"{_fmt(r['ap_cur'],8,4)}{_fmt(r['ap_ref'],8,4)}{_fmt(r['d_ap'],8,4)}"
+        )
+
+    macro_auc_cur = sum(auc_cur_l) / len(auc_cur_l) if auc_cur_l else float("nan")
+    macro_auc_ref = sum(auc_ref_l) / len(auc_ref_l) if auc_ref_l else float("nan")
+    mAP_cur = sum(ap_cur_l) / len(ap_cur_l) if ap_cur_l else float("nan")
+    mAP_ref = sum(ap_ref_l) / len(ap_ref_l) if ap_ref_l else float("nan")
+    print_fn(f"  MACRO  macro_AUC current={macro_auc_cur:.4f}  tie-correct={macro_auc_ref:.4f}  "
+             f"delta={macro_auc_cur - macro_auc_ref:+.4f}")
+    print_fn(f"  MACRO  mAP       current={mAP_cur:.4f}  tie-correct={mAP_ref:.4f}  "
+             f"delta={mAP_cur - mAP_ref:+.4f}")
+    print_fn("=" * 110)
+
+    return {
+        "per_class": rows,
+        "macro_auc_current": macro_auc_cur, "macro_auc_reference": macro_auc_ref,
+        "map_current": mAP_cur, "map_reference": mAP_ref,
+    }

@@ -27,6 +27,7 @@ Design mirrors:
     ICI/models/symbolAdapter/symbol_manager.py :: _apply_mapping_safe()
 """
 
+import re
 from typing import Dict, List, Optional, Tuple
 
 from llava.constants import DEFAULT_IMAGE_TOKEN
@@ -34,24 +35,30 @@ from llava.constants import DEFAULT_IMAGE_TOKEN
 
 class LLaVAPromptBuilder:
     """
-    Builds the human-turn prompt for LLaVA inference.
+    Builds the human-turn prompt for LLaVA (training ICL + inference ICL).
 
-    Prompt structure (N-shot, symbol strategy shown):
+    ICI-style structure — instruction/definitions appear ONCE, then compact
+    example pairs, then the query (mirrors SalmonProcessor.format_prompt):
 
-        <image>
-        {instruction with symbols}
-        Answer: {example_label_as_symbol}
+        {instruction with definitions (and symbols if active)}
 
-        <image>
-        {instruction with symbols}
-        Answer: {example_label_as_symbol}
+        Here are few examples to learn from:
 
         <image>
-        {instruction with symbols}
+        Answer: {example_label_0}
 
-    For zero-shot (no examples), only the final block is emitted.
-    image_paths is always ordered [example_0, example_1, ..., test_image],
-    matching the order LLaVA expects for image tensors.
+        <image>
+        Answer: {example_label_1}
+
+        Now analyze this image:
+
+        <image>
+
+    For zero-shot (no examples) only `{instruction}` + the query `<image>` are
+    emitted. The instruction is NOT repeated per shot — that kept the long
+    definition block from overflowing model_max_length.
+    image_paths is ordered [example_0, ..., example_k, test_image], matching the
+    <image> token order so LLaVA pairs each image with the right tensor.
     """
 
     def build(
@@ -85,40 +92,38 @@ class LLaVAPromptBuilder:
                           as the <image> tokens in prompt_str.
                           Pass this directly to process_images().
         """
-        # Apply symbol mapping to the instruction once.
-        # The instruction already embeds "(0 for No, 1 for Yes)" so replacing
-        # "0"→"kxzy" and "1"→"wxab" produces "(kxzy for No, wxab for Yes)"
-        # naturally — identical to how ICI's prompt_template is handled.
+        # ICI-style structure: the instruction (with the definition block) appears
+        # ONCE as a preamble, then the K example pairs (image + label), then the
+        # query image — mirroring SalmonProcessor.format_prompt:
+        #   {template}
+        #   Here are few examples to learn from:
+        #   <Speech><Example_i></Speech>\nOutput: {label_i}   (× K)
+        #   Now analyze this input:\n<Speech><SpeechHere></Speech>\nOutput:
+        # NOT repeating the instruction per shot keeps long def-block prompts well
+        # under model_max_length (repeating it K+1 times overflowed → truncation).
         instruction_text = self._apply_symbols(instruction, symbol_mappings)
-
         image_paths: List[str] = []
-        prompt_parts: List[str] = []
 
-        # ── Example blocks ────────────────────────────────────────────────────
-        # Mirrors ICI:
-        #   "Here are few examples to learn from:\n"
-        #   "Text: {text}\nOutput: {label}\n\n"
-        # Each example needs its own <image> token so LLaVA pairs it
-        # with the correct image tensor.
+        # 0-shot: keep the original image-first single block "<image>\n{instruction}"
+        # — identical to the non-ICL training format (medfmc_to_llava bakes
+        # "<image>\n{instruction}"), so colon 0-shot inference is unchanged.
+        if not examples:
+            image_paths.append(test_image_path)
+            return f"{DEFAULT_IMAGE_TOKEN}\n{instruction_text}", image_paths
+
+        # K-shot (ICI-style): instruction/definitions ONCE, then compact example
+        # pairs (image + label), then the query image.
+        parts: List[str] = [instruction_text, "Here are few examples to learn from:"]
         for ex in examples:
             ex_label = self._map_label(ex["label"], symbol_mappings)
-            block = (
-                f"{DEFAULT_IMAGE_TOKEN}\n"
-                f"{instruction_text}\n"
-                f"Answer: {ex_label}"
-            )
-            prompt_parts.append(block)
+            parts.append(f"{DEFAULT_IMAGE_TOKEN}\nAnswer: {ex_label}")
             image_paths.append(ex["image"])
-
-        # ── Test query ────────────────────────────────────────────────────────
-        # Mirrors ICI's "Now analyze this input:\n<Speech>...\nOutput:"
-        # No "Answer:" here — the model generates it.
-        prompt_parts.append(f"{DEFAULT_IMAGE_TOKEN}\n{instruction_text}")
+        parts.append("Now analyze this image:")
+        parts.append(DEFAULT_IMAGE_TOKEN)
         image_paths.append(test_image_path)
 
-        # Double newline between blocks (same separator ICI uses between examples)
-        prompt_str = "\n\n".join(prompt_parts)
-
+        # Image-token order == image_paths order: [example_0, ..., example_k, test]
+        prompt_str = "\n\n".join(parts)
         return prompt_str, image_paths
 
     # ── Internal helpers ──────────────────────────────────────────────────────
@@ -144,11 +149,20 @@ class LLaVAPromptBuilder:
         placeholders: Dict[str, str] = {}
         result = text
 
-        # Pass 1: originals → placeholders
-        for idx, (src, dst) in enumerate(symbol_mappings.items()):
+        # Length-sorted, whole-word, case-insensitive — matches
+        # SymbolManager._apply_mapping_safe() and ICI exactly, so the def block
+        # and labels are not corrupted by substring matches.
+        sorted_items = sorted(
+            symbol_mappings.items(), key=lambda kv: len(kv[0]), reverse=True
+        )
+
+        # Pass 1: originals → placeholders (whole-word, case-insensitive)
+        for idx, (src, dst) in enumerate(sorted_items):
             placeholder = f"__SYM_{idx}__"
             placeholders[placeholder] = dst
-            result = result.replace(src, placeholder)
+            result = re.compile(
+                r"\b" + re.escape(src) + r"\b", re.IGNORECASE
+            ).sub(placeholder, result)
 
         # Pass 2: placeholders → symbols
         for placeholder, dst in placeholders.items():

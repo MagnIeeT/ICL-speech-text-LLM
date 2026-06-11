@@ -372,6 +372,15 @@ class SymbolManager:
             active_keys: Subset of mapping.keys() to apply
                          (supports random_mask in replace_symbols_in_batch).
                          None → apply all keys.
+
+        Ported to match ICI exactly (ICI/symbol_manager.py:138-148):
+          - keys sorted by length DESC, so a longer label
+            ("aortic_calcification") is replaced before a shorter substring
+            label ("calcification");
+          - whole-word \b...\b regex (case-insensitive), so a label is never
+            replaced inside a larger word (e.g. "nodule" within "nodules").
+            This is load-bearing now that free-text class definitions are
+            present in the prompt.
         """
         if not mapping:
             return text
@@ -382,15 +391,19 @@ class SymbolManager:
         placeholders: Dict[str, str] = {}
         transformed = text
 
-        # Pass 1
-        for idx, src in enumerate(mapping.keys()):
-            if src not in active_keys:
-                continue
+        sorted_keys = sorted(
+            [k for k in mapping.keys() if k in active_keys], key=len, reverse=True
+        )
+
+        # Pass 1: originals → placeholders (whole-word, case-insensitive)
+        for idx, src in enumerate(sorted_keys):
             placeholder = f"__SWAP_PLACEHOLDER_{idx}__"
             placeholders[placeholder] = mapping[src]
-            transformed = transformed.replace(src, placeholder)
+            transformed = re.compile(
+                r"\b" + re.escape(src) + r"\b", re.IGNORECASE
+            ).sub(placeholder, transformed)
 
-        # Pass 2
+        # Pass 2: placeholders → symbols
         for placeholder, dst in placeholders.items():
             transformed = transformed.replace(placeholder, dst)
 

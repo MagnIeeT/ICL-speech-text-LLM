@@ -38,16 +38,57 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "sprint_vision")))
 try:
     from models.symbolAdapter.symbol_manager import SymbolManager
-    from models.symbolAdapter.validation import SPRInTValidationManager
+    from models.symbolAdapter.sprint_callbacks import (
+        SPRInTSymbolEpochCallback,
+        SPRInTProgressCallback,
+        SPRInTEpochLogCallback,
+        SPRInTValidationCallback,
+    )
     from dataload.example_selector import ExampleSelector
     from dataload.prompt_builder import LLaVAPromptBuilder
 except ImportError:
-    logging.warning("SymbolManager / ExampleSelector / LLaVAPromptBuilder not found. Check sprint_vision/ path.")
+    logging.warning("SPRInT modules not found. Check sprint_vision/ path.")
     SymbolManager = None
-    SPRInTValidationManager = None
+    SPRInTSymbolEpochCallback = None
+    SPRInTProgressCallback = None
+    SPRInTEpochLogCallback = None
+    SPRInTValidationCallback = None
     ExampleSelector = None
     LLaVAPromptBuilder = None
 # -----------------------------------
+
+# SPRInT logging state.
+# _SPRINT_LOGGED_MAPPINGS: keyed by mapping snapshot → logs the first sample of
+#   each unique mapping (covers static SS-FT once, and each ED-FT epoch change).
+# _SPRINT_INSTANCE_LOG_COUNT: global emission counter for ID-FT, which has a fresh
+#   mapping per sample — a key-based throttle would log every sample and grow the
+#   dict unbounded, so we throttle by instance index instead (first 5, then /500).
+# _SPRINT_TOKLEN_LOGGED: one-time token-length log (def blocks lengthen the prompt).
+_SPRINT_LOGGED_MAPPINGS: dict = {}   # mapping_snapshot_str -> log_count
+_SPRINT_INSTANCE_LOG_COUNT: int = 0
+_SPRINT_TOKLEN_LOGGED: bool = False
+_SPRINT_ICL_LOGGED: bool = False     # one-time log of the assembled ICL training prompt
+_SPRINT_TRAINPROMPT_LOGGED: bool = False  # one-time first training prompt for regular (no-symbol) strategy
+
+
+def _sprint_is_log_proc() -> bool:
+    """
+    True only in the main process or DataLoader worker 0, on local rank 0.
+
+    preprocess_v1 runs inside DataLoader workers (num_workers>1), each a separate
+    process with its own log-throttle counters — so without this gate the SPRInT
+    training logs print once PER WORKER (the 4x duplication).  Gating on
+    get_worker_info().id keeps 4 workers for speed while printing one clean copy.
+    Note: all workers inherit local_rank=0, so a local_rank check alone would NOT
+    de-duplicate; the worker-id check is what does it.
+    """
+    try:
+        _wi = torch.utils.data.get_worker_info()
+    except Exception:
+        _wi = None
+    if not (_wi is None or _wi.id == 0):
+        return False
+    return os.environ.get("LOCAL_RANK", "0") in ("0", "")
 
 from llava.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 from torch.utils.data import Dataset
@@ -482,11 +523,57 @@ def preprocess_v1(
     if symbol_manager is not None:
         mappings = symbol_manager.get_current_symbols()
         if mappings:
+            global _SPRINT_LOGGED_MAPPINGS, _SPRINT_INSTANCE_LOG_COUNT
+            is_per_instance = getattr(symbol_manager, "dynamic_per_instance", False)
+            if is_per_instance:
+                # ID-FT: fresh mapping per sample → throttle by global instance
+                # index (first 5, then every 500th) to avoid unbounded log + dict.
+                n = _SPRINT_INSTANCE_LOG_COUNT
+                do_log = (n < 5) or (n % 500 == 0)
+                _SPRINT_INSTANCE_LOG_COUNT = n + 1
+                log_tag = f"ID-FT instance #{n}"
+                mapping_key = None
+            else:
+                # SS-FT (one static mapping) / ED-FT (one mapping per epoch):
+                # log the first sample of each unique mapping snapshot.
+                mapping_key = str(sorted(mappings.items()))
+                do_log = _SPRINT_LOGGED_MAPPINGS.get(mapping_key, 0) < 1
+                log_tag = "static/epoch mapping"
+            # Print one clean copy: only main process / worker 0 on rank 0.
+            do_log = do_log and _sprint_is_log_proc()
             for source in sources:
                 for sentence in source:
                     if sentence["from"] in ("gpt", "human"):
+                        before_val = sentence["value"]
                         sentence["value"] = symbol_manager.apply_to_text(sentence["value"], mappings)
+                        if do_log:
+                            turn_label = "HUMAN INSTRUCTION" if sentence["from"] == "human" else "GPT TARGET"
+                            # print() not logging.info() — root logger is at WARNING here, which
+                            # drops logging.info(); print reaches stdout even from DataLoader workers.
+                            print("=" * 70, flush=True)
+                            print(f"[SPRINT::TRAIN] ({log_tag}) ACTIVE SYMBOL MAPPING: {mappings}", flush=True)
+                            print(f"[SPRINT::TRAIN] turn={sentence['from']}  {turn_label} BEFORE replacement:\n{before_val}", flush=True)
+                            print(f"[SPRINT::TRAIN] turn={sentence['from']}  {turn_label} AFTER  replacement:\n{sentence['value']}", flush=True)
+                            print("=" * 70, flush=True)
+            if do_log and mapping_key is not None:
+                _SPRINT_LOGGED_MAPPINGS[mapping_key] = 1
     # ------------------------------------------
+
+    # Regular strategy (no symbol_manager): the symbol BEFORE/AFTER block above
+    # never runs, so log the FIRST training prompt once here — so the def-block
+    # instruction + target are visible at the START of epoch 1 (not only later at
+    # validation). Symbol strategies already show this via the block above.
+    if symbol_manager is None:
+        global _SPRINT_TRAINPROMPT_LOGGED
+        if (not _SPRINT_TRAINPROMPT_LOGGED) and _sprint_is_log_proc():
+            _SPRINT_TRAINPROMPT_LOGGED = True
+            for _src in sources:
+                for _sent in _src:
+                    if _sent["from"] in ("human", "gpt"):
+                        _tl = "HUMAN INSTRUCTION" if _sent["from"] == "human" else "GPT TARGET"
+                        print("=" * 70, flush=True)
+                        print(f"[SPRINT::TRAIN] (regular / no symbols) {_tl}:\n{_sent['value']}", flush=True)
+                        print("=" * 70, flush=True)
 
     conv = conversation_lib.default_conversation.copy()
     roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
@@ -519,6 +606,31 @@ def preprocess_v1(
         ).input_ids
 
     targets = input_ids.clone()
+
+    # SPRInT one-time token-length log — class-definition blocks lengthen the
+    # prompt; confirm the def block is not being truncated at model_max_length.
+    global _SPRINT_TOKLEN_LOGGED
+    if (not _SPRINT_TOKLEN_LOGGED) and _sprint_is_log_proc():
+        _SPRINT_TOKLEN_LOGGED = True
+        _maxlen = tokenizer.model_max_length
+        _n = int(input_ids.shape[1])
+        _trunc = _n >= _maxlen
+        print(
+            f"[SPRINT::TRAIN] token length: n_input_ids={_n}  "
+            f"model_max_length={_maxlen}  truncated={_trunc}",
+            flush=True,
+        )
+        if _trunc:
+            print("!" * 70, flush=True)
+            print(
+                f"[SPRINT::TRAIN] *** WARNING: prompt ({_n} tok) EXCEEDS model_max_length "
+                f"({_maxlen}). The collator truncates the END, which cuts off the answer "
+                f"tokens → loss=nan and CORRUPTED training. Fix: lower ICL_SHOTS (chest fits "
+                f"≈1 with definitions), or raise --model_max_length (e.g. 4096), or set "
+                f"ICL_SHOTS=0.",
+                flush=True,
+            )
+            print("!" * 70, flush=True)
 
     assert conv.sep_style == conversation_lib.SeparatorStyle.TWO
 
@@ -845,6 +957,31 @@ class LazySupervisedDataset(Dataset):
                 symbol_mappings=None,
             )
 
+            # One-time COMPACT log of the ICL examples + structure, before epochs.
+            # We deliberately do NOT dump the full K+1 prompt (the instruction is
+            # identical in every block, so it would repeat the def block K+1 times).
+            # Setting _SPRINT_TRAINPROMPT_LOGGED here suppresses the regular-path
+            # prompt dump below so the same thing isn't printed twice.
+            global _SPRINT_ICL_LOGGED, _SPRINT_TRAINPROMPT_LOGGED
+            if (not _SPRINT_ICL_LOGGED) and _sprint_is_log_proc():
+                _SPRINT_ICL_LOGGED = True
+                _SPRINT_TRAINPROMPT_LOGGED = True
+                n_blocks = len(examples) + 1
+                print("=" * 70, flush=True)
+                print(f"[SPRINT::ICL-TRAIN] icl_shots={self.icl_shots}  test sample id={item.get('id')!r}", flush=True)
+                print(f"[SPRINT::ICL-TRAIN] selected {len(examples)} in-context example(s):", flush=True)
+                for _k, _ex in enumerate(examples):
+                    print(f"[SPRINT::ICL-TRAIN]   shot {_k}: id={_ex.get('id')!r}  image={_ex.get('image')!r}  label={_ex.get('label')!r}", flush=True)
+                print(f"[SPRINT::ICL-TRAIN] image order (examples..., then test) = {image_paths}", flush=True)
+                print(f"[SPRINT::ICL-TRAIN] prompt structure (ICI-style, instruction ONCE): "
+                      f"instruction/definitions, then 'Here are few examples...', then "
+                      f"{len(examples)} example pair(s) [<image> + 'Answer: <label>'], then "
+                      f"'Now analyze this image:' + the query <image> "
+                      f"(model predicts its label). {n_blocks} images total.", flush=True)
+                print(f"[SPRINT::ICL-TRAIN] instruction/definition preamble (appears ONCE):\n{instruction}", flush=True)
+                print(f"[SPRINT::ICL-TRAIN] test GPT target = {item['conversations'][1]['value']!r}", flush=True)
+                print("=" * 70, flush=True)
+
             icl_sources = [[
                 {"from": "human", "value": new_human_val},
                 {"from": "gpt",   "value": item["conversations"][1]["value"]},
@@ -957,315 +1094,6 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer,
 # loss here so SPRInTProgressCallback.on_substep_end can read it and keep the
 # tqdm postfix fresh on every raw batch, not just every optimizer step.
 _sprint_microbatch_loss: list = [None]
-
-# ─────────────────────────────────────────────────────────────────────────────
-# SPRInT Trainer Callbacks
-# ─────────────────────────────────────────────────────────────────────────────
-
-class SPRInTSymbolEpochCallback(transformers.TrainerCallback):
-    """
-    Rotates ED-FT symbols at the start of each training epoch.
-
-    HuggingFace Trainer re-spawns DataLoader workers at the start of each
-    epoch when persistent_workers=False (the default).  on_epoch_begin fires
-    before the new iterator is created, so workers fork with the updated
-    current_epoch and call get_current_symbols() → fresh mappings for that
-    epoch.  NUM_WORKERS=0 is set in run_sprint_finetune.sh for ed_ft so
-    symbol state is shared in-process rather than across fork boundaries.
-    """
-
-    def __init__(self, symbol_manager):
-        self.symbol_manager = symbol_manager
-
-    def on_epoch_begin(self, args, state, control, **kwargs):
-        epoch = int(state.epoch) if state.epoch is not None else 0
-        self.symbol_manager.get_symbols_for_epoch(epoch, force_new_symbols=True)
-        if args.local_rank in (-1, 0):
-            rank0_print(
-                f"[SPRInT ED-FT] Epoch {epoch}: rotated symbols → "
-                f"{self.symbol_manager.get_current_symbols()}"
-            )
-
-
-class SPRInTProgressCallback(transformers.ProgressCallback):
-    """
-    Replaces HF's ProgressCallback to exactly match ICI's per-epoch tqdm format:
-
-      Epoch 2/5:   0%|          | 0/100 [loss=0.797097]  ← resets to 0% each epoch
-      Epoch 2/5:   1%|          | 1/100 [loss=0.797097]  ← on_step_end / on_substep_end advance
-      Epoch 2/5:   1%|          | 1/100 [loss=0.419798]  ← on_log updates loss in-place
-
-    Bar total = raw dataloader batches (samples / per_device_batch_size), NOT optimizer steps.
-    Both on_step_end and on_substep_end advance the bar by 1 so every micro-batch is counted,
-    matching ICI which always counts individual batch forward passes.
-    Bar is RECREATED each epoch. Loss shows inside the bar only.
-    """
-
-    def __init__(self, train_dataset_len: int = 0):
-        super().__init__()
-        self._epoch_counter = 0
-        self._steps_per_epoch = None
-        self._train_dataset_len = train_dataset_len
-
-    def on_epoch_end(self, args, state, control, **kwargs):
-        """Close the bar at epoch end so it doesn't reappear with inflated time later."""
-        if state.is_local_process_zero and self.training_bar is not None:
-            self.training_bar.close()
-            self.training_bar = None
-
-    def on_epoch_begin(self, args, state, control, **kwargs):
-        self._epoch_counter += 1
-        total_epochs = int(args.num_train_epochs)
-
-        if state.is_local_process_zero:
-            # Bar was already closed by on_epoch_end; just ensure it's gone
-            if self.training_bar is not None:
-                self.training_bar.close()
-                self.training_bar = None
-            if self._steps_per_epoch is None:
-                import math
-                if self._train_dataset_len > 0:
-                    num_processes = max(1, getattr(args, 'world_size', 1))
-                    self._steps_per_epoch = math.ceil(
-                        self._train_dataset_len / args.per_device_train_batch_size / num_processes
-                    )
-                else:
-                    # Fallback when dataset length unknown
-                    self._steps_per_epoch = max(1, state.max_steps // total_epochs) * args.gradient_accumulation_steps
-            from tqdm.auto import tqdm as _tqdm
-            self.training_bar = _tqdm(
-                total=self._steps_per_epoch,
-                desc=f"Epoch {self._epoch_counter}/{total_epochs}",
-                dynamic_ncols=True,
-            )
-
-    def on_step_end(self, args, state, control, **kwargs):
-        """Advance bar by 1 for each optimizer step (the last micro-batch in each accum cycle)."""
-        if state.is_local_process_zero and self.training_bar is not None:
-            self.training_bar.update(1)
-        self.current_step = state.global_step
-
-    def on_substep_end(self, args, state, control, **kwargs):
-        """Advance bar by 1 for each intermediate micro-batch; refresh loss from the cache."""
-        if state.is_local_process_zero and self.training_bar is not None:
-            self.training_bar.update(1)
-            if _sprint_microbatch_loss[0] is not None:
-                self.training_bar.set_postfix({"loss": f"{_sprint_microbatch_loss[0]:.6f}"})
-
-    def on_log(self, args, state, control, logs=None, **kwargs):
-        if not state.is_local_process_zero or self.training_bar is None:
-            return
-        logs = (logs or {}).copy()
-        logs.pop("total_flos", None)
-        if "loss" in logs:
-            self.training_bar.set_postfix({"loss": f"{logs['loss']:.6f}"})
-        elif logs:
-            self.training_bar.write(str(logs))
-
-    def on_train_end(self, args, state, control, **kwargs):
-        # HF 4.37.2's inherited on_train_end calls training_bar.close() without a None guard.
-        # Our on_epoch_end already closes the bar, so training_bar is None here → crash.
-        if state.is_local_process_zero and self.training_bar is not None:
-            self.training_bar.close()
-        self.training_bar = None
-
-
-class SPRInTEpochLogCallback(transformers.TrainerCallback):
-    """Prints epoch header at start of each epoch — mirrors ICI's 'Epoch N/Total' line."""
-
-    def __init__(self, total_epochs: int):
-        self.total_epochs = total_epochs
-        self._epoch_num = 0
-
-    def on_epoch_begin(self, args, state, control, **kwargs):
-        self._epoch_num += 1
-        rank0_print(f"\n{'='*80}")
-        rank0_print(f"Epoch {self._epoch_num}/{self.total_epochs}")
-        rank0_print(f"{'='*80}")
-
-
-class SPRInTValidationCallback(transformers.TrainerCallback):
-    """
-    Thin HF Trainer wrapper — delegates all validation logic to SPRInTValidationManager.
-
-    Responsibilities kept here (HF lifecycle only):
-      - on_epoch_begin : reset step-loss accumulator
-      - on_log         : accumulate per-step losses for avg-loss computation
-      - on_epoch_end   : build mode_symbols dict, call manager, track best epoch
-      - on_train_end   : call manager.print_consolidated_summaries()
-
-    All inference, metric computation, and logging live in:
-      sprint_vision/models/symbolAdapter/validation.py  (SPRInTValidationManager)
-      sprint_vision/utils/evaluation_utils.py           (pure metric functions)
-    """
-
-    def __init__(self, model, tokenizer, image_processor, data_args, training_args, symbol_manager):
-        self.training_args  = training_args
-        self.symbol_manager = symbol_manager
-        self._step_losses   = []
-        self._epoch_counter = 0
-        self._epoch_history = []
-        self._best_score    = -1.0
-        self._best_epoch    = None
-        self._is_new_best   = False
-
-        # Load dataset config to determine label vocabulary, multi-label flag, and primary metric.
-        try:
-            _sprint_dir = os.path.abspath(
-                os.path.join(os.path.dirname(__file__), "..", "..", "sprint_vision")
-            )
-            if _sprint_dir not in sys.path:
-                sys.path.insert(0, _sprint_dir)
-            from config.data_config import get_dataset_config as _get_cfg
-            _ds  = getattr(training_args, "sprint_dataset", "colon")
-            _cfg = _get_cfg(_ds)
-            label_names    = [l.lower() for l in _cfg.label_names]
-            is_multi_label = _cfg.is_multi_label
-        except Exception as _e:
-            rank0_print(f"[SPRInT Val] Warning: could not load dataset config ({_e}). Using binary fallback.")
-            label_names    = ["0", "1"]
-            is_multi_label = False
-
-        dataset_name          = getattr(training_args, "sprint_dataset", "colon")
-        # MedFMC paper save_best criteria (from configs/_base_/datasets/*.py):
-        #   chest.py:     metric='mAP',          save_best='auto'
-        #   colon.py:     metric='accuracy',      save_best='auto'  (topk=1)
-        #   endoscopy.py: metric='AUC_multilabel',save_best='auto'  (= macro_auc in our code)
-        if dataset_name == "chest":
-            self._primary_metric = "mAP"
-        elif dataset_name == "endo":
-            self._primary_metric = "macro_auc"   # AUC_multilabel in paper
-        else:                                     # colon
-            self._primary_metric = "accuracy"
-        self._validation_modes = getattr(training_args, "validation_modes", "fixed,original,fresh")
-
-        self._val_manager = SPRInTValidationManager(
-            model           = model,
-            tokenizer       = tokenizer,
-            image_processor = image_processor,
-            data_args       = data_args,
-            symbol_manager  = symbol_manager,
-            label_names     = label_names,
-            is_multi_label  = is_multi_label,
-            dataset_name    = dataset_name,
-            primary_metric  = self._primary_metric,
-            validation_modes = self._validation_modes,
-            max_val_samples = getattr(training_args, "max_val_samples", 200),
-            eval_data_path  = getattr(training_args, "eval_data_path", None),
-            print_fn        = rank0_print,
-        )
-
-    # ── Loss tracking ─────────────────────────────────────────────────────────
-
-    def on_epoch_begin(self, args, state, control, **kwargs):
-        self._step_losses = []
-
-    def on_log(self, args, state, control, logs=None, **kwargs):
-        if logs and "loss" in logs:
-            self._step_losses.append(logs["loss"])
-
-    # ── Per-epoch validation ──────────────────────────────────────────────────
-
-    def on_epoch_end(self, args, state, control, **kwargs):
-        if args.local_rank not in (-1, 0):
-            return
-        if not self._val_manager._load_val_data():
-            return
-
-        self._epoch_counter += 1
-        epoch        = self._epoch_counter
-        total_epochs = int(self.training_args.num_train_epochs)
-        strategy     = getattr(args, "sprint_strategy", "regular")
-
-        # Build mode → symbols dict filtered to requested modes
-        _all_mode_syms = {"original": {}}
-        if self.symbol_manager is not None:
-            _all_mode_syms["fixed"] = self.symbol_manager.get_current_symbols()
-            _all_mode_syms["fresh"] = self.symbol_manager._generate_symbol_mappings()
-        requested    = [m.strip() for m in self._validation_modes.split(",")]
-        mode_symbols = {m: v for m, v in _all_mode_syms.items() if m in requested}
-        if not mode_symbols:
-            mode_symbols = {"original": {}}
-
-        entry = self._val_manager.run_comprehensive_validation(
-            epoch          = epoch,
-            total_epochs   = total_epochs,
-            mode_symbols   = mode_symbols,
-            strategy       = strategy,
-            output_dir     = args.output_dir,
-            step_losses    = self._step_losses,
-            compute_auc_map = getattr(self.training_args, "compute_val_auc_map", True),
-        )
-        self._epoch_history.append(entry)
-
-        # Best-epoch tracking — metric per MedFMC paper save_best criteria
-        auc_map = entry.get("auc_map", {})
-        if self._primary_metric == "accuracy":
-            # colon: accuracy from text-gen original mode (top-1 accuracy)
-            combined_score   = entry["modes"].get("original", {}).get("accuracy", 0.0)
-            best_metric_name = "accuracy"
-        elif auc_map:
-            combined_score   = auc_map.get(self._primary_metric,
-                               auc_map.get("macro_auc", auc_map.get("AUC", 0.0)))
-            best_metric_name = self._primary_metric
-        else:
-            combined_score   = entry["modes"].get("original", {}).get("macro_f1", 0.0)
-            best_metric_name = "macro_f1"
-
-        if combined_score > self._best_score:
-            self._best_score  = combined_score
-            self._best_epoch  = epoch
-            self._is_new_best = True
-            rank0_print(
-                f"★  New best: epoch {epoch}/{total_epochs}  {best_metric_name}={combined_score:.4f}"
-            )
-        else:
-            self._is_new_best = False
-            rank0_print(
-                f"   No improvement  (best so far: epoch {self._best_epoch}, "
-                f"{best_metric_name}={self._best_score:.4f})"
-            )
-
-    # ── Best-checkpoint copy ──────────────────────────────────────────────────
-    # on_save fires AFTER HF Trainer writes checkpoint-{step} to disk.
-    # on_epoch_end (above) sets _is_new_best; we copy here where the file exists.
-
-    def on_save(self, args, state, control, **kwargs):
-        if args.local_rank not in (-1, 0):
-            return
-        if not self._is_new_best:
-            return
-        self._is_new_best = False
-        latest_ckpt = os.path.join(args.output_dir, f"checkpoint-{state.global_step}")
-        best_ckpt   = os.path.join(args.output_dir, "checkpoint-best")
-        if not os.path.isdir(latest_ckpt):
-            rank0_print(
-                f"[SPRInT] WARNING: checkpoint-{state.global_step} not found on disk; "
-                f"checkpoint-best not updated. Ensure --save_strategy epoch is set."
-            )
-            return
-        if os.path.exists(best_ckpt):
-            shutil.rmtree(best_ckpt)
-        shutil.copytree(latest_ckpt, best_ckpt)
-        rank0_print(
-            f"[SPRInT] checkpoint-best updated → checkpoint-{state.global_step}"
-            f"  (epoch {self._best_epoch}, score={self._best_score:.4f})"
-        )
-
-    # ── End-of-training summaries ─────────────────────────────────────────────
-
-    def on_train_end(self, args, state, control, **kwargs):
-        if args.local_rank not in (-1, 0):
-            return
-        if not self._epoch_history:
-            return
-        self._val_manager.print_consolidated_summaries(
-            epoch_history  = self._epoch_history,
-            primary_metric = self._primary_metric,
-            best_epoch     = self._best_epoch,
-            best_score     = self._best_score,
-        )
-
 
 def train(attn_implementation=None):
     global local_rank
@@ -1556,15 +1384,24 @@ def train(attn_implementation=None):
             model.config.save_pretrained(training_args.output_dir)
             model.save_pretrained(training_args.output_dir, state_dict=state_dict)
             torch.save(non_lora_state_dict, os.path.join(training_args.output_dir, 'non_lora_trainables.bin'))
-            # Copy non_lora_trainables.bin into checkpoint-best/ so it can be used for
-            # inference directly. The projector is frozen so the value is epoch-independent.
-            best_ckpt = os.path.join(training_args.output_dir, "checkpoint-best")
-            if os.path.isdir(best_ckpt):
-                shutil.copy2(
-                    os.path.join(training_args.output_dir, 'non_lora_trainables.bin'),
-                    os.path.join(best_ckpt, 'non_lora_trainables.bin'),
-                )
-                rank0_print(f"[SPRInT] Copied non_lora_trainables.bin → checkpoint-best/")
+            # Sync non_lora_trainables.bin + config.json + symbol_mappings.json into
+            # every checkpoint-N and checkpoint-best so any epoch can be used directly
+            # for inference without manual file copying.
+            _ckpt_dirs = [
+                os.path.join(training_args.output_dir, d)
+                for d in os.listdir(training_args.output_dir)
+                if d.startswith("checkpoint-") and
+                   os.path.isdir(os.path.join(training_args.output_dir, d))
+            ]
+            for _ckpt_dir in _ckpt_dirs:
+                for _fname in ('non_lora_trainables.bin', 'config.json', 'symbol_mappings.json'):
+                    _src = os.path.join(training_args.output_dir, _fname)
+                    if os.path.isfile(_src):
+                        shutil.copy2(_src, os.path.join(_ckpt_dir, _fname))
+            rank0_print(
+                f"[SPRInT] Synced inference files into {len(_ckpt_dirs)} checkpoint(s): "
+                + ", ".join(os.path.basename(d) for d in sorted(_ckpt_dirs))
+            )
     else:
         safe_save_model_for_hf_trainer(trainer=trainer,
                                        output_dir=training_args.output_dir)

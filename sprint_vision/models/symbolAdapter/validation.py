@@ -36,7 +36,9 @@ from utils.evaluation_utils import (
     compute_all_metrics,
     compute_auc_trapz,
     compute_ap,
+    tie_diagnostics,
 )
+from dataload.medfmc_prompts import build_per_class_prompt, sprint_log
 
 
 class SPRInTValidationManager:
@@ -64,11 +66,12 @@ class SPRInTValidationManager:
         label_names: list,
         is_multi_label: bool,
         dataset_name: str,
-        primary_metric: str,       # "AUC" for colon, "mAP" for chest/endo
+        primary_metric: str,       # "accuracy" for colon, "mAP" for chest, "macro_auc" for endo
         validation_modes: str = "fixed,original,fresh",
         max_val_samples: int = 200,
         eval_data_path: str = None,
         print_fn=None,
+        cfg=None,
     ):
         self.model           = model
         self.tokenizer       = tokenizer
@@ -85,6 +88,10 @@ class SPRInTValidationManager:
         self._eval_data_path  = eval_data_path
         self._val_data        = None            # cached after first load
         self._print           = print_fn or print
+        # Full DatasetConfig (original-case label_names + class_definitions +
+        # instruction_intro) — used to build the HVB-style per-class mAP/AUC
+        # probe so it carries the SAME definition block seen in training.
+        self._cfg             = cfg
 
     # ── Data loading ──────────────────────────────────────────────────────────
 
@@ -131,6 +138,7 @@ class SPRInTValidationManager:
         max_new  = 64 if self._is_multi_label else 10
         val_data = self._load_val_data()
         results  = []
+        _logged_val = 0   # throttle: log full before/after for the first val item per mode
 
         with torch.no_grad():
             for item in _tqdm(val_data, desc="Evaluating", dynamic_ncols=True):
@@ -140,9 +148,37 @@ class SPRInTValidationManager:
                 except Exception:
                     continue
 
-                human_text = item["conversations"][0]["value"]
+                # Build the prompt from the LIVE config instruction (the current
+                # definition block) — NOT the val JSON's baked-in human turn, which
+                # may be a stale file from before definitions were added
+                # (medfmc_to_llava.py never regenerates *_val_*.json). Only image +
+                # ground truth are taken from the JSON. This mirrors the primary
+                # mAP/AUC probe, which also builds from cfg, so text-gen and the
+                # primary metric stay consistent with training.
+                if self._cfg is not None and getattr(self._cfg, "instruction", None):
+                    _raw_human = DEFAULT_IMAGE_TOKEN + "\n" + self._cfg.instruction
+                else:
+                    _raw_human = item["conversations"][0]["value"]
+                human_text = _raw_human
                 if self.symbol_manager is not None and symbols:
                     human_text = self.symbol_manager.apply_to_text(human_text, symbols)
+                if _logged_val < 1:
+                    if _raw_human == human_text:
+                        # No substitution in this mode (e.g. 'original' / regular):
+                        # print the prompt once instead of identical before+after.
+                        sprint_log(
+                            "VAL-TEXT", mode_symbols=symbols or {},
+                            prompt_built_from="cfg.instruction (live def block)",
+                            note="no symbol substitution in this mode (before == after)",
+                            prompt=human_text,
+                        )
+                    else:
+                        sprint_log(
+                            "VAL-TEXT", mode_symbols=symbols or {},
+                            prompt_built_from="cfg.instruction (live def block)",
+                            before=_raw_human, after=human_text,
+                        )
+                    _logged_val += 1
 
                 conv = conv_templates["vicuna_v1"].copy()
                 if DEFAULT_IMAGE_TOKEN not in human_text:
@@ -249,15 +285,93 @@ class SPRInTValidationManager:
         auc = compute_auc_trapz(scores, labels)
         return {"AUC": round(auc, 6) if not math.isnan(auc) else 0.0}
 
+    # ── Influence ablation (proves defs/symbols move P(Yes)) ──────────────────
+
+    def _pyes_val(self, human_text, image_tensor, yes_id, no_id):
+        """Score one per-class probe → P(Yes), mirroring the main per-class path."""
+        from llava.conversation import conv_templates
+        from llava.mm_utils import tokenizer_image_token
+        from llava.constants import IMAGE_TOKEN_INDEX
+        conv = conv_templates["vicuna_v1"].copy()
+        conv.append_message(conv.roles[0], human_text)
+        conv.append_message(conv.roles[1], None)
+        prompt = conv.get_prompt()
+        input_ids = tokenizer_image_token(
+            prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt"
+        ).unsqueeze(0).to(self.model.device)
+        out = self.model.generate(
+            inputs=input_ids, images=image_tensor,
+            max_new_tokens=1, do_sample=False,
+            output_scores=True, return_dict_in_generate=True,
+        )
+        logits = out.scores[0][0]
+        l_no, l_yes = logits[no_id].item(), logits[yes_id].item()
+        m = max(l_no, l_yes)
+        return math.exp(l_yes - m) / (math.exp(l_no - m) + math.exp(l_yes - m))
+
+    def _run_val_influence_ablation(self, val_item, sym_mappings, yes_id, no_id, n_classes=3):
+        """
+        Counterfactual check (same image, prompt content varied) during validation:
+          delta_def    = P(full) - P(no_def)      → definitions' effect on P(Yes)
+          delta_symbol = P(full) - P(orig_label)  → symbols' effect (SS-FT only)
+        Non-zero deltas prove the def block / symbols actually move the score used
+        for AUC/mAP, not merely appear in the prompt.
+        """
+        from llava.constants import DEFAULT_IMAGE_TOKEN
+        if self._cfg is None or not self._cfg.class_definitions:
+            return
+        img_path = os.path.join(self.data_args.image_folder, val_item.get("image", ""))
+        try:
+            image_tensor = self._load_image_tensor(img_path)
+        except Exception as _e:
+            self._print(f"[SPRINT::VAL-ABLATION] skipped (image load: {_e})")
+            return
+        apply_fn = self.symbol_manager.apply_to_text if self.symbol_manager is not None else None
+        sprint_log(
+            "VAL-ABLATION", image=val_item.get("image", ""),
+            note="P(Yes) under prompt ablations (same image) — proves INFLUENCE, not presence",
+            classes=list(self._cfg.label_names[:n_classes]),
+        )
+        for cls_name in self._cfg.label_names[:n_classes]:
+            p_full = build_per_class_prompt(
+                self._cfg, self._dataset_name, cls_name,
+                sym_mappings=sym_mappings, apply_to_text_fn=apply_fn,
+                image_token=DEFAULT_IMAGE_TOKEN,
+            )
+            p_nodef = build_per_class_prompt(
+                self._cfg, self._dataset_name, cls_name,
+                sym_mappings=sym_mappings, apply_to_text_fn=apply_fn,
+                image_token=DEFAULT_IMAGE_TOKEN, include_definitions=False,
+            )
+            pf = self._pyes_val(p_full,  image_tensor, yes_id, no_id)
+            pn = self._pyes_val(p_nodef, image_tensor, yes_id, no_id)
+            row = {"cls": cls_name, "P_yes_full": round(pf, 4),
+                   "P_yes_no_def": round(pn, 4), "delta_def": round(pf - pn, 4)}
+            if sym_mappings:
+                p_orig = build_per_class_prompt(
+                    self._cfg, self._dataset_name, cls_name,
+                    sym_mappings=None, apply_to_text_fn=apply_fn,
+                    image_token=DEFAULT_IMAGE_TOKEN,
+                )
+                po = self._pyes_val(p_orig, image_tensor, yes_id, no_id)
+                row["P_yes_orig_label"] = round(po, 4)
+                row["delta_symbol"] = round(pf - po, 4)
+            sprint_log("VAL-ABLATION-ROW", **row)
+
     # ── AUC/mAP inference (chest/endo per-class binary queries) ───────────────
 
-    def _run_multilabel_auc_map(self) -> dict:
+    def _run_multilabel_auc_map(self, sym_mappings: dict = None) -> dict:
         """
-        Per-class binary "Does this show <class>? Answer Yes or No." queries.
+        Per-class binary "Does this show <class>?  Answer Yes or No." queries.
+
+        HVB-faithful: each query carries the SAME "- label: definition" block the
+        model saw in training (via dataload.medfmc_prompts.build_per_class_prompt)
+        plus a per-class focusing question.  When sym_mappings is provided (SS-FT)
+        the whole probe is symbol-substituted exactly as in training.
 
         For each (sample, class) pair: softmax over [logit_No, logit_Yes] → P(Yes).
         P(Yes) acts as a per-class discriminative score for ranking.
-        Macro AUC and mAP are then computed over these scores.
+        Macro AUC and mAP are then computed over these scores — UNCHANGED math.
 
         Compute cost: num_classes × num_val_samples 1-token forward passes.
           chest: 19 × 200 = 3800 passes ≈ 5–8 min/epoch on A100.
@@ -285,6 +399,14 @@ class SPRInTValidationManager:
         all_scores = [[0.0] * n_cls for _ in range(n)]
         all_labels = [[0]   * n_cls for _ in range(n)]
 
+        # Influence ablation on the first val sample (first few classes) — logs
+        # how much the def block / symbols move P(Yes). ~6-9 extra 1-token passes.
+        if val_data:
+            try:
+                self._run_val_influence_ablation(val_data[0], sym_mappings, yes_id, no_id)
+            except Exception as _e:
+                self._print(f"[SPRINT::VAL-ABLATION] skipped ({_e})")
+
         with torch.no_grad():
             for i, item in enumerate(val_data):
                 img_path = os.path.join(self.data_args.image_folder, item.get("image", ""))
@@ -299,11 +421,33 @@ class SPRInTValidationManager:
                     all_labels[i][j] = 1 if lbl in gt_parts else 0
 
                 for j, lbl in enumerate(self._label_names):
-                    question = (
-                        f"Does this {modality} show {lbl.replace('_', ' ')}? Answer Yes or No."
-                    )
+                    # Original-case label drives the def-block key lookup; the
+                    # lowercased self._label_names[j] is kept for GT matching above.
+                    orig_lbl = self._cfg.label_names[j] if self._cfg is not None else lbl
+                    if self._cfg is not None and self._cfg.class_definitions:
+                        human_text = build_per_class_prompt(
+                            cfg=self._cfg,
+                            dataset=self._dataset_name,
+                            class_name=orig_lbl,
+                            sym_mappings=sym_mappings,
+                            apply_to_text_fn=(
+                                self.symbol_manager.apply_to_text
+                                if self.symbol_manager is not None else None
+                            ),
+                            image_token=DEFAULT_IMAGE_TOKEN,
+                        )
+                    else:
+                        # Fallback (no definitions configured): legacy minimal probe.
+                        human_text = (
+                            DEFAULT_IMAGE_TOKEN + "\n"
+                            + f"Does this {modality} show {lbl.replace('_', ' ')}? Answer Yes or No."
+                        )
+                    if i == 0:
+                        sprint_log(
+                            "VAL-AUC-PROBE", dataset=self._dataset_name, cls=orig_lbl,
+                            sym_used=bool(sym_mappings), probe=human_text,
+                        )
                     conv = conv_templates["vicuna_v1"].copy()
-                    human_text = DEFAULT_IMAGE_TOKEN + "\n" + question
                     conv.append_message(conv.roles[0], human_text)
                     conv.append_message(conv.roles[1], None)
                     prompt = conv.get_prompt()
@@ -325,6 +469,21 @@ class SPRInTValidationManager:
                     exp_yes = math.exp(l_yes - m_val)
                     all_scores[i][j] = exp_yes / (exp_no + exp_yes)
 
+                # Model prediction log (first 3 val samples): what the model
+                # predicts per class vs ground truth, with the P(Yes) scores that
+                # feed AUC/mAP. Lets sir see predictions, not just metrics.
+                if i < 3:
+                    names = (self._cfg.label_names if self._cfg is not None
+                             else self._label_names)
+                    gt_present   = [names[j] for j in range(n_cls) if all_labels[i][j] == 1]
+                    pred_present = [names[j] for j in range(n_cls) if all_scores[i][j] >= 0.5]
+                    p_yes = {names[j]: round(all_scores[i][j], 3) for j in range(n_cls)}
+                    sprint_log(
+                        "VAL-PRED", sample=i, image=item.get("image", ""),
+                        gt_present=gt_present, pred_present=pred_present,
+                        per_class_P_yes=p_yes,
+                    )
+
                 # Free image tensor after all 19 (or N) class queries for this sample.
                 # Flush fragmented reserved-but-unallocated blocks every 10 samples so
                 # the allocator can find contiguous space for subsequent attention buffers.
@@ -344,6 +503,18 @@ class SPRInTValidationManager:
 
         macro_auc = sum(auc_per_cls) / len(auc_per_cls) if auc_per_cls else 0.0
         mAP       = sum(ap_per_cls)  / len(ap_per_cls)  if ap_per_cls  else 0.0
+
+        # Tie diagnostic: how many P(Yes) ties occur and whether they move the
+        # reported macro_AUC / mAP vs the tie-correct (sklearn-equiv) reference.
+        try:
+            tie_diagnostics(
+                all_scores, all_labels, self._label_names,
+                auc_fn=compute_auc_trapz, ap_fn=compute_ap,
+                print_fn=self._print, header="VALIDATION ",
+            )
+        except Exception as _e:
+            self._print(f"[SPRINT::TIE-DIAG] skipped ({_e})")
+
         return {"macro_auc": round(macro_auc, 6), "mAP": round(mAP, 6)}
 
     # ── Per-epoch orchestration ───────────────────────────────────────────────
@@ -437,7 +608,19 @@ class SPRInTValidationManager:
                     f" × {len(self._load_val_data())} samples ..."
                 )
                 self._print(f"{'='*80}")
-                auc_map_results = self._run_multilabel_auc_map()
+                # SS-FT carries its fixed symbols into the probe (consistent with
+                # training); regular/ed_ft/id_ft/lf_ft evaluate with original
+                # labels (matches the final-inference convention in sprint_eval.py).
+                probe_syms = (
+                    self.symbol_manager.get_current_symbols()
+                    if (self.symbol_manager is not None and strategy in ("two_token", "ss_ft"))
+                    else {}
+                )
+                sprint_log(
+                    "VAL-AUC-MAP", dataset=self._dataset_name, strategy=strategy,
+                    probe_symbols=probe_syms or {},
+                )
+                auc_map_results = self._run_multilabel_auc_map(sym_mappings=probe_syms)
                 self._print(f"  ★ mAP      : {auc_map_results['mAP']:.4f}   ← primary metric")
                 self._print(f"  ★ macro_AUC: {auc_map_results['macro_auc']:.4f}   ← primary metric")
 

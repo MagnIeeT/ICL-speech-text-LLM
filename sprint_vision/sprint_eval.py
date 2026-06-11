@@ -65,6 +65,8 @@ from llava.model.builder import load_pretrained_model
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dataload.example_selector import ExampleSelector
 from dataload.prompt_builder import LLaVAPromptBuilder
+from dataload.medfmc_prompts import build_per_class_prompt, sprint_log
+from utils.evaluation_utils import tie_diagnostics
 from models.symbolAdapter.symbol_manager import SymbolManager
 from config.data_config import get_dataset_config, DatasetName
 
@@ -230,32 +232,77 @@ def _compute_average_precision(scores: list, labels: list) -> float:
     return ap / n_pos
 
 
-def _build_per_class_prompt(dataset: str, class_name: str, sym_mappings=None) -> str:
+def _sprint_sym_diagnostic(dataset, strategy, task_labels, sym_mappings, use_per_class, cfg, apply_to_text_fn=None):
     """
-    Yes/no prompt for a single class.
-
-    For regular strategy: asks "Answer Yes or No." — the diagnostic confirmed
-    LLaVA naturally emits the Yes/No tokens (logits ~+18) at the answer
-    position, while bare '0'/'1' tokens are buried (~+7). Asking for Yes/No
-    directly aligns the prompt with the tokens we score against.
-
-    For two_token strategy: substitutes the trained symbols for yes/no.
+    One-time pre-loop log. Answers: which task labels are in sym_mappings?
+    For cross-task inference (chest sym_mappings on colon/endo), this will
+    show zero labels matched → original labels used throughout.
     """
-    hint = {"chest": "chest X-ray", "endo": "endoscopy image"}.get(
-        dataset, "medical image"
-    )
-    nat = class_name.replace("_", " ")
-    if sym_mappings and "0" in sym_mappings and "1" in sym_mappings:
-        no_sym = sym_mappings["0"]
-        yes_sym = sym_mappings["1"]
-        return (
-            f"{DEFAULT_IMAGE_TOKEN}\n"
-            f"Does this {hint} show {nat}? "
-            f"Answer with {yes_sym} for yes or {no_sym} for no."
+    SEP = "=" * 70
+    print(SEP)
+    print(f"[SPRINT EVAL] === SYMBOL MAPPING DIAGNOSTIC ===")
+    print(f"[SPRINT EVAL] Dataset   : {dataset}")
+    print(f"[SPRINT EVAL] Strategy  : {strategy}")
+    if sym_mappings:
+        items = list(sym_mappings.items())
+        print(f"[SPRINT EVAL] Active sym_mappings ({len(items)} entries, showing first 5):")
+        for k, v in items[:5]:
+            print(f"    {k!r:<32} → {v!r}")
+        if len(items) > 5:
+            print(f"    ... ({len(items) - 5} more)")
+        mapped   = [lbl for lbl in task_labels if lbl in sym_mappings]
+        unmapped = [lbl for lbl in task_labels if lbl not in sym_mappings]
+        print(f"[SPRINT EVAL] Task labels IN     sym_mappings ({len(mapped)}/{len(task_labels)}): {mapped}")
+        print(f"[SPRINT EVAL] Task labels NOT IN sym_mappings ({len(unmapped)}/{len(task_labels)}): {unmapped}")
+        if not mapped:
+            print("[SPRINT EVAL] *** CROSS-TASK: zero task labels found in sym_mappings → "
+                  "original labels used throughout (no symbol substitution) ***")
+    else:
+        print("[SPRINT EVAL] sym_mappings : NONE (regular / dynamic strategy — original labels used)")
+    print(f"[SPRINT EVAL] Inference mode: {'per-class binary (AUC+mAP)' if use_per_class else 'standard text-output'}")
+    if use_per_class and task_labels:
+        cls0 = task_labels[0]
+        p_no_sym   = _build_per_class_prompt(dataset, cls0, cfg, sym_mappings=None)
+        p_with_sym = _build_per_class_prompt(
+            dataset, cls0, cfg, sym_mappings=sym_mappings, apply_to_text_fn=apply_to_text_fn
         )
-    return (
-        f"{DEFAULT_IMAGE_TOKEN}\n"
-        f"Does this {hint} show {nat}? Answer Yes or No."
+        sym_active = bool(sym_mappings)
+        print(f"[SPRINT EVAL] Per-class HVB-style probe (class={cls0!r}):")
+        print(f"  BEFORE sym sub :\n{p_no_sym}")
+        print(f"  AFTER  sym sub :\n{p_with_sym}")
+        print(f"  symbols substituted in probe: {sym_active} "
+              f"→ {'SS-FT: labels replaced by symbols' if sym_active else 'original labels (regular/ed_ft/id_ft/lf_ft)'}")
+        print(f"  probe changed by symbols: {p_no_sym != p_with_sym}")
+    print(SEP)
+
+
+def _build_per_class_prompt(dataset, class_name, cfg, sym_mappings=None, apply_to_text_fn=None) -> str:
+    """
+    HVB-faithful per-class mAP/AUC probe.
+
+    The probe carries the SAME "- label: definition" block the model saw in
+    training (config.render_def_block over cfg's intro/labels/definitions), then
+    a per-class focusing question.  When sym_mappings is provided (SS-FT /
+    two_token), symbols are substituted over the whole human turn — block AND
+    question — exactly as train.py:preprocess_v1:504-506 does, so definitions
+    and symbols are consistent between training and evaluation.
+
+    For regular / ed_ft / id_ft / lf_ft, sym_mappings is None → original labels
+    (matches the inference convention in eval_model: is_regular at sprint_eval).
+
+    The answer space is Yes/No and the caller scores P(Yes) from the answer-token
+    logits — unchanged, so mAP/AUC math is unaffected.
+
+    Delegates to dataload.medfmc_prompts.build_per_class_prompt so inference and
+    training-time validation share one builder and cannot drift.
+    """
+    return build_per_class_prompt(
+        cfg=cfg,
+        dataset=dataset,
+        class_name=class_name,
+        sym_mappings=sym_mappings,
+        apply_to_text_fn=apply_to_text_fn,
+        image_token=DEFAULT_IMAGE_TOKEN,
     )
 
 
@@ -403,6 +450,18 @@ def _compute_multi_label_metrics(results: list, valid_labels: list) -> dict:
         out["macro_auc"] = auc_sum / n_auc
         out["map"]       = ap_sum  / n_ap
 
+    # Tie diagnostic: count P(Yes) ties and estimate their effect on the reported
+    # macro_AUC / mAP vs the tie-correct (sklearn-equivalent) reference.
+    if scores_matrix is not None:
+        try:
+            tie_diagnostics(
+                scores_matrix, y_true, valid_labels,
+                auc_fn=_compute_auc, ap_fn=_compute_average_precision,
+                print_fn=print, header="INFERENCE ",
+            )
+        except Exception as e:
+            print(f"[SPRINT::TIE-DIAG] skipped ({e})")
+
     return out
 
 
@@ -410,11 +469,90 @@ def _compute_multi_label_metrics(results: list, valid_labels: list) -> dict:
 # Per-class binary inference (chest / endo → enables AUC and mAP)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _score_probe_pyes(prompt_text, tokenizer, model, image_tensor, image_sizes,
+                      token_id_0, token_id_1):
+    """
+    Run the model on a single per-class probe (human turn = prompt_text) and
+    return (logit_neg, logit_pos, P(pos)) where P(pos) is the softmax over the
+    two answer tokens at generation step 0 — exactly the score used for AUC/mAP.
+    Used by the main loop and by the influence ablation.
+    """
+    conv = conv_templates["vicuna_v1"].copy()
+    conv.append_message(conv.roles[0], prompt_text)
+    conv.append_message(conv.roles[1], None)
+    prompt = conv.get_prompt()
+    input_ids = (
+        tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt")
+        .unsqueeze(0)
+        .cuda()
+    )
+    with torch.inference_mode():
+        out = model.generate(
+            input_ids, images=image_tensor, image_sizes=image_sizes,
+            do_sample=False, max_new_tokens=1, use_cache=True,
+            return_dict_in_generate=True, output_scores=True,
+        )
+    logits = out.scores[0][0]
+    l0 = logits[token_id_0].item()
+    l1 = logits[token_id_1].item()
+    pair = torch.stack([logits[token_id_0], logits[token_id_1]])
+    p1 = torch.nn.functional.softmax(pair, dim=0)[1].item()
+    return l0, l1, p1
+
+
+def _run_influence_ablation(
+    dataset, cfg, task_labels, sym_mappings, apply_to_text_fn,
+    tokenizer, model, image_tensor, image_sizes, token_id_0, token_id_1,
+    sample_index, image_file, n_classes=3,
+):
+    """
+    Counterfactual check (same image, prompt content varied) proving the def
+    block and symbols actually MOVE the Yes/No probability used for AUC/mAP —
+    not merely appear in the prompt.
+
+    For the first n_classes classes, scores P(Yes) under:
+      full       : def block + identity as configured (the real probe)
+      no_def     : focusing question only (def block removed)   → delta_def
+      orig_label : def block but original label, no symbols (SS-FT only) → delta_symbol
+
+    delta_def    != 0  ⇒ definitions influence the score.
+    delta_symbol != 0  ⇒ symbols influence the score.
+    """
+    sprint_log(
+        "INFER-ABLATION", sample=sample_index, image=image_file,
+        note="P(Yes) under prompt ablations (same image) — proves INFLUENCE, not mere presence",
+        classes=list(task_labels[:n_classes]),
+    )
+    for cls_name in task_labels[:n_classes]:
+        p_full = _build_per_class_prompt(
+            dataset, cls_name, cfg, sym_mappings=sym_mappings, apply_to_text_fn=apply_to_text_fn
+        )
+        p_nodef = build_per_class_prompt(
+            cfg, dataset, cls_name, sym_mappings=sym_mappings,
+            apply_to_text_fn=apply_to_text_fn, include_definitions=False,
+        )
+        _, _, pf = _score_probe_pyes(p_full, tokenizer, model, image_tensor, image_sizes, token_id_0, token_id_1)
+        _, _, pn = _score_probe_pyes(p_nodef, tokenizer, model, image_tensor, image_sizes, token_id_0, token_id_1)
+        row = {
+            "cls": cls_name,
+            "P_yes_full": round(pf, 4),
+            "P_yes_no_def": round(pn, 4),
+            "delta_def": round(pf - pn, 4),
+        }
+        if sym_mappings:
+            p_orig = _build_per_class_prompt(dataset, cls_name, cfg, sym_mappings=None)
+            _, _, po = _score_probe_pyes(p_orig, tokenizer, model, image_tensor, image_sizes, token_id_0, token_id_1)
+            row["P_yes_orig_label"] = round(po, 4)
+            row["delta_symbol"] = round(pf - po, 4)
+        sprint_log("INFER-ABLATION-ROW", **row)
+
+
 def _run_per_class_binary(
     sample, dataset, ground_truth, task_labels, valid_labels_lower,
     sym_mappings, token_id_0, token_id_1,
     tokenizer, model, image_processor, image_folder, sample_index,
-    diagnose=False,
+    cfg, apply_to_text_fn=None,
+    diagnose=False, ablation_samples=0,
 ):
     """
     For each class, ask the model a yes/no question, capture the logits for
@@ -455,8 +593,27 @@ def _run_per_class_binary(
     class_preds  = []
     diag_rows    = [] if diagnose else None
 
+    # Influence ablation (same image, prompt content varied) on the first few
+    # samples — proves the def block / symbols actually move P(Yes).
+    if sample_index < ablation_samples:
+        _run_influence_ablation(
+            dataset, cfg, task_labels, sym_mappings, apply_to_text_fn,
+            tokenizer, model, image_tensor, image_sizes, token_id_0, token_id_1,
+            sample_index, image_file,
+        )
+
     for cls_name in task_labels:
-        prompt_text = _build_per_class_prompt(dataset, cls_name, sym_mappings)
+        prompt_text = _build_per_class_prompt(
+            dataset, cls_name, cfg, sym_mappings=sym_mappings, apply_to_text_fn=apply_to_text_fn
+        )
+        # Log the exact per-class probe (sample 0 only) so the def block + symbol
+        # substitution are auditable against the training prompt.
+        if sample_index == 0:
+            sprint_log(
+                "INFER-AUC-PROBE",
+                dataset=dataset, cls=cls_name, sym_used=bool(sym_mappings),
+                probe=prompt_text,
+            )
         conv = conv_templates["vicuna_v1"].copy()
         conv.append_message(conv.roles[0], prompt_text)
         conv.append_message(conv.roles[1], None)
@@ -531,6 +688,15 @@ def _run_per_class_binary(
     ]
     pred_str = ", ".join(pred_parsed) if pred_parsed else "none"
 
+    # Model prediction log (first 3 samples): predicted-present vs ground-truth
+    # classes, with the P(Yes) scores that feed AUC/mAP.
+    if sample_index < 3:
+        p_yes = {task_labels[j]: round(class_scores[j], 3) for j in range(len(task_labels))}
+        sprint_log(
+            "INFER-PRED", sample=sample_index, image=image_file,
+            gt_present=sorted(gt_set), pred_present=pred_parsed, per_class_P_yes=p_yes,
+        )
+
     return {
         "id":          sample.get("id", f"sample_{sample_index}"),
         "image":       image_file,
@@ -581,7 +747,8 @@ def eval_model(args):
     print(f"  Total params : {total_params:,}  ({total_params / 1e9:.2f}B)")
 
     # ── Symbol manager ────────────────────────────────────────────────────────
-    is_regular = args.strategy in ("regular", "rft")
+    # ed_ft / id_ft / lf_ft use dynamic symbols during training but original labels at inference
+    is_regular = args.strategy in ("regular", "rft", "ed_ft", "id_ft", "lf_ft")
     symbol_manager = SymbolManager(
         original_labels=task_labels,
         tokenizer=tokenizer,
@@ -604,6 +771,7 @@ def eval_model(args):
     sym_mappings = symbol_manager.get_current_symbols() if not is_regular else None
 
     # ── Answer-token ids ──────────────────────────────────────────────────────
+    # (use_per_class depends on is_multi_label and icl_shots, computed just below)
     # Colon binary path: bare "0"/"1" tokens (or symbols under two_token).
     # Multi-label per-class path: bare "No"/"Yes" tokens — diagnostic confirmed
     # the base LLaVA model emits Yes/No at the answer position, not 0/1.
@@ -637,6 +805,12 @@ def eval_model(args):
             f"Multi-label text-output mode (icl_shots={args.icl_shots}): "
             f"exact-match + macro F1 only (no AUC/mAP)."
         )
+
+    # ── Symbol mapping diagnostic (one-time, before inference loop) ───────────
+    _sprint_sym_diagnostic(
+        dataset, args.strategy, task_labels, sym_mappings, use_per_class,
+        cfg=cfg, apply_to_text_fn=symbol_manager.apply_to_text,
+    )
 
     # ── Load test data ────────────────────────────────────────────────────────
     question_file = os.path.expanduser(args.question_file)
@@ -675,6 +849,20 @@ def eval_model(args):
 
         try:
             if use_per_class:
+                if i < 2:
+                    cls0 = task_labels[0]
+                    p_before = _build_per_class_prompt(dataset, cls0, cfg, sym_mappings=None)
+                    p_after  = _build_per_class_prompt(
+                        dataset, cls0, cfg, sym_mappings=sym_mappings,
+                        apply_to_text_fn=symbol_manager.apply_to_text,
+                    )
+                    print("=" * 70)
+                    print(f"[SPRINT EVAL] sample={i} (per-class binary mode, HVB-style probe)")
+                    print(f"[SPRINT EVAL] GT ground truth : {ground_truth!r}")
+                    print(f"[SPRINT EVAL] First-class probe BEFORE symbol sub (class={cls0!r}):\n{p_before}")
+                    print(f"[SPRINT EVAL] First-class probe AFTER  symbol sub (class={cls0!r}):\n{p_after}")
+                    print(f"[SPRINT EVAL] Probe changed by sym_mappings: {p_before != p_after}")
+                    print("=" * 70)
                 result = _run_per_class_binary(
                     sample=sample,
                     dataset=dataset,
@@ -689,7 +877,10 @@ def eval_model(args):
                     image_processor=image_processor,
                     image_folder=args.image_folder,
                     sample_index=i,
+                    cfg=cfg,
+                    apply_to_text_fn=symbol_manager.apply_to_text,
                     diagnose=(i < args.diagnose_samples),
+                    ablation_samples=args.ablation_samples,
                 )
                 results.append(result)
                 continue
@@ -702,6 +893,39 @@ def eval_model(args):
                 test_image_path=image_file,
                 symbol_mappings=sym_mappings,
             )
+
+            if i < 2:
+                gt_in_mapping = sym_mappings and any(
+                    lbl in sym_mappings for lbl in ground_truth.replace(",", " ").split()
+                )
+                # Few-shot ICL detail: retrieved example ids, raw labels, and the
+                # symbol each label maps to under the active strategy.
+                if examples:
+                    sprint_log(
+                        "ICL-EXAMPLES",
+                        sample=i, n_shots=len(examples),
+                        retrieved=[
+                            {
+                                "id": ex.get("id", ""),
+                                "image": ex.get("image", ""),
+                                "label": ex.get("label", ""),
+                                "label_as_symbol": (
+                                    ", ".join(
+                                        (sym_mappings or {}).get(p.strip(), p.strip())
+                                        for p in str(ex.get("label", "")).split(",")
+                                    ) if sym_mappings else ex.get("label", "")
+                                ),
+                            }
+                            for ex in examples
+                        ],
+                    )
+                print("=" * 70)
+                print(f"[SPRINT EVAL] sample={i} (standard text-output mode)")
+                print(f"[SPRINT EVAL] ACTIVE SYMBOL MAPPING: {sym_mappings if sym_mappings else 'NONE (regular strategy)'}")
+                print(f"[SPRINT EVAL] HUMAN INSTRUCTION (raw, BEFORE replacement):\n{instruction}")
+                print(f"[SPRINT EVAL] FULL PROMPT SENT TO MODEL (AFTER replacement):\n{prompt_str}")
+                print(f"[SPRINT EVAL] GPT ground truth : {ground_truth!r}  |  any GT token in sym_mappings: {gt_in_mapping}")
+                print("=" * 70)
 
             # Load images
             pil_images = []
@@ -903,9 +1127,9 @@ if __name__ == "__main__":
                         choices=VALID_DATASETS,
                         help="Dataset name — controls evaluation mode (binary vs multi-label).")
     parser.add_argument("--strategy", type=str, default="regular",
-                        choices=["regular", "two_token"],
-                        help="Inference strategy: 'regular' (0/1 or disease names) or "
-                             "'two_token' (symbol → decode to original labels).")
+                        choices=["regular", "two_token", "ed_ft", "id_ft", "lf_ft"],
+                        help="Inference strategy: 'regular'/'ed_ft'/'id_ft'/'lf_ft' use original "
+                             "labels; 'two_token' decodes symbols back to original labels.")
     parser.add_argument("--symbol-mappings", type=str, default=None,
                         help="Path to symbol_mappings.json (two_token strategy). "
                              "Auto-detected from --model-path if omitted.")
@@ -922,5 +1146,12 @@ if __name__ == "__main__":
                              "model's top-5 first tokens for this many samples, "
                              "so you can verify the model emits '0'/'1' (not "
                              "'Yes'/'No' or a leading space). Set to 0 to disable.")
+    parser.add_argument("--ablation-samples", type=int, default=1,
+                        help="For chest/endo per-class binary mode: for this many "
+                             "samples, log P(Yes) under prompt ablations "
+                             "(def block removed; symbol→original label) so you "
+                             "can confirm definitions/symbols actually MOVE the "
+                             "Yes/No probability used for AUC/mAP, not just appear "
+                             "in the prompt. Set to 0 to disable.")
     args = parser.parse_args()
     eval_model(args)

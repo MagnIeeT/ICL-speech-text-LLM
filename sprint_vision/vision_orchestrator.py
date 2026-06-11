@@ -217,9 +217,11 @@ if __name__ == "__main__":
     parser.add_argument("--dataset",         type=str, choices=["colon", "chest", "endo"],
                         default=Config.DATASET,
                         help="Single dataset (use --datasets for multiple).")
-    parser.add_argument("--strategy",        type=str, choices=["regular", "two_token"],
+    parser.add_argument("--strategy",        type=str,
+                        choices=["regular", "two_token", "ed_ft", "id_ft", "lf_ft"],
                         default=Config.STRATEGY,
-                        help="SPRInT strategy: 'regular' or 'two_token'.")
+                        help="SPRInT strategy: 'regular'/'ed_ft'/'id_ft'/'lf_ft' use original "
+                             "labels at inference; 'two_token' decodes symbols.")
     parser.add_argument("--num-samples",     type=int, default=0,
                         help="Samples to evaluate (0 = all).")
     parser.add_argument("--icl-shots",       type=int, default=0,

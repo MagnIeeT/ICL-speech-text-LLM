@@ -10,6 +10,11 @@ set -e
 #       STRATEGY=regular   DATASET=colon TRAIN_PERCENT=100 bash submit_training.sh
 #       STRATEGY=two_token DATASET=colon TRAIN_PERCENT=100 bash submit_training.sh
 #
+#   ICL during training (K example images embedded in each training prompt):
+#       ICL_SHOTS=1 STRATEGY=two_token DATASET=chest TRAINING_SHOTS=10 SHOT_EXP=1 bash submit_training.sh
+#       # optional separate example pool:
+#       ICL_SHOTS=1 ICL_POOL_PATH=/home/harinis/LLaVA/sprint_vision/data/chest_train_shot10_exp1.json ... bash submit_training.sh
+#
 #   Chain training jobs:
 #       JOB1=$(STRATEGY=regular   DATASET=colon bash submit_training.sh --print-id)
 #       JOB2=$(hold_job_id="$JOB1" STRATEGY=two_token DATASET=colon bash submit_training.sh --print-id)
@@ -23,18 +28,28 @@ set -e
 # Configuration — edit these values
 # ========================================
 DATASET=chest      # colon | chest | endo
-STRATEGY=ed_ft  # regular | two_token | ed_ft | id_ft | lf_ft
+STRATEGY=two_token  # regular | two_token | ed_ft | id_ft | lf_ft
 NUM_TRAIN_EPOCHS=5
+# ── ICL during training ──────────────────────────────────────────────────────
+# ICL_SHOTS: number of in-context example images+labels embedded in each training
+#            prompt. 0 = standard supervised fine-tuning (no ICL context).
+# ICL_POOL_PATH: optional separate JSON pool to draw examples from. Empty = use
+#            the training file itself (self-pool, the sample excludes itself).
+# NOTE: with the new class-definition blocks the instruction is long (~450 tok for
+#       chest's 19 defs). Each ICL shot repeats it, so high ICL_SHOTS can exceed
+#       --model_max_length (2048) and get truncated. Keep ICL_SHOTS small (≈1)
+#       for chest unless you also raise MODEL_MAX_LENGTH.
 ICL_SHOTS=0
-num_samples=0      # 0 = ALL samples (matches inference script convention)
+ICL_POOL_PATH="${ICL_POOL_PATH:-}"
+num_samples=0   # 0 = ALL samples (matches inference script convention)
 LORA_R=8
-LORA_ALPHA=16
+LORA_ALPHA=32
 
 # Validation modes: comma-separated subset of fixed,original,fresh
 # Examples:
 #   original                → only text-gen F1, fastest
 #   fixed,original,fresh    → all 3 symbol modes (default, mirrors ICI)
-VALIDATION_MODES=original
+VALIDATION_MODES=orginal
 # Whether to compute AUC (colon) or mAP+AUC (chest/endo) — MedFMC primary metrics
 # true = full MedFMC-aligned eval; false = macro_F1 only (faster)
 COMPUTE_VAL_AUC_MAP="${COMPUTE_VAL_AUC_MAP:-true}"
@@ -43,8 +58,8 @@ COMPUTE_VAL_AUC_MAP="${COMPUTE_VAL_AUC_MAP:-true}"
 #   TRAIN_PERCENT               → percentage of trainval.txt (default: 100)
 #   TRAINING_SHOTS + SHOT_EXP   → MedFMC repeated-experiment split (recommended for paper)
 #   RANDOM_SHOT + SHOT_SEED     → custom random N-shot sampling
-TRAINING_SHOTS=10          # e.g. 10  (use with SHOT_EXP for paper protocol)
-SHOT_EXP=2              # experiment index 1-5
+TRAINING_SHOTS=10  # e.g. 10  (use with SHOT_EXP for paper protocol)
+SHOT_EXP=2             # experiment index 1-5
 RANDOM_SHOT="${RANDOM_SHOT:-}"        # empty = not in random-shot mode
 SHOT_SEED="${SHOT_SEED:-1}"           # RNG seed for random-shot sampling
 if [ -z "${RANDOM_SHOT}" ] && [ -z "${TRAINING_SHOTS}" ]; then
@@ -54,11 +69,11 @@ else
 fi
 
 hostname=n6
-cuda_device=1
+cuda_device=2
 walltime="${walltime:-48:00:00}"
 
 # Set to a job ID (e.g. "12345.cluster") to wait for that job first.
-hold_job_id=12173.eehpc
+hold_job_id=12614.eehpc
 
 # Paths
 LLAVA_DIR="${LLAVA_DIR:-/home/harinis/LLaVA}"
@@ -113,6 +128,7 @@ else
 fi
 echo "Epochs:      ${NUM_TRAIN_EPOCHS}"
 echo "ICL Shots:   ${ICL_SHOTS}"
+echo "ICL Pool:    ${ICL_POOL_PATH:-<training file (self-pool)>}"
 echo "Num Samples: ${num_samples} (0 = ALL)"
 echo "LoRA r:      ${LORA_R}"
 echo "LoRA alpha:  ${LORA_ALPHA}"
@@ -155,6 +171,7 @@ RANDOM_SHOT=${RANDOM_SHOT} \
 SHOT_SEED=${SHOT_SEED} \
 NUM_TRAIN_EPOCHS=${NUM_TRAIN_EPOCHS} \
 ICL_SHOTS=${ICL_SHOTS} \
+ICL_POOL_PATH=${ICL_POOL_PATH} \
 MAX_TRAIN_SAMPLES=${num_samples} \
 LORA_R=${LORA_R} \
 LORA_ALPHA=${LORA_ALPHA} \
