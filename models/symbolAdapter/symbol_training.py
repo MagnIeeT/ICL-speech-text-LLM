@@ -129,15 +129,19 @@ class SymbolTrainingOrchestrator:
 
     def _setup_lora_optimizer(self):
         trainable_params = []
-        lora_params = []
-        for name, param in self.model.named_parameters():
-            if param.requires_grad and "lora" in name.lower():
-                lora_params.append(param)
-        if lora_params:
-            trainable_params.append({"params": lora_params, "lr": self.config.lora_config.learning_rate})
+        slot_only = self.config.diff_symbol_config.slot_only
+        if not slot_only:
+            lora_params = []
+            for name, param in self.model.named_parameters():
+                if param.requires_grad and "lora" in name.lower():
+                    lora_params.append(param)
+            if lora_params:
+                trainable_params.append({"params": lora_params, "lr": self.config.lora_config.learning_rate})
         if self.router is not None:
             trainable_params.append({"params": self.router.parameters(), "lr": self.config.diff_symbol_config.router_lr})
         if not trainable_params: raise ValueError("No trainable parameters found")
+        if slot_only:
+            logging.info("slot_only=True: LoRA frozen, training router only (%d params)", sum(p.numel() for p in self.router.parameters()))
         self.optimizer = torch.optim.AdamW(trainable_params, lr=self.config.lora_config.learning_rate, betas=(0.9, 0.999), eps=1e-8, weight_decay=self.config.lora_config.weight_decay)
 
     def _move_batch_to_device(self, batch: Dict[str, Any]) -> Dict[str, Any]:

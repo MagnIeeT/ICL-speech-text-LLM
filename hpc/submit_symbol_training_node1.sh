@@ -10,39 +10,57 @@ if [[ -f "${PROJECT_ROOT}/.env" ]]; then
     set -a; source "${PROJECT_ROOT}/.env"; set +a
 fi
 
-CONDA_ENV="${CONDA_ENV:-qwen}"
-MODEL_TYPE="${MODEL_TYPE:-qwen}"
-DATASET_TYPE="${DATASET_TYPE:-voxceleb}"
-VAL_DATASET_TYPE="${VAL_DATASET_TYPE:-voxceleb-hvb-voxpopuli-meld_emotion}"
-DEVICE="${DEVICE:-cuda:0}"
-CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-7}"
-OUTPUT_DIR="${OUTPUT_DIR:-${HOME}/training/symbol_training}"
-LOG_DIR="${LOGS_DIR:-${HOME}/training/logs}/$(date +"%Y-%m-%d")"
-LORA_LR="${LORA_LR:-1e-5}"
-LORA_EPOCHS="${LORA_EPOCHS:-5}"
-BATCH_SIZE="${BATCH_SIZE:-1}"
-VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-1}"
-GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-8}"
-MAX_SAMPLES="${MAX_SAMPLES:-10}"
-NUM_EXAMPLES="${NUM_EXAMPLES:-2}"
-VAL_NUM_EXAMPLES="${VAL_NUM_EXAMPLES:-0}"
-NUM_WORKERS="${NUM_WORKERS:-2}"
-VALIDATION_MODES="${VALIDATION_MODES:-original,fixed,fresh}"
-SYMBOL_UPDATE_STRATEGY="${SYMBOL_UPDATE_STRATEGY:-per_epoch}"
-NO_SYMBOLS="${NO_SYMBOLS:-false}"
-DYNAMIC_SYMBOLS="${DYNAMIC_SYMBOLS:-false}"
-DIFF_SYMBOL_ENABLED="${DIFF_SYMBOL_ENABLED:-false}"
-DSPO_ROUTER_LR="${DSPO_ROUTER_LR:-1e-2}"
-DSPO_TAU_ANNEAL_RATE="${DSPO_TAU_ANNEAL_RATE:-0.00001}"
-SWAP_LABELS="${SWAP_LABELS:-false}"
-VALIDATE_BEFORE_TRAINING="${VALIDATE_BEFORE_TRAINING:-true}"
-USE_DPO="${USE_DPO:-true}"
-DPO_BETA="${DPO_BETA:-0.1}"
+# --- Infrastructure ---
+CONDA_ENV="${CONDA_ENV:-qwen}"                                                    # conda environment to activate
+DEVICE="${DEVICE:-cuda:0}"                                                        # torch device for training
+CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-7}"                                 # which GPU(s) the process can see
+OUTPUT_DIR="${OUTPUT_DIR:-${HOME}/training/symbol_training}"                      # root output directory for checkpoints
+LOG_DIR="${LOGS_DIR:-${HOME}/training/logs}/$(date +"%Y-%m-%d")"                 # log directory (dated subfolder)
+NUM_WORKERS="${NUM_WORKERS:-2}"                                                   # dataloader worker processes
+
+# --- Model ---
+MODEL_TYPE="${MODEL_TYPE:-qwen}"                                                  # model backend: qwen | salmonn | flamingo
+
+# --- Data ---
+DATASET_TYPE="${DATASET_TYPE:-voxceleb-hvb}"                                      # training dataset(s), dash-separated
+VAL_DATASET_TYPE="${VAL_DATASET_TYPE:-voxceleb-hvb-voxpopuli-meld_emotion}"      # validation dataset(s), dash-separated
+MAX_SAMPLES="${MAX_SAMPLES:-10}"                                                  # max training samples (0 = full dataset)
+INPUT_MODE="${INPUT_MODE:-speech_only}"                                           # query modality: speech_only | text_only
+FEWSHOT_MODE="${FEWSHOT_MODE:-text}"                                              # few-shot example modality: text | speech
+NUM_EXAMPLES="${NUM_EXAMPLES:-0}"                                                 # few-shot examples in training prompt (0 = zero-shot)
+VAL_NUM_EXAMPLES="${VAL_NUM_EXAMPLES:-0}"                                         # few-shot examples in validation prompt
+
+# --- Training ---
+LORA_EPOCHS="${LORA_EPOCHS:-10}"                                                  # number of training epochs
+LORA_LR="${LORA_LR:-1e-5}"                                                       # LoRA adapter learning rate
+BATCH_SIZE="${BATCH_SIZE:-1}"                                                     # per-step training batch size
+VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-1}"                                             # per-step validation batch size
+GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-8}"                  # effective batch = BATCH_SIZE × this
+VALIDATE_BEFORE_TRAINING="${VALIDATE_BEFORE_TRAINING:-false}"                     # true = run validation pass before epoch 1 (baseline score)
+VALIDATION_MODES="${VALIDATION_MODES:-original,fixed,fresh}"                     # which symbol modes to validate: original|fixed|fresh
+
+# --- Symbol mode (pick ONE of the blocks below) ---
+# SymDPO: DPO loss over chosen/rejected symbol pairs (requires NO_SYMBOLS=false)
+USE_DPO="${USE_DPO:-false}"                                                        # true = use SymDPO trainer
+DPO_BETA="${DPO_BETA:-0.1}"                                                       # DPO temperature β: higher = stronger preference margin
+
+# D-SPO: differentiable slot routing (set DIFF_SYMBOL_ENABLED=true to activate)
+DIFF_SYMBOL_ENABLED="${DIFF_SYMBOL_ENABLED:-true}"                               # true = enable D-SPO differentiable slot routing
+DSPO_ROUTER_LR="${DSPO_ROUTER_LR:-1e-2}"                                         # D-SPO router (slot preference matrix) learning rate
+DSPO_TAU_ANNEAL_RATE="${DSPO_TAU_ANNEAL_RATE:-0.00001}"                          # D-SPO Gumbel temperature decay rate per step
+DSPO_SLOT_ONLY="${DSPO_SLOT_ONLY:-true}"                                         # true = freeze LoRA, train only slot matrix (also needs DIFF_SYMBOL_ENABLED=true)
+
+# Fixed/dynamic symbols
+NO_SYMBOLS="${NO_SYMBOLS:-false}"                                                 # true = disable symbol replacement, use raw labels (must be false for DPO)
+DYNAMIC_SYMBOLS="${DYNAMIC_SYMBOLS:-false}"                                       # true = regenerate symbol mapping each epoch
+SYMBOL_UPDATE_STRATEGY="${SYMBOL_UPDATE_STRATEGY:-per_epoch}"                    # when dynamic symbols refresh: per_epoch | per_instance
+SWAP_LABELS="${SWAP_LABELS:-false}"                                               # true = randomly shuffle label↔symbol assignments each epoch
 
 if [[ "${USE_DPO}" == "true" ]]; then
     _MODE="symdpo"
 elif [[ "${DIFF_SYMBOL_ENABLED}" == "true" ]]; then
     _MODE="dspo"
+    [[ "${DSPO_SLOT_ONLY}" == "true" ]] && _MODE="dspo_slotonly"
 elif [[ "${NO_SYMBOLS}" == "true" ]]; then
     _MODE="nosym"
 elif [[ "${DYNAMIC_SYMBOLS}" == "true" ]]; then
@@ -119,8 +137,11 @@ python train.py \
     $( [[ "${DIFF_SYMBOL_ENABLED}" == "true" ]] && printf '%s' "--diff_symbol_enabled" ) \
     --dspo_router_lr "${DSPO_ROUTER_LR}" \
     --dspo_tau_anneal_rate "${DSPO_TAU_ANNEAL_RATE}" \
+    $( [[ "${DSPO_SLOT_ONLY}" == "true" ]] && printf '%s' "--dspo_slot_only" ) \
     $( [[ "${SWAP_LABELS}" == "true" ]] && printf '%s' "--swap_labels" ) \
     $( [[ "${USE_DPO}" == "true" ]] && printf '%s' "--use_dpo" ) \
     $( [[ "${USE_DPO}" == "true" ]] && printf '%s' "--dpo_beta ${DPO_BETA}" ) \
+    --input_mode "${INPUT_MODE}" \
+    --fewshot_mode "${FEWSHOT_MODE}" \
     $( [[ "${VALIDATE_BEFORE_TRAINING}" == "false" ]] && printf '%s' "--no_validate_before_training" ) \
     >> "${LOG_FILE}" 2>&1

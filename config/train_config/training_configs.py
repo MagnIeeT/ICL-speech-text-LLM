@@ -67,6 +67,8 @@ class DataConfig:
     num_examples: int = 5
     val_num_examples: int = 5
     num_workers: int = 2
+    input_mode: str = "speech_only"   # speech_only | text_only
+    fewshot_mode: str = "text"        # text | speech
 
 
 from utils.environment import get_env_path
@@ -75,7 +77,8 @@ from utils.environment import get_env_path
 class DifferentiableSymbolConfig:
     enabled: bool = False
     num_slots: int = 25
-    slot_vocab_size: int = 5       # K: private vocab tokens per slot (non-overlapping)
+    slot_vocab_size: int = 100     # K: private vocab tokens per slot (non-overlapping)
+    slot_only: bool = False        # freeze LoRA, train router only
     tau: float = 1.0
     tau_min: float = 0.1
     tau_anneal_rate: float = 0.001
@@ -207,10 +210,11 @@ class TrainingConfig:
 
         diff_symbol_config = DifferentiableSymbolConfig(
             enabled=getattr(args, "diff_symbol_enabled", False),
-            slot_vocab_size=getattr(args, "dspo_slot_vocab_size", 10),
+            slot_vocab_size=getattr(args, "dspo_slot_vocab_size", 100),
             rotation_interval=getattr(args, "dspo_rotation_interval", 0),
             router_lr=getattr(args, "dspo_router_lr", 1e-3),
             tau_anneal_rate=getattr(args, "dspo_tau_anneal_rate", 0.0001),
+            slot_only=getattr(args, "dspo_slot_only", False),
         )
 
         data_config = DataConfig(
@@ -224,6 +228,8 @@ class TrainingConfig:
             num_workers=getattr(args, "num_workers", 2),
             num_examples=getattr(args, "num_examples", 5),
             val_num_examples=getattr(args, "val_num_examples", 5),
+            input_mode=getattr(args, "input_mode", "speech_only"),
+            fewshot_mode=getattr(args, "fewshot_mode", "text"),
         )
 
         return cls(
@@ -280,7 +286,8 @@ def parse_training_args() -> argparse.Namespace:
 
     parser.add_argument("--dynamic_symbols", action="store_true")
     parser.add_argument("--diff_symbol_enabled", action="store_true", help="Enable Differentiable Symbolic Preference Optimization (D-SPO)")
-    parser.add_argument("--dspo_slot_vocab_size", type=int, default=10, help="D-SPO: private candidate tokens per slot")
+    parser.add_argument("--dspo_slot_vocab_size", type=int, default=100, help="D-SPO: private candidate tokens per slot")
+    parser.add_argument("--dspo_slot_only", action="store_true", help="D-SPO: freeze LoRA, train router/slot matrix only")
     parser.add_argument("--dspo_rotation_interval", type=int, default=0, help="D-SPO: rotate slot assignments every N global steps (0 = per epoch)")
     parser.add_argument("--dspo_router_lr", type=float, default=1e-3, help="D-SPO: router learning rate")
     parser.add_argument("--dspo_tau_anneal_rate", type=float, default=0.0001, help="D-SPO: tau annealing rate per step")
@@ -299,6 +306,8 @@ def parse_training_args() -> argparse.Namespace:
         choices=["per_epoch", "per_instance"],
     )
 
+    parser.add_argument("--input_mode", type=str, default="speech_only", choices=["speech_only", "text_only"], help="Query input modality")
+    parser.add_argument("--fewshot_mode", type=str, default="text", choices=["text", "speech"], help="Few-shot example modality")
     parser.add_argument("--use_dpo", action="store_true", help="Use SymDPO trainer instead of cross-entropy")
     parser.add_argument("--dpo_beta", type=float, default=0.1, help="DPO beta (preference margin temperature)")
     parser.add_argument("--no_validate_before_training", action="store_true", help="Skip baseline validation before epoch 1")
