@@ -58,18 +58,47 @@ class BaseMultiTaskDataset(Dataset):
         self.current_config = self.config
 
         self.audio_lookup = None
+        self.valid_fewshot_indices = []
+        self.audio_idx_to_dataset_idx = {}  # >>> NEW: Maps lookup index to actual integer row
+
         if self.fewshot_mode == "speech":
             audio_lookup_path = self.config.get_audio_lookup_path(self.split)
             if audio_lookup_path:
                 load_time = time.time()
                 self.audio_lookup = load_from_disk(audio_lookup_path)
+                
+                dataset_len = len(self.dataset)
+                all_lookup_indices = self.audio_lookup["index"]
+
+                # >>> NEW: Build reverse map for string IDs if main dataset has "id" or "index" fields
+                ds_features = getattr(self.dataset, "column_names", [])
+                main_ds_id_to_row = {}
+                if "id" in ds_features:
+                    main_ds_id_to_row.update({str(v): i for i, v in enumerate(self.dataset["id"])})
+                if "index" in ds_features:
+                    main_ds_id_to_row.update({str(v): i for i, v in enumerate(self.dataset["index"])})
+
+                for audio_i, raw_idx in enumerate(all_lookup_indices):
+                    row_idx = None
+                    try:
+                        # Try pure integer row index first
+                        row_idx = int(raw_idx)
+                    except (ValueError, TypeError):
+                        # If it's a string ID like '0002f70f7386445b_1', look it up in our map
+                        row_idx = main_ds_id_to_row.get(str(raw_idx))
+
+                    # Ensure the resolved row index is safe and within subset bounds
+                    if row_idx is not None and row_idx < dataset_len:
+                        self.valid_fewshot_indices.append(audio_i)
+                        self.audio_idx_to_dataset_idx[audio_i] = row_idx
+
                 logger.info(
-                    "Loaded audio lookup in %.3fs for %s (%d items)",
+                    "Loaded audio lookup in %.3fs for %s (Total: %d items, Valid for subset: %d items)",
                     time.time() - load_time,
                     self.dataset_type,
                     len(self.audio_lookup),
+                    len(self.valid_fewshot_indices),
                 )
-
     def __len__(self):
         return len(self.dataset)
 
@@ -111,27 +140,41 @@ class BaseMultiTaskDataset(Dataset):
         current_config = self.current_config
         formatted_examples: List[Dict[str, str]] = []
         examples_audio = []
+        
+        effective_fewshot_mode = self.fewshot_mode
 
         if self.num_examples > 0:
-            if self.fewshot_mode == "speech" and self.audio_lookup is not None:
-                # Speech few-shot: select indices then fetch from audio lookup
-                indices = self._select_examples(list(range(len(self.audio_lookup))))
-                for sample_idx in indices:
-                    example = self.audio_lookup[sample_idx]
-                    formatted_examples.append(
-                        {
-                            "text": example[current_config.text_key],
-                            "label": self._format_label(
-                                example[current_config.completion_key],
-                                is_example=False,
-                                current_mapping=current_config.label_mapping,
-                                text=example[current_config.text_key],
-                            ),
-                        }
+            if self.fewshot_mode == "speech":
+                if self.audio_lookup is not None:
+                    # Speech few-shot: select indices from the safe validated pool
+                    indices = self._select_examples(self.valid_fewshot_indices)
+                    for sample_idx in indices:
+                        example = self.audio_lookup[sample_idx]
+                        
+                        # >>> NEW: Fetch using our pre-calculated mapped row index!
+                        dataset_row_idx = self.audio_idx_to_dataset_idx[sample_idx]
+                        main_example = self.dataset[dataset_row_idx]
+                        
+                        formatted_examples.append(
+                            {
+                                "text": main_example[current_config.text_key],
+                                "label": self._format_label(
+                                    main_example[current_config.completion_key],
+                                    is_example=False,
+                                    current_mapping=current_config.label_mapping,
+                                    text=main_example[current_config.text_key],
+                                ),
+                            }
+                        )
+                        examples_audio.append(example["audio"]["array"])
+                else:
+                    logger.warning(
+                        "Few-shot mode is 'speech' but no valid audio lookup found for %s. Falling back to text few-shot.",
+                        self.dataset_type,
                     )
-                    examples_audio.append(example["audio"]["array"])
             else:
-                # Text few-shot: use inline examples embedded in each item
+                effective_fewshot_mode = "text"
+                
                 selected_examples = self._select_examples(item.get("few_shot_examples", []))
                 for example in selected_examples:
                     formatted_examples.append(
@@ -150,7 +193,7 @@ class BaseMultiTaskDataset(Dataset):
             text=item[current_config.text_key],
             examples=formatted_examples,
             input_mode=self.input_mode,
-            fewshot_mode=self.fewshot_mode,
+            fewshot_mode=effective_fewshot_mode,
             dataset_type=self.dataset_type,
         )
 
@@ -161,9 +204,6 @@ class BaseMultiTaskDataset(Dataset):
             text=item[current_config.text_key],
         )
 
-        # Process audio → input_features here (audio processing is symbol-independent).
-        # IMPORTANT: Do NOT tokenize here — tokenization is deferred to collate_batch
-        # so SymbolManager can rewrite prompt/completion BEFORE tokenization.
         inputs = self.processor.process_inputs(
             data={
                 "prompt": prompt,
@@ -182,9 +222,8 @@ class BaseMultiTaskDataset(Dataset):
             "fewshot_mode": self.fewshot_mode,
             "dataset_type": self.dataset_type,
             "is_training": self._is_training(),
-            **inputs,  # adds input_features (and feature_attention_mask if present)
+            **inputs, 
         }
-
     def _get_main_audio(self, item):
         if "speech" in self.input_mode and "audio" in item:
             return item["audio"]["array"]

@@ -107,7 +107,7 @@ def create_combined_dataloader(
             dataset=task_dataset,
             processor=processor,
             input_mode="speech_only",
-            fewshot_mode="text",
+            fewshot_mode="speech",
             num_examples=num_examples if num_examples is not None else config.data_config.num_examples,
             random_examples=False,
             split=DatasetSplit.TRAIN if is_training else DatasetSplit.TEST,
