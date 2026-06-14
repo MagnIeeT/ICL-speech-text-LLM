@@ -127,21 +127,26 @@ class ValidationManager:
                     p_map, c_map = {}, {}
                 elif router is not None and dspo_module is not None and not use_dynamic:
                     if ds_name_str not in dataset_slot_cache:
-                        # First batch for this dataset — fix slot assignment for the whole run.
-                        # Pick the top-K most converged slots (highest confidence) so we
-                        # always use the slots whose router has learned the most.
-                        num_needed = min(len(relevant_labels), self.config.diff_symbol_config.num_slots)
-                        confidence = router.get_confidence_scores()  # [num_slots]
-                        slots = confidence.topk(num_needed).indices.tolist()
-                        # Sort by confidence descending → assign to labels in alphabetical order
-                        slots = sorted(slots, key=lambda s: confidence[s].item(), reverse=True)
-                        # Log all slot confidence scores so we can track router convergence
+                        # Fixed slot assignment: same alphabetical ordering as training.
+                        # slot_0 → label[0], slot_1 → label[1], ... (labels sorted alphabetically).
+                        slots = list(range(len(relevant_labels)))
+
+                        # Log confidence scores for monitoring (not used for slot selection)
+                        confidence = router.get_confidence_scores()
                         conf_str = "  ".join(
                             f"slot_{i}={'*' if i in slots else ''}{confidence[i].item():.3f}"
                             for i in range(router.num_slots)
                         )
                         logger.info("D-SPO val confidence [%s]: %s", ds_name_str, conf_str)
-                        vocab_indices, _ = router.get_slot_mappings(slots, hard=True)
+
+                        # --- TOP-K CONFIDENCE SELECTION DISABLED (kept for reference) ---
+                        # num_needed = min(len(relevant_labels), self.config.diff_symbol_config.num_slots)
+                        # confidence = router.get_confidence_scores()
+                        # slots = confidence.topk(num_needed).indices.tolist()
+                        # slots = sorted(slots, key=lambda s: confidence[s].item(), reverse=True)
+                        # --- END ---
+
+                        vocab_indices, _ = router.get_slot_mappings(slots, hard=True, deterministic=True)
                         p_map = {label: f"<slot_{s}>" for label, s in zip(relevant_labels, slots)}
                         symbols = [
                             self.tokenizer.decode([idx]).strip() or f"<tok_{idx.item()}>"

@@ -167,7 +167,8 @@ class CustomQwen(nn.Module):
                 input_ids=input_ids,
                 input_embeds=inputs_embeds,
                 router=router,
-                embedding_layer=embedding_layer
+                embedding_layer=embedding_layer,
+                pre_computed_probs=samples.get("dspo_probs"),
             )
             input_ids_to_pass = None
         else:

@@ -131,7 +131,15 @@ class SymbolManager:
             if w in used: continue
             used.add(w)
             try:
-                if len(self.tokenizer.encode(w, add_special_tokens=False)) == 2: words.append(w)
+                w_ids = self.tokenizer.encode(w, add_special_tokens=False)
+                w_comma_ids = self.tokenizer.encode(f"{w},", add_special_tokens=False)
+                cs_w_ids = self.tokenizer.encode(f", {w}", add_special_tokens=False)
+                if (
+                    len(w_ids) == 2
+                    and len(w_comma_ids) == 3 and w_comma_ids[:2] == w_ids
+                    and len(cs_w_ids) == 3
+                ):
+                    words.append(w)
             except: continue
         return words[:num_symbols]
 

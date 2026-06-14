@@ -44,17 +44,33 @@ class SymbolRouter(nn.Module):
         self,
         slot_indices: List[int],
         hard: bool = True,
+        deterministic: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         For each requested slot, sample one token from its private K-token vocab.
 
+        Args:
+            deterministic: if True, use argmax(preferences) instead of gumbel sampling.
+                Probs use a straight-through softmax estimator so gradients still flow.
+                This gives stable targets across batches — the selected token only
+                changes when the router actually learns to prefer a different token.
+                If False (default), gumbel noise is added each call (original behaviour).
+
         Returns:
             vocab_indices: [S] — the chosen real vocab token ID for each slot
-            probs:         [S, K] — Gumbel-Softmax weights (used for soft embedding)
+            probs:         [S, K] — weights used for soft embedding (grad-connected)
         """
         slot_prefs = self.preferences[slot_indices]                           # [S, K]
-        probs = F.gumbel_softmax(slot_prefs, tau=self.tau, hard=hard, dim=-1) # [S, K]
-        discrete_indices = torch.argmax(probs, dim=-1)                        # [S]
+
+        if deterministic:
+            # Straight-through: hard argmax forward, softmax gradient backward
+            discrete_indices = torch.argmax(slot_prefs, dim=-1)              # [S]
+            soft_probs = F.softmax(slot_prefs / self.tau, dim=-1)            # [S, K]
+            hard_one_hot = F.one_hot(discrete_indices, num_classes=slot_prefs.size(-1)).to(soft_probs.dtype)
+            probs = hard_one_hot + (soft_probs - soft_probs.detach())        # straight-through
+        else:
+            probs = F.gumbel_softmax(slot_prefs, tau=self.tau, hard=hard, dim=-1)  # [S, K]
+            discrete_indices = torch.argmax(probs, dim=-1)                   # [S]
 
         # discrete_indices[i] is an index into slot_vocab_indices[slot_indices[i]]
         slot_vocab = self.slot_vocab_indices[slot_indices]                    # [S, K]

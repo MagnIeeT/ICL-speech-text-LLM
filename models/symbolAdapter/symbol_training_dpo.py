@@ -135,77 +135,113 @@ class SymbolDPOOrchestrator:
                 mapping = self._swap_cache[ds_name_str]
             return mapping, mapping
         else:
-            force_new = per_instance or batch_idx == 0
-            mapping = self.symbol_manager.get_symbols_for_epoch(epoch, force_new_symbols=force_new)
+            # DPO requires consistent symbols throughout all training — never regenerate.
+            mapping = self.symbol_manager.get_symbols_for_epoch(0, force_new_symbols=False)
             return mapping, mapping
 
     def _sample_rejected_symbol(self, chosen_symbol: str, c_mappings: Dict[str, str]) -> Optional[str]:
-        """Pick a random symbol from the current mapping that is not the chosen symbol."""
-        alternatives = [s for s in c_mappings.values() if s != chosen_symbol]
+        """Sample a rejected completion with the same number of labels as chosen.
+
+        For multi-label completions (e.g. "Xk7, mA"), samples the same count of
+        wrong symbols so the comparison is length-fair. Falls back to however many
+        wrong symbols are available if fewer than needed.
+        """
+        chosen_parts = [s.strip() for s in chosen_symbol.split(",")]
+        chosen_set = set(chosen_parts)
+        num_needed = len(chosen_parts)
+
+        alternatives = [s for s in c_mappings.values() if s not in chosen_set]
         if not alternatives:
             return None
-        return random.choice(alternatives)
 
-    def _get_completion_logp(self, batch: Dict[str, Any]) -> torch.Tensor:
+        sampled = random.sample(alternatives, min(num_needed, len(alternatives)))
+        return ", ".join(sampled)
+
+    def _merge_chosen_rejected(self, chosen_batch: Dict[str, Any], rejected_batch: Dict[str, Any]) -> Dict[str, Any]:
+        """Stack chosen and rejected into a single batch of size 2.
+
+        input_ids and attention_mask differ (different completions) → cat along batch dim.
+        input_features and feature_attention_mask are identical → duplicate once.
+        Everything else is shared metadata → keep as-is.
         """
-        Compute the sum of log probs of completion tokens.
+        token_keys = {"input_ids", "attention_mask", "prompt_length"}
+        audio_keys = {"input_features", "feature_attention_mask"}
+        merged = {}
+        for key, c_val in chosen_batch.items():
+            if not isinstance(c_val, torch.Tensor):
+                merged[key] = c_val
+            elif key in token_keys:
+                merged[key] = torch.cat([c_val, rejected_batch[key]], dim=0)
+            elif key in audio_keys:
+                merged[key] = torch.cat([c_val, c_val], dim=0)  # same audio, duplicated
+            else:
+                merged[key] = c_val
+        return merged
 
-        Uses the autoregressive shift: logit at position t predicts token at t+1,
-        so completion tokens [prompt_len .. T-1] are predicted by logits [prompt_len-1 .. T-2].
+    def _get_completion_logps(self, batch: Dict[str, Any]) -> torch.Tensor:
+        """Return mean log prob of completion tokens for every example in the batch. Shape: [B]
+
+        Autoregressive shift: logit at position t predicts token at t+1, so completion
+        tokens [prompt_len .. T-1] are predicted by logits [prompt_len-1 .. T-2].
         """
         outputs = self.model(batch)
         logits = outputs["logits"]  # [B, T, V]
 
         if logits is None:
-            return torch.tensor(0.0, device=self.config.device, requires_grad=True)
+            B = batch["input_ids"].shape[0]
+            return torch.zeros(B, device=self.config.device, requires_grad=True)
 
-        input_ids = batch["input_ids"]  # [B, T]
-        prompt_len = int(batch["prompt_length"][0])
-        ids = input_ids[0]   # [T]
-        lgt = logits[0]      # [T, V]
-        T = ids.shape[0]
-
-        comp_ids    = ids[prompt_len:]           # [comp_len]
-        comp_logits = lgt[prompt_len - 1: T - 1, :]  # [comp_len, V]
-
-        if comp_ids.shape[0] == 0 or comp_logits.shape[0] == 0:
-            return torch.tensor(0.0, device=self.config.device, requires_grad=True)
-
-        log_probs = F.log_softmax(comp_logits.float(), dim=-1)
-
+        input_ids = batch["input_ids"]       # [B, T]
+        prompt_lengths = batch["prompt_length"]
+        B, T = input_ids.shape
         pad_id = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else 0
-        valid_mask = (comp_ids != pad_id) & (comp_ids != -100)
+        vocab_size = logits.shape[-1]
 
-        if not valid_mask.any():
-            return torch.tensor(0.0, device=self.config.device, requires_grad=True)
+        result = []
+        for i in range(B):
+            prompt_len = int(prompt_lengths[i])
+            ids = input_ids[i]                           # [T]
+            lgt = logits[i]                              # [T, V]
 
-        vocab_size = log_probs.shape[-1]
-        safe_ids = comp_ids.clone()
-        safe_ids[~valid_mask] = 0
-        safe_ids = safe_ids.clamp(0, vocab_size - 1)
+            comp_ids    = ids[prompt_len:]               # [comp_len]
+            comp_logits = lgt[prompt_len - 1: T - 1, :] # [comp_len, V]
 
-        token_log_probs = log_probs.gather(1, safe_ids.unsqueeze(1)).squeeze(1)
-        return token_log_probs[valid_mask].sum()
+            if comp_ids.shape[0] == 0 or comp_logits.shape[0] == 0:
+                result.append(torch.tensor(0.0, device=self.config.device))
+                continue
+
+            log_probs = F.log_softmax(comp_logits.float(), dim=-1)
+            valid_mask = (comp_ids != pad_id) & (comp_ids != -100)
+
+            if not valid_mask.any():
+                result.append(torch.tensor(0.0, device=self.config.device))
+                continue
+
+            safe_ids = comp_ids.clamp(0, vocab_size - 1)
+            token_log_probs = log_probs.gather(1, safe_ids.unsqueeze(1)).squeeze(1)
+            result.append(token_log_probs[valid_mask].mean())
+
+        return torch.stack(result)  # [B]
 
     def _compute_dpo_loss(self, chosen_batch: Dict[str, Any], rejected_batch: Dict[str, Any]) -> torch.Tensor:
+        """2 forward passes (down from 4) by batching chosen + rejected together.
+
+        Pass 1 — policy (LoRA ON):  batch[0]=chosen, batch[1]=rejected → both logps with grad.
+        Pass 2 — reference (LoRA OFF): same merged batch → both ref logps, no grad.
         """
-        4 forward passes:
-          policy (LoRA on)  × chosen  → policy_chosen_logp    [grad]
-          policy (LoRA on)  × rejected → policy_rejected_logp  [grad]
-          ref    (LoRA off) × chosen  → ref_chosen_logp        [no grad]
-          ref    (LoRA off) × rejected → ref_rejected_logp     [no grad]
-        """
-        policy_chosen_logp   = self._get_completion_logp(chosen_batch)
-        policy_rejected_logp  = self._get_completion_logp(rejected_batch)
+        merged = self._merge_chosen_rejected(chosen_batch, rejected_batch)
+
+        policy_logps = self._get_completion_logps(merged)           # [2], grad ON
+        policy_chosen_logp, policy_rejected_logp = policy_logps[0], policy_logps[1]
 
         self.model.model.disable_adapter_layers()
         with torch.no_grad():
-            ref_chosen_logp   = self._get_completion_logp(chosen_batch).detach()
-            ref_rejected_logp  = self._get_completion_logp(rejected_batch).detach()
+            ref_logps = self._get_completion_logps(merged).detach() # [2], no grad
         self.model.model.enable_adapter_layers()
+        ref_chosen_logp, ref_rejected_logp = ref_logps[0], ref_logps[1]
 
-        chosen_ratio   = policy_chosen_logp   - ref_chosen_logp
-        rejected_ratio  = policy_rejected_logp - ref_rejected_logp
+        chosen_ratio  = policy_chosen_logp  - ref_chosen_logp
+        rejected_ratio = policy_rejected_logp - ref_rejected_logp
         return -F.logsigmoid(self.beta * (chosen_ratio - rejected_ratio))
 
     def _train_one_epoch(self, epoch: int) -> float:
@@ -242,7 +278,10 @@ class SymbolDPOOrchestrator:
                     skipped += 1
                     continue
 
-                rejected_completion = [rejected_sym] * len(chosen_completion)
+                rejected_completion = [
+            self._sample_rejected_symbol(sym, c_mappings) or sym
+            for sym in chosen_completion
+        ]
 
                 if self._epoch_log_count < 2:
                     original_label = raw_batch["completion"][0] if raw_batch.get("completion") else "?"
@@ -257,6 +296,21 @@ class SymbolDPOOrchestrator:
                 # Tokenize separately: same prompt, different completion
                 chosen_tok   = self.processor.tokenize_batch(text_batch["prompt"], chosen_completion)
                 rejected_tok  = self.processor.tokenize_batch(text_batch["prompt"], rejected_completion)
+
+                if self._epoch_log_count < 2:
+                    c_ids_raw = self.tokenizer.encode(chosen_sym, add_special_tokens=False)
+                    r_ids_raw = self.tokenizer.encode(rejected_sym, add_special_tokens=False)
+                    c_toks = [self.tokenizer.decode([t]) for t in c_ids_raw]
+                    r_toks = [self.tokenizer.decode([t]) for t in r_ids_raw]
+                    logging.info(
+                        "TOK epoch=%d batch=%d  chosen=%r→%s(n=%d)  rejected=%r→%s(n=%d)  "
+                        "chosen_seq_len=%d  rejected_seq_len=%d",
+                        epoch + 1, batch_idx,
+                        chosen_sym, c_toks, len(c_ids_raw),
+                        rejected_sym, r_toks, len(r_ids_raw),
+                        chosen_tok["input_ids"].shape[-1],
+                        rejected_tok["input_ids"].shape[-1],
+                    )
 
                 # Merge: audio features from text_batch, token ids from each tok
                 chosen_batch   = {**text_batch, **chosen_tok}
@@ -353,6 +407,42 @@ class SymbolDPOOrchestrator:
 
             if self.config.checkpoint_frequency > 0 and (epoch + 1) % self.config.checkpoint_frequency == 0:
                 self._save_checkpoint(epoch, "periodic")
+
+        logging.info("=" * 30 + " Consolidated Validation Summary " + "=" * 30)
+        all_ds_names, all_mode_names = [], []
+        for entry in history:
+            modes = entry.get("validation", {}).get("all_modes", {})
+            for mode, datasets in modes.items():
+                if mode not in all_mode_names: all_mode_names.append(mode)
+                for ds in datasets.keys():
+                    if ds not in all_ds_names: all_ds_names.append(ds)
+
+        if all_ds_names:
+            train_ds = [n for n in all_ds_names if n in self.train_dataset_names]
+            val_ds = [n for n in all_ds_names if n not in self.train_dataset_names]
+            header = f"{'Epoch':<8} | {'Mode':<12}"
+            for ds in all_ds_names:
+                col = f"{ds}(T)" if ds in train_ds else ds
+                header += f" | {col:<15}"
+            if len(train_ds) > 1: header += " | Avg (train)"
+            if len(val_ds) > 1: header += " | Avg (val)"
+            logging.info(header)
+            logging.info("-" * len(header))
+            for i, entry in enumerate(history):
+                modes = entry.get("validation", {}).get("all_modes", {})
+                for mode in all_mode_names:
+                    datasets = modes.get(mode, {})
+                    row = f"{entry['epoch']:<8} | {mode:<12}"
+                    t_scores, v_scores = [], []
+                    for ds in all_ds_names:
+                        s = datasets.get(ds, {}).get("score")
+                        row += f" | {s:<15.6f}" if s is not None else " | -"
+                        if s is not None: (t_scores if ds in train_ds else v_scores).append(s)
+                    if len(train_ds) > 1: row += f" | {sum(t_scores)/len(t_scores):<12.6f}" if t_scores else " | -"
+                    if len(val_ds) > 1: row += f" | {sum(v_scores)/len(v_scores):<12.6f}" if v_scores else " | -"
+                    logging.info(row)
+                if i < len(history) - 1: logging.info("-" * len(header))
+        logging.info("=" * 80)
 
         self._save_checkpoint(self.config.lora_config.epochs - 1, "final")
         return {"history": history}

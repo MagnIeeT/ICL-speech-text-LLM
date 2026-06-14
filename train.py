@@ -16,6 +16,7 @@ from config.train_config.training_configs import TrainingConfig, parse_training_
 from dataload.model_processors import get_processor
 from models.symbolAdapter.symbol_manager import SymbolManager
 from models.symbolAdapter.symbol_training import SymbolTrainingOrchestrator
+from models.symbolAdapter.symbol_training_dpo import SymbolDPOOrchestrator
 from models.symbolAdapter.dspo_module import setup_dspo_tokenizer, setup_dspo_model
 from dataload.data_utils import create_combined_dataloader, load_datasets_for_config
 
@@ -139,11 +140,20 @@ def main():
         raw_processor = processor.processor if hasattr(processor, "processor") else None
         model = initialize_model(config, tokenizer, symbol_manager, raw_processor)
 
-        orchestrator = SymbolTrainingOrchestrator(
-            config=config, model=model, train_dataloader=train_dataloader, val_dataloader=val_dataloader,
-            tokenizer=tokenizer, symbol_manager=symbol_manager, train_dataset_names=train_dataset_names,
-            processor=processor
-        )
+        if getattr(args, "use_dpo", False):
+            orchestrator = SymbolDPOOrchestrator(
+                config=config, model=model, processor=processor,
+                train_dataloader=train_dataloader, val_dataloader=val_dataloader,
+                tokenizer=tokenizer, symbol_manager=symbol_manager,
+                train_dataset_names=train_dataset_names,
+                beta=getattr(args, "dpo_beta", 0.1),
+            )
+        else:
+            orchestrator = SymbolTrainingOrchestrator(
+                config=config, model=model, train_dataloader=train_dataloader, val_dataloader=val_dataloader,
+                tokenizer=tokenizer, symbol_manager=symbol_manager, train_dataset_names=train_dataset_names,
+                processor=processor
+            )
         orchestrator.run_complete_training()
         logging.info("Training completed successfully")
 

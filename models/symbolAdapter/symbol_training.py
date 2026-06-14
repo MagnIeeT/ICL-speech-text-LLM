@@ -163,37 +163,54 @@ class SymbolTrainingOrchestrator:
         if not relevant_labels: relevant_labels = self.symbol_manager.original_labels
 
         p_mappings, c_mappings = None, None
+        _dspo_probs = None  # pre-computed probs to pass to injection (same gumbel sample as targets)
         if self.router is not None:
+            # Fixed slot assignment: sorted labels → slot_0, slot_1, ... (set once, never rotated)
+            # Matches validation which uses the same alphabetical ordering.
+            num_labels = len(relevant_labels)
+            if ds_name_str not in self._slot_assignments:
+                self._slot_assignments[ds_name_str] = list(range(num_labels))
+                logging.info(
+                    "D-SPO fixed slot assignment (dataset=%s): %s → slots %s",
+                    ds_name_str, relevant_labels, self._slot_assignments[ds_name_str],
+                )
+            batch_slot_indices = self._slot_assignments[ds_name_str]
+
             # D-SPO Mode — slot assignments rotate on a schedule instead of every batch.
             # rotation_interval=0 → per-epoch (reset at epoch start, assign on first batch).
             # rotation_interval>0 → every N global steps.
-            num_labels = len(relevant_labels)
-            num_slots_available = self.config.diff_symbol_config.num_slots
-            rotation_interval = self.config.diff_symbol_config.rotation_interval
-            steps_per_epoch = len(self.train_dataloader)
-            effective_interval = rotation_interval if rotation_interval > 0 else steps_per_epoch
+            # num_labels = len(relevant_labels)
+            # num_slots_available = self.config.diff_symbol_config.num_slots
+            # rotation_interval = self.config.diff_symbol_config.rotation_interval
+            # steps_per_epoch = len(self.train_dataloader)
+            # effective_interval = rotation_interval if rotation_interval > 0 else steps_per_epoch
+            # last_step = self._assignment_steps.get(ds_name_str, -(effective_interval + 1))
+            # needs_rotation = (
+            #     ds_name_str not in self._slot_assignments
+            #     or (self.global_step - last_step) >= effective_interval
+            # )
+            # if needs_rotation:
+            #     batch_slot_indices = random.sample(
+            #         list(range(num_slots_available)),
+            #         k=min(num_labels, num_slots_available),
+            #     )
+            #     self._slot_assignments[ds_name_str] = batch_slot_indices
+            #     self._assignment_steps[ds_name_str] = self.global_step
+            #     logging.info(
+            #         "D-SPO slot rotation (step=%d interval=%d dataset=%s): %s → slots %s",
+            #         self.global_step, effective_interval, ds_name_str,
+            #         relevant_labels, batch_slot_indices,
+            #     )
+            # else:
+            #     batch_slot_indices = self._slot_assignments[ds_name_str]
 
-            last_step = self._assignment_steps.get(ds_name_str, -(effective_interval + 1))
-            needs_rotation = (
-                ds_name_str not in self._slot_assignments
-                or (self.global_step - last_step) >= effective_interval
-            )
-            if needs_rotation:
-                batch_slot_indices = random.sample(
-                    list(range(num_slots_available)),
-                    k=min(num_labels, num_slots_available),
-                )
-                self._slot_assignments[ds_name_str] = batch_slot_indices
-                self._assignment_steps[ds_name_str] = self.global_step
-                logging.info(
-                    "D-SPO slot rotation (step=%d interval=%d dataset=%s): %s → slots %s",
-                    self.global_step, effective_interval, ds_name_str,
-                    relevant_labels, batch_slot_indices,
-                )
-            else:
-                batch_slot_indices = self._slot_assignments[ds_name_str]
-
-            vocab_indices, _ = self.router.get_slot_mappings(batch_slot_indices, hard=True)
+            # Always use deterministic (argmax) for training targets — stable cross-batch.
+            # Tau still anneals softmax temperature for gradient quality, but never
+            # re-introduces gumbel noise that would flip argmax and corrupt the training signal.
+            all_slot_indices = list(range(self.router.num_slots))
+            deterministic = True
+            all_vocab_indices, _dspo_probs = self.router.get_slot_mappings(all_slot_indices, hard=True, deterministic=deterministic)
+            vocab_indices = all_vocab_indices[batch_slot_indices]
             p_mappings = {label: f"<slot_{slot_idx}>" for label, slot_idx in zip(relevant_labels, batch_slot_indices)}
             clean_symbols = [
                 self.tokenizer.decode([idx]).strip() or f"<tok_{idx.item()}>"
@@ -202,8 +219,23 @@ class SymbolTrainingOrchestrator:
             c_mappings = {label: symbol for label, symbol in zip(relevant_labels, clean_symbols)}
             if batch_idx < 2:
                 logging.info("D-SPO mapping (epoch=%d batch=%d dataset=%s):", epoch + 1, batch_idx, ds_name_str)
-                for label in relevant_labels:
-                    logging.info("  %-20s -> prompt: %-12s  completion: %s", label, p_mappings[label], c_mappings[label])
+                mismatches = []
+                for j, (label, slot_idx) in enumerate(zip(relevant_labels, batch_slot_indices)):
+                    # Verify: what _dspo_probs would inject == completion target
+                    k_idx = torch.argmax(_dspo_probs[slot_idx]).item()
+                    inject_vocab_id = self.router.slot_vocab_indices[slot_idx][k_idx].item()
+                    inject_token = self.tokenizer.decode([inject_vocab_id]).strip()
+                    target_token = clean_symbols[j]
+                    match_str = "OK" if inject_token == target_token else f"MISMATCH inject={inject_token!r}"
+                    logging.info("  %-20s -> prompt: %-12s  completion: %-12s  inject_check: %s",
+                                 label, p_mappings[label], target_token, match_str)
+                    if inject_token != target_token:
+                        mismatches.append(slot_idx)
+                if mismatches:
+                    logging.warning("D-SPO inject/target mismatch on slots %s", mismatches)
+                else:
+                    logging.info("D-SPO inject/target alignment: ALL OK (mode=%s tau=%.3f)",
+                                 "deterministic" if deterministic else "gumbel", self.router.tau)
         elif self.config.symbol_config.swap_labels:
             per_instance = self.config.symbol_config.update_strategy == SymbolUpdateStrategy.PER_INSTANCE
             # per_instance: new shuffle every batch
@@ -241,15 +273,17 @@ class SymbolTrainingOrchestrator:
         if self.processor is not None and "prompt" in updated_batch:
             tokenized_data = self.processor.tokenize_batch(updated_batch["prompt"], updated_batch["completion"])
             updated_batch.update(tokenized_data)
+        if _dspo_probs is not None:
+            updated_batch["dspo_probs"] = _dspo_probs  # moved to device by _move_batch_to_device
         return updated_batch
 
     def _train_one_epoch(self, epoch: int) -> float:
         self.model.train()
         self._swap_cache = {}  # reset per-epoch swap assignments
-        if self.router is not None and self.config.diff_symbol_config.rotation_interval == 0:
-            # Per-epoch rotation: clear assignments so first batch of each epoch rotates
-            self._slot_assignments = {}
-            self._assignment_steps = {}
+        # if self.router is not None and self.config.diff_symbol_config.rotation_interval == 0:
+        #     # Per-epoch rotation: clear assignments so first batch of each epoch rotates
+        #     self._slot_assignments = {}
+        #     self._assignment_steps = {}
         total_loss, num_batches = 0.0, 0
         accumulation_steps = self.config.lora_config.gradient_accumulation_steps
         progress_bar = tqdm(self.train_dataloader, desc=f"Epoch {epoch + 1}", leave=False)

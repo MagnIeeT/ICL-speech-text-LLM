@@ -26,7 +26,8 @@ class DspoModule(nn.Module):
         input_ids: torch.Tensor,
         input_embeds: torch.Tensor,
         router: nn.Module,
-        embedding_layer: nn.Module
+        embedding_layer: nn.Module,
+        pre_computed_probs: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
         Replaces placeholder embeddings with differentiable symbol embeddings.
@@ -48,9 +49,17 @@ class DspoModule(nn.Module):
         import logging
         device = input_embeds.device
 
-        # Get Gumbel-Softmax probs for all slots at once: [num_slots, K]
-        all_slots = list(range(router.num_slots))
-        _, probs = router.get_slot_mappings(all_slots, hard=True)  # [num_slots, K]
+        # Use pre-computed probs (same gumbel sample as training targets) if provided,
+        # otherwise sample fresh (e.g. during validation).
+        if pre_computed_probs is not None:
+            probs = pre_computed_probs  # [num_slots, K]
+            if DspoModule._inject_log_count < 5:
+                logging.info("D-SPO injection: using pre-computed probs (inject == target guaranteed)")
+        else:
+            all_slots = list(range(router.num_slots))
+            _, probs = router.get_slot_mappings(all_slots, hard=True)  # [num_slots, K]
+            if DspoModule._inject_log_count < 5:
+                logging.info("D-SPO injection: sampling fresh probs (validation mode)")
 
         modified_embeds = input_embeds.clone()
         injection_count = 0

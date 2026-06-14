@@ -299,6 +299,8 @@ def parse_training_args() -> argparse.Namespace:
         choices=["per_epoch", "per_instance"],
     )
 
+    parser.add_argument("--use_dpo", action="store_true", help="Use SymDPO trainer instead of cross-entropy")
+    parser.add_argument("--dpo_beta", type=float, default=0.1, help="DPO beta (preference margin temperature)")
     parser.add_argument("--no_validate_before_training", action="store_true", help="Skip baseline validation before epoch 1")
     parser.add_argument("--output_dir", type=str, default=None)
     parser.add_argument("--checkpoint_dir", type=str, default=None)
