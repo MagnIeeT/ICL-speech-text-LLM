@@ -65,7 +65,7 @@ from llava.model.builder import load_pretrained_model
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dataload.example_selector import ExampleSelector
 from dataload.prompt_builder import LLaVAPromptBuilder
-from dataload.medfmc_prompts import build_per_class_prompt, sprint_log
+from dataload.medfmc_prompts import build_per_class_prompt, sprint_log, score_probes_pyes
 from utils.evaluation_utils import tie_diagnostics
 from models.symbolAdapter.symbol_manager import SymbolManager
 from config.data_config import get_dataset_config, DatasetName
@@ -176,15 +176,128 @@ def _get_binary_token_ids(tokenizer, symbol_manager, strategy: str, mode: str = 
                 return tid
         return ids[0] if ids else None
 
+    # The per-class chest/endo probe always answers "Yes or No" — for EVERY
+    # strategy. "Yes"/"No" are never in the chest/endo symbol mapping, so they
+    # are never symbolized. Score No/Yes tokens regardless of strategy, matching
+    # validation.py:_run_multilabel_auc_map (yes_id/no_id). MUST precede the
+    # two_token branch below (which is colon-only).
+    if mode == "yesno":
+        return _first_non_space("No"), _first_non_space("Yes")
+
+    # Colon binary (mode="digit"): under two_token, "0"/"1" ARE the labels and
+    # get mapped to real symbols, so score the symbol tokens.
     if strategy in ("two_token",):
         symbols = symbol_manager.get_current_symbols()
         sym0 = symbols.get("0", "0")
         sym1 = symbols.get("1", "1")
         return _first_non_space(sym0), _first_non_space(sym1)
 
-    if mode == "yesno":
-        return _first_non_space("No"), _first_non_space("Yes")
     return _first_non_space("0"), _first_non_space("1")
+
+
+def _binary_tokens_for_mapping(tokenizer, active_mapping):
+    """
+    Colon binary answer tokens (neg, pos) for the ACTIVE mode mapping.
+
+    'original' mode (no mapping) → bare "0"/"1". 'fixed'/'fresh' → the symbols the
+    mapping assigns to "0"/"1". Skips the SentencePiece leading-space token (29871).
+    """
+    LLAMA_SPACE_TOKEN = 29871
+
+    def _first_non_space(text):
+        ids = tokenizer.encode(text, add_special_tokens=False)
+        for tid in ids:
+            if tid != LLAMA_SPACE_TOKEN:
+                return tid
+        return ids[0] if ids else None
+
+    if active_mapping:
+        return (_first_non_space(active_mapping.get("0", "0")),
+                _first_non_space(active_mapping.get("1", "1")))
+    return _first_non_space("0"), _first_non_space("1")
+
+
+def _resolve_fixed_mapping(symbol_manager):
+    """
+    Return the checkpoint's trained symbol mapping for 'fixed' mode, robustly.
+
+    two_token → SymbolManager.fixed_mappings (populated at training). ed_ft/id_ft/
+    lf_ft store per-epoch symbols in epoch_mappings_history (fixed_mappings stays {}),
+    keyed by epoch — and JSON serialises those keys as strings while current_epoch is
+    an int, so get_current_symbols() returns {}. Here we pick the highest epoch's
+    mapping explicitly (the symbols the converged checkpoint was last trained with).
+    Returns {} if no trained symbols exist (→ caller skips 'fixed').
+    """
+    if symbol_manager.fixed_mappings:
+        return dict(symbol_manager.fixed_mappings)
+    hist = symbol_manager.epoch_mappings_history or {}
+    if hist:
+        last_key = max(hist.keys(), key=lambda k: int(k))
+        return dict(hist[last_key])
+    return {}
+
+
+def _resolve_eval_modes(args, is_symbol):
+    """
+    Eval modes to run. --modes overrides; otherwise original/fixed/fresh for the
+    symbol strategies (ICI parity) and 'original' only for regular/rft.
+    """
+    raw = getattr(args, "modes", None)
+    if raw:
+        req = [m.strip().lower() for m in raw.split(",") if m.strip()]
+        valid = [m for m in req if m in ("original", "fixed", "fresh")]
+        return valid or ["original"]
+    return ["original", "fixed", "fresh"] if is_symbol else ["original"]
+
+
+def _save_multimode_results(all_modes, dataset, args, model_path):
+    """Write ONE combined JSON (all modes) and print a final per-mode comparison."""
+    now = datetime.datetime.now()
+    out_filename = (
+        f"results_{dataset}_{args.strategy}_{args.icl_shots}shot"
+        f"_{now.strftime('%Y%m%d_%H%M%S')}.json"
+    )
+    llava_dir = os.environ.get(
+        "LLAVA_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "..")),
+    )
+    out_dir = os.path.join(llava_dir, "logs", "json")
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, out_filename)
+
+    primary = "original" if "original" in all_modes else (
+        next(iter(all_modes)) if all_modes else None)
+    output_data = {
+        "metadata": {
+            "dataset": dataset, "strategy": args.strategy, "icl_shots": args.icl_shots,
+            "model_path": model_path, "model_base": args.model_base,
+            "question_file": args.question_file, "train_file": args.train_file,
+            "timestamp": now.isoformat(), "seed": args.seed,
+            "modes": list(all_modes.keys()), "primary_mode": primary,
+        },
+        # Back-compat: top-level metrics/results mirror the primary (original) mode.
+        "metrics": all_modes.get(primary, {}).get("metrics", {}) if primary else {},
+        "results": all_modes.get(primary, {}).get("results", []) if primary else [],
+        "modes": {
+            m: {"metrics": d["metrics"], "mapping": d.get("mapping", {}),
+                "results": d["results"]}
+            for m, d in all_modes.items()
+        },
+    }
+    with open(out_path, "w") as f:
+        json.dump(output_data, f, indent=2)
+
+    print("\n" + "=" * 70)
+    print(f"FINAL RESULTS (all modes)  dataset={dataset}  strategy={args.strategy}")
+    print("=" * 70)
+    for m, d in all_modes.items():
+        mt = d["metrics"]
+        bits = [f"acc={mt.get('accuracy', 0) * 100:.2f}%",
+                f"macroF1={mt.get('macro_f1', 0) * 100:.2f}%"]
+        if "auc" in mt:       bits.append(f"AUC={mt['auc'] * 100:.2f}%")
+        if "macro_auc" in mt: bits.append(f"macroAUC={mt['macro_auc'] * 100:.2f}%")
+        if "map" in mt:       bits.append(f"mAP={mt['map'] * 100:.2f}%")
+        print(f"  [{m:<8}] " + "  ".join(bits))
+    print(f"Saved → {out_path}\n")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -282,13 +395,14 @@ def _build_per_class_prompt(dataset, class_name, cfg, sym_mappings=None, apply_t
 
     The probe carries the SAME "- label: definition" block the model saw in
     training (config.render_def_block over cfg's intro/labels/definitions), then
-    a per-class focusing question.  When sym_mappings is provided (SS-FT /
-    two_token), symbols are substituted over the whole human turn — block AND
+    a per-class focusing question.  When sym_mappings is provided (fixed/fresh
+    modes), symbols are substituted over the whole human turn — block AND
     question — exactly as train.py:preprocess_v1:504-506 does, so definitions
     and symbols are consistent between training and evaluation.
 
-    For regular / ed_ft / id_ft / lf_ft, sym_mappings is None → original labels
-    (matches the inference convention in eval_model: is_regular at sprint_eval).
+    sym_mappings is None for 'original' mode → original labels. For 'fixed'/'fresh'
+    modes it holds the trained / freshly generated symbols (see eval_model's modes
+    loop), so every symbol strategy can be probed with symbols too.
 
     The answer space is Yes/No and the caller scores P(Yes) from the answer-token
     logits — unchanged, so mAP/AUC math is unaffected.
@@ -553,6 +667,7 @@ def _run_per_class_binary(
     tokenizer, model, image_processor, image_folder, sample_index,
     cfg, apply_to_text_fn=None,
     diagnose=False, ablation_samples=0,
+    probe_batch_size: int = 1,
 ):
     """
     For each class, ask the model a yes/no question, capture the logits for
@@ -602,7 +717,29 @@ def _run_per_class_binary(
             sample_index, image_file,
         )
 
-    for cls_name in task_labels:
+    # Batched per-class scoring (opt-in via probe_batch_size>1). Reproduces the
+    # unbatched P(Yes) exactly (auto-verified on sample 0). Disabled when
+    # diagnose is on, since diagnostics need per-call top-5 logits.
+    _batched = (probe_batch_size > 1) and not diagnose
+    if _batched:
+        _prompts = [
+            _build_per_class_prompt(
+                dataset, c, cfg, sym_mappings=sym_mappings, apply_to_text_fn=apply_to_text_fn
+            )
+            for c in task_labels
+        ]
+        if sample_index == 0:
+            for _c, _pr in zip(task_labels, _prompts):
+                sprint_log("INFER-AUC-PROBE", dataset=dataset, cls=_c,
+                           sym_used=bool(sym_mappings), probe=_pr)
+        class_scores = score_probes_pyes(
+            _prompts, tokenizer, model, image_tensor, image_sizes[0],
+            token_id_0, token_id_1,
+            batch_size=probe_batch_size, verify=(sample_index == 0),
+        )
+        class_preds = [1 if s >= 0.5 else 0 for s in class_scores]
+
+    for cls_name in ([] if _batched else task_labels):
         prompt_text = _build_per_class_prompt(
             dataset, cls_name, cfg, sym_mappings=sym_mappings, apply_to_text_fn=apply_to_text_fn
         )
@@ -740,6 +877,15 @@ def eval_model(args):
         model_base=args.model_base,
         model_name=model_name,
     )
+    # Batched per-class probe scoring (--probe-batch-size > 1) left-pads the batch,
+    # but LLaVA's prepare_inputs_labels_for_multimodal re-pads the merged
+    # image+text embeddings on the side given by config.tokenizer_padding_side
+    # (llava_arch.py:290, default 'right'). With right re-pad, generate() reads
+    # step-0 logits from a PAD position for the shorter rows -> wrong P(Yes).
+    # Set left so the internal re-pad matches HF's "logits[:, -1]" convention.
+    # No-op for batch_size==1 (a single full-length sequence is never padded).
+    if getattr(args, "probe_batch_size", 1) > 1:
+        model.config.tokenizer_padding_side = "left"
     total_params = sum(p.numel() for p in model.parameters())
     print(f"  Base model   : {os.path.basename(args.model_base or model_path)}")
     if args.model_base is not None:
@@ -747,70 +893,45 @@ def eval_model(args):
     print(f"  Total params : {total_params:,}  ({total_params / 1e9:.2f}B)")
 
     # ── Symbol manager ────────────────────────────────────────────────────────
-    # ed_ft / id_ft / lf_ft use dynamic symbols during training but original labels at inference
-    is_regular = args.strategy in ("regular", "rft", "ed_ft", "id_ft", "lf_ft")
+    # two_token / ed_ft / id_ft / lf_ft were all trained WITH symbols. At inference
+    # we load the trained mapping for ALL of them (ICI parity) so each checkpoint can
+    # be evaluated in original/fixed/fresh modes (see the modes loop below). Only
+    # regular/rft has no symbols. symbol_type="two_token" lets the manager generate
+    # 'fresh' symbols; load_mappings() then overrides with the checkpoint's values.
+    _is_symbol = args.strategy in ("two_token", "ed_ft", "id_ft", "lf_ft")
     symbol_manager = SymbolManager(
         original_labels=task_labels,
         tokenizer=tokenizer,
         dynamic_per_epoch=False,
-        symbol_type=args.strategy,
-        no_symbols=is_regular,
+        symbol_type="two_token" if _is_symbol else "regular",
+        no_symbols=not _is_symbol,
     )
 
-    if not is_regular:
+    if _is_symbol:
         mapping_path = args.symbol_mappings or os.path.join(model_path, "symbol_mappings.json")
         if os.path.exists(mapping_path):
             symbol_manager.load_mappings(mapping_path)
-            print(f"Loaded symbol mappings: {symbol_manager.get_current_symbols()}")
+            print(f"Loaded symbol mappings from {mapping_path}")
+            print(f"  fixed_mappings={bool(symbol_manager.fixed_mappings)}  "
+                  f"epoch_history_keys={list((symbol_manager.epoch_mappings_history or {}).keys())}")
         else:
             print("WARNING: No symbol_mappings.json found. Auto-generating (pipeline test only).")
             auto_path = os.path.join(model_path, "symbol_mappings_autogen.json")
             symbol_manager.save_mappings(auto_path)
             print(f"Auto-generated symbols saved to: {auto_path}")
 
-    sym_mappings = symbol_manager.get_current_symbols() if not is_regular else None
-
-    # ── Answer-token ids ──────────────────────────────────────────────────────
-    # (use_per_class depends on is_multi_label and icl_shots, computed just below)
-    # Colon binary path: bare "0"/"1" tokens (or symbols under two_token).
-    # Multi-label per-class path: bare "No"/"Yes" tokens — diagnostic confirmed
-    # the base LLaVA model emits Yes/No at the answer position, not 0/1.
+    # ── Shared setup (model + data loaded ONCE; the modes loop runs below) ────
     use_per_class = is_multi_label and args.icl_shots == 0
-
-    if not is_multi_label:
-        token_id_0, token_id_1 = _get_binary_token_ids(
-            tokenizer, symbol_manager, args.strategy, mode="digit"
-        )
-        auc_token_id = token_id_1
-    elif use_per_class:
-        token_id_0, token_id_1 = _get_binary_token_ids(
-            tokenizer, symbol_manager, args.strategy, mode="yesno"
-        )
-        auc_token_id = None
-    else:
-        token_id_0, token_id_1 = None, None
-        auc_token_id = None
-
     if use_per_class:
         print(
             f"Multi-label per-class mode: {len(task_labels)} binary queries per image "
             f"→ AUC + mAP will be computed."
-        )
-        print(
-            f"  Answer tokens: neg={token_id_0} '{tokenizer.decode([token_id_0])}'  "
-            f"pos={token_id_1} '{tokenizer.decode([token_id_1])}'"
         )
     elif is_multi_label:
         print(
             f"Multi-label text-output mode (icl_shots={args.icl_shots}): "
             f"exact-match + macro F1 only (no AUC/mAP)."
         )
-
-    # ── Symbol mapping diagnostic (one-time, before inference loop) ───────────
-    _sprint_sym_diagnostic(
-        dataset, args.strategy, task_labels, sym_mappings, use_per_class,
-        cfg=cfg, apply_to_text_fn=symbol_manager.apply_to_text,
-    )
 
     # ── Load test data ────────────────────────────────────────────────────────
     question_file = os.path.expanduser(args.question_file)
@@ -834,9 +955,89 @@ def eval_model(args):
 
     prompt_builder = LLaVAPromptBuilder()
 
+    # ── Resolve eval modes (ICI parity: original / fixed / fresh) ─────────────
+    # 'original' uses natural labels (no symbols). 'fixed' uses the checkpoint's
+    # trained symbols. 'fresh' uses newly generated symbols. The SAME model weights
+    # are used in every mode — only the prompt (and, for colon, the scored answer
+    # token) changes. Mirrors ICI validation.run_comprehensive_validation().
+    modes = _resolve_eval_modes(args, _is_symbol)
+    fixed_map = _resolve_fixed_mapping(symbol_manager) if _is_symbol else {}
+    fresh_map = symbol_manager._generate_symbol_mappings() if _is_symbol else {}
+    mode_mappings = {"original": None, "fixed": fixed_map, "fresh": fresh_map}
+    print(f"Eval modes: {modes}")
+
+    all_modes = {}
+    for _mode in modes:
+        _map = mode_mappings.get(_mode)
+        if _mode in ("fixed", "fresh") and not _map:
+            print(f"WARNING: mode '{_mode}' requested but mapping is empty "
+                  f"(no trained symbols available) — skipping.")
+            continue
+        _metrics, _results = _run_inference_mode(
+            _mode, _map,
+            model=model, tokenizer=tokenizer, image_processor=image_processor,
+            symbol_manager=symbol_manager, cfg=cfg, dataset=dataset,
+            task_labels=task_labels, valid_labels_lower=valid_labels_lower,
+            is_multi_label=is_multi_label, use_per_class=use_per_class,
+            questions=questions, prompt_builder=prompt_builder,
+            example_selector=example_selector, args=args,
+        )
+        all_modes[_mode] = {"metrics": _metrics, "results": _results,
+                            "mapping": _map or {}}
+
+    _save_multimode_results(all_modes, dataset, args, model_path)
+
+    _primary = "original" if "original" in all_modes else (
+        next(iter(all_modes)) if all_modes else None)
+    return all_modes[_primary]["metrics"] if _primary else {}
+
+
+def _run_inference_mode(
+    mode_name, sym_mappings, *, model, tokenizer, image_processor, symbol_manager,
+    cfg, dataset, task_labels, valid_labels_lower, is_multi_label, use_per_class,
+    questions, prompt_builder, example_selector, args,
+):
+    """
+    Run ONE evaluation mode over all samples; return (metrics, results).
+
+    sym_mappings:
+      None / {}  → 'original' mode (no symbol substitution; natural labels).
+      dict       → 'fixed' (checkpoint's trained symbols) or 'fresh' (new symbols).
+
+    Model weights are identical across modes — only the prompt (and, for colon, the
+    scored answer token) changes. Mirrors ICI validation.validate_model().
+    """
+    # Answer-token ids depend on the ACTIVE mapping, not the strategy name:
+    #   colon (binary): positive token = the symbol for "1" under fixed/fresh,
+    #                   else bare "1".
+    #   chest/endo per-class: ALWAYS No/Yes (Yes/No are never symbolized).
+    if not is_multi_label:
+        token_id_0, token_id_1 = _binary_tokens_for_mapping(tokenizer, sym_mappings)
+        auc_token_id = token_id_1
+    elif use_per_class:
+        token_id_0, token_id_1 = _get_binary_token_ids(
+            tokenizer, symbol_manager, args.strategy, mode="yesno"
+        )
+        auc_token_id = None
+    else:
+        token_id_0, token_id_1 = None, None
+        auc_token_id = None
+
+    print("\n" + "=" * 70)
+    print(f"[SPRINT EVAL] === EVALUATION MODE: {mode_name} ===")
+    if not is_multi_label or use_per_class:
+        print(
+            f"  Answer tokens: neg={token_id_0} '{tokenizer.decode([token_id_0])}'  "
+            f"pos={token_id_1} '{tokenizer.decode([token_id_1])}'"
+        )
+    _sprint_sym_diagnostic(
+        dataset, args.strategy, task_labels, sym_mappings, use_per_class,
+        cfg=cfg, apply_to_text_fn=symbol_manager.apply_to_text,
+    )
+
     # ── Inference loop ────────────────────────────────────────────────────────
     results = []
-    desc = f"{dataset} | {args.strategy} | {args.icl_shots}-shot"
+    desc = f"{dataset} | {args.strategy} | {mode_name} | {args.icl_shots}-shot"
 
     for i, sample in enumerate(tqdm(questions, desc=desc)):
         image_file = sample.get("image", "")
@@ -881,6 +1082,7 @@ def eval_model(args):
                     apply_to_text_fn=symbol_manager.apply_to_text,
                     diagnose=(i < args.diagnose_samples),
                     ablation_samples=args.ablation_samples,
+                    probe_batch_size=args.probe_batch_size,
                 )
                 results.append(result)
                 continue
@@ -985,8 +1187,12 @@ def eval_model(args):
 
             raw_text = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
 
-            # Decode: symbols → original labels
-            decoded_text = symbol_manager.convert_symbols_back(raw_text)
+            # Decode symbols → original labels (fixed/fresh only; original = as-is,
+            # mirroring ICI validation.py:216 which skips convert in original mode).
+            decoded_text = (
+                symbol_manager.convert_symbols_back(raw_text, mappings=sym_mappings)
+                if sym_mappings else raw_text
+            )
 
             # Build result record
             if is_multi_label:
@@ -1040,9 +1246,9 @@ def eval_model(args):
     else:
         metrics = _compute_binary_metrics(results, auc_token_id)
 
-    # ── Print summary ─────────────────────────────────────────────────────────
+    # ── Print per-mode summary ────────────────────────────────────────────────
     print("\n" + "=" * 60)
-    print(f"RESULTS  dataset={dataset}  strategy={args.strategy}  shots={args.icl_shots}")
+    print(f"RESULTS  mode={mode_name}  dataset={dataset}  strategy={args.strategy}  shots={args.icl_shots}")
     print(f"Samples evaluated : {len(results)}")
     print(f"Accuracy          : {metrics.get('accuracy', 0) * 100:.2f}%"
           f"  {'(exact match)' if is_multi_label else ''}")
@@ -1070,43 +1276,9 @@ def eval_model(args):
                 print(f"  {lbl:<20}: {m['f1'] * 100:.2f}%")
     print("=" * 60)
 
-    # ── Save JSON ─────────────────────────────────────────────────────────────
-    now = datetime.datetime.now()
-    out_filename = (
-        f"results_{dataset}_{args.strategy}_{args.icl_shots}shot"
-        f"_{now.strftime('%Y%m%d_%H%M%S')}.json"
-    )
-
-    llava_dir = os.environ.get(
-        "LLAVA_DIR",
-        os.path.abspath(os.path.join(os.path.dirname(__file__), "..")),
-    )
-    out_dir = os.path.join(llava_dir, "logs", "json")
-    os.makedirs(out_dir, exist_ok=True)
-    out_path = os.path.join(out_dir, out_filename)
-
-    output_data = {
-        "metadata": {
-            "dataset":       dataset,
-            "strategy":      args.strategy,
-            "icl_shots":     args.icl_shots,
-            "model_path":    model_path,
-            "model_base":    args.model_base,
-            "question_file": args.question_file,
-            "train_file":    args.train_file,
-            "num_samples":   len(results),
-            "timestamp":     now.isoformat(),
-            "seed":          args.seed,
-        },
-        "metrics": metrics,
-        "results": results,
-    }
-
-    with open(out_path, "w") as f:
-        json.dump(output_data, f, indent=2)
-    print(f"Results saved → {out_path}\n")
-
-    return metrics
+    # Combined JSON for all modes is written once by the caller
+    # (_save_multimode_results); this worker just returns its numbers.
+    return metrics, results
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1131,8 +1303,14 @@ if __name__ == "__main__":
                         help="Inference strategy: 'regular'/'ed_ft'/'id_ft'/'lf_ft' use original "
                              "labels; 'two_token' decodes symbols back to original labels.")
     parser.add_argument("--symbol-mappings", type=str, default=None,
-                        help="Path to symbol_mappings.json (two_token strategy). "
+                        help="Path to symbol_mappings.json (symbol strategies). "
                              "Auto-detected from --model-path if omitted.")
+    parser.add_argument("--modes", type=str, default=None,
+                        help="Comma-separated eval modes: original,fixed,fresh "
+                             "(ICI parity). Default: all three for symbol strategies "
+                             "(two_token/ed_ft/id_ft/lf_ft), 'original' only for "
+                             "regular/rft. 'fixed' uses the checkpoint's trained "
+                             "symbols; 'fresh' uses newly generated symbols.")
     parser.add_argument("--num-samples", type=int, default=0,
                         help="Number of test samples to evaluate. 0 = all.")
     parser.add_argument("--icl-shots", type=int, default=0,
@@ -1153,5 +1331,12 @@ if __name__ == "__main__":
                              "can confirm definitions/symbols actually MOVE the "
                              "Yes/No probability used for AUC/mAP, not just appear "
                              "in the prompt. Set to 0 to disable.")
+    parser.add_argument("--probe-batch-size", type=int, default=1,
+                        help="Chest/endo per-class probing: number of class probes "
+                             "scored per forward pass (shared image, left-padded). "
+                             "1 = original one-call-per-class (default, safest). "
+                             ">1 speeds up inference; sample 0 is auto-verified "
+                             "against the unbatched scores and aborts on mismatch. "
+                             "Keep modest on a 48GB GPU (e.g. 4-8).")
     args = parser.parse_args()
     eval_model(args)

@@ -28,6 +28,13 @@ class Config:
     EPOCHS     = 1
     LR         = "2e-4"
 
+    # --- 4. INFERENCE SCORING (opt-in; defaults reproduce the unbatched path) ---
+    # PROBE_BATCH_SIZE>1 enables batched per-class scoring for chest/endo (much
+    # faster). DIAGNOSE_SAMPLES=0 lets the [BATCH-VERIFY] check run on sample 0
+    # (with the default 3, sample 0 is a diagnose sample → unbatched → no verify).
+    PROBE_BATCH_SIZE = int(os.environ.get("PROBE_BATCH_SIZE", "1"))
+    DIAGNOSE_SAMPLES = int(os.environ.get("DIAGNOSE_SAMPLES", "3"))
+
 
 # ==========================================
 # EXECUTION LOGIC
@@ -105,6 +112,9 @@ def run_inference(dataset: str, strategy: str, num_samples: int = 0, icl_shots: 
         "--strategy",      strategy,
         "--num-samples",   str(num_samples),
         "--icl-shots",     str(icl_shots),
+        # Opt-in batched per-class scoring (default 1 = unbatched, unchanged).
+        "--probe-batch-size", str(Config.PROBE_BATCH_SIZE),
+        "--diagnose-samples", str(Config.DIAGNOSE_SAMPLES),
     ]
 
     if icl_shots > 0:

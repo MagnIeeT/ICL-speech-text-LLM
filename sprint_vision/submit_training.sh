@@ -28,7 +28,7 @@ set -e
 # Configuration — edit these values
 # ========================================
 DATASET=chest      # colon | chest | endo
-STRATEGY=two_token  # regular | two_token | ed_ft | id_ft | lf_ft
+STRATEGY=ed_ft  # regular | two_token | ed_ft | id_ft | lf_ft
 NUM_TRAIN_EPOCHS=5
 # ── ICL during training ──────────────────────────────────────────────────────
 # ICL_SHOTS: number of in-context example images+labels embedded in each training
@@ -69,11 +69,11 @@ else
 fi
 
 hostname=n6
-cuda_device=2
+cuda_device=0
 walltime="${walltime:-48:00:00}"
 
 # Set to a job ID (e.g. "12345.cluster") to wait for that job first.
-hold_job_id=12682.eehpc
+hold_job_id=12754.eehpc
 
 # Paths
 LLAVA_DIR="${LLAVA_DIR:-/home/harinis/LLaVA}"

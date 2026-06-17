@@ -17,20 +17,19 @@ set -e
 # Configuration — edit these values
 # ========================================
 datasets=colon-chest-endo       # hyphen-separated: "chest" or "colon-chest-endo"
-strategy=ed_ft          # regular | two_token | ed_ft | id_ft | lf_ft
+strategy=ed_ft         # regular | two_token | ed_ft | id_ft | lf_ft
 model_type="${model_type:-llava-v1.5-13b}"
 
 num_samples=0         # 0 = ALL samples
 icl_shots=0
 
 hostname=n6
-cuda_device=0
+cuda_device=2
 
 # Fine-tuned checkpoint (LoRA adapter dir) — same checkpoint used for all datasets
-CHECKPOINT_PATH=/home/leapers/weights/harinis/llava/checkpoints/llava-chest-ed_ft-shot10_exp2/checkpoint-best
-
+CHECKPOINT_PATH=/home/leapers/weights/harinis/llava/checkpoints/llava-chest-ed_ft-shot10_exp1/checkpoint-best
 # Set to a job ID (e.g. "12093.eehpc") to wait for that job first.
-hold_job_id=12285.eehpc
+hold_job_id=
 
 # ========================================
 # Paths

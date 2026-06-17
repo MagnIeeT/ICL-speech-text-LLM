@@ -1,7 +1,6 @@
 """
 Shared MedFMC prompt construction for the per-class mAP/AUC probe.
 
-HVB philosophy (the reason this module exists)
 -----------------------------------------------
 In ICI, ONE prompt template (with its "- label: definition" block) feeds
 training, validation, AND inference, so class definitions are visible wherever
@@ -112,6 +111,125 @@ def build_per_class_prompt(
         human = apply_to_text_fn(human, sym_mappings)
 
     return human
+
+
+def score_probes_pyes(
+    prompts,
+    tokenizer,
+    model,
+    image_tensor,
+    image_size,
+    token_id_neg,
+    token_id_pos,
+    batch_size: int = 1,
+    verify: bool = False,
+    verify_tol: float = 1e-3,
+    conv_template: str = "vicuna_v1",
+):
+    """
+    Score P(positive) for a list of per-class probe prompts that all share ONE
+    image, via left-padded batched 1-token generation.
+
+    Each entry in `prompts` is the human-turn string (NOT yet wrapped in the
+    conversation template). All prompts use the same image (`image_tensor`), so
+    the image is passed `batch_size` times per sub-batch.
+
+    `batch_size=1` reproduces the original one-call-per-class behaviour EXACTLY
+    (same conv wrap, same tokenizer_image_token, same softmax over [neg, pos]
+    logits; an all-ones attention mask on a single full sequence is equivalent to
+    passing none). `batch_size>1` groups prompts to cut the number of forward
+    passes — the returned P(pos) values are identical, so AUC/mAP math is
+    unchanged.
+
+    `verify=True` (use on the first image only) scores both unbatched and
+    batched and aborts if any P(pos) diverges by more than `verify_tol`, so a
+    padding/masking bug can never silently corrupt a multi-hour run.
+
+    Returns: list[float] of length len(prompts).
+    """
+    import torch
+    from llava.constants import IMAGE_TOKEN_INDEX
+    from llava.conversation import conv_templates
+    from llava.mm_utils import tokenizer_image_token
+
+    if batch_size < 1:
+        batch_size = 1
+
+    # Wrap each probe in the conversation template and tokenize (image token kept).
+    seqs = []
+    for human in prompts:
+        conv = conv_templates[conv_template].copy()
+        conv.append_message(conv.roles[0], human)
+        conv.append_message(conv.roles[1], None)
+        full = conv.get_prompt()
+        ids = tokenizer_image_token(full, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt")
+        seqs.append(ids)
+
+    pad_id = tokenizer.pad_token_id
+    if pad_id is None:
+        pad_id = tokenizer.eos_token_id
+    device = model.device
+
+    def _score(bsz: int):
+        out_scores = []
+        for start in range(0, len(seqs), bsz):
+            chunk = seqs[start:start + bsz]
+            n = len(chunk)
+            maxlen = max(s.shape[0] for s in chunk)
+            input_ids = torch.full((n, maxlen), pad_id, dtype=chunk[0].dtype)
+            attn_mask = torch.zeros((n, maxlen), dtype=torch.long)
+            for r, s in enumerate(chunk):
+                L = s.shape[0]
+                input_ids[r, maxlen - L:] = s          # LEFT pad (decoder generation)
+                attn_mask[r, maxlen - L:] = 1
+            input_ids = input_ids.to(device)
+            attn_mask = attn_mask.to(device)
+            imgs = image_tensor
+            if imgs.shape[0] == 1 and n > 1:
+                # .contiguous() so the replicated batch dim isn't a stride-0 view
+                # (some cuDNN conv kernels reject stride-0 batch dims). Encoding
+                # is deterministic, so all n copies yield identical image features.
+                imgs = imgs.expand(n, *imgs.shape[1:]).contiguous()
+            gen_kwargs = dict(
+                attention_mask=attn_mask,
+                images=imgs,
+                do_sample=False,
+                max_new_tokens=1,
+                use_cache=True,
+                return_dict_in_generate=True,
+                output_scores=True,
+            )
+            # image_size is optional: sprint_eval passes it (anyres-safe); the
+            # training-time validation path originally passed none, so omit it
+            # when None to reproduce that call exactly.
+            if image_size is not None:
+                gen_kwargs["image_sizes"] = [image_size] * n
+            with torch.inference_mode():
+                out = model.generate(input_ids, **gen_kwargs)
+            step0 = out.scores[0]   # [n, vocab]
+            for r in range(n):
+                pair = torch.stack([step0[r, token_id_neg], step0[r, token_id_pos]])
+                out_scores.append(torch.nn.functional.softmax(pair, dim=0)[1].item())
+        return out_scores
+
+    if verify and batch_size > 1:
+        ref = _score(1)
+        bat = _score(batch_size)
+        max_diff = max(abs(a - b) for a, b in zip(ref, bat)) if ref else 0.0
+        if max_diff > verify_tol:
+            raise RuntimeError(
+                f"[BATCH-VERIFY] batched vs unbatched P(pos) mismatch: "
+                f"max|Δ|={max_diff:.4g} > tol={verify_tol}. Aborting — batched "
+                f"scoring is NOT safe on this setup; rerun with batch_size=1."
+            )
+        print(
+            f"[BATCH-VERIFY] OK: batched(bs={batch_size}) == unbatched within "
+            f"{max_diff:.2e} over {len(seqs)} classes — batched scoring is safe.",
+            flush=True,
+        )
+        return bat
+
+    return _score(batch_size)
 
 
 def sprint_log(stage: str, **fields) -> None:

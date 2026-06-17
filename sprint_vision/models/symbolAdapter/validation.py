@@ -38,7 +38,7 @@ from utils.evaluation_utils import (
     compute_ap,
     tie_diagnostics,
 )
-from dataload.medfmc_prompts import build_per_class_prompt, sprint_log
+from dataload.medfmc_prompts import build_per_class_prompt, sprint_log, score_probes_pyes
 
 
 class SPRInTValidationManager:
@@ -386,6 +386,26 @@ class SPRInTValidationManager:
         yes_id  = next((i for i in yes_ids if i != 29871), yes_ids[0])
         no_id   = next((i for i in no_ids  if i != 29871), no_ids[0])
 
+        # Per-class probe batching (opt-in via env, default 1 = unchanged behaviour).
+        # Mirrors sprint_eval.py's --probe-batch-size; shared scorer guarantees the
+        # batched P(Yes) matches unbatched (auto-verified on the first val sample).
+        try:
+            _vbatch = int(os.environ.get("SPRINT_PROBE_BATCH_SIZE", "1") or "1")
+        except ValueError:
+            _vbatch = 1
+        if _vbatch < 1:
+            _vbatch = 1
+
+        # Batched probe scoring left-pads the batch; LLaVA's internal multimodal
+        # re-pad (llava_arch.py:290) must be LEFT-aligned too, else generate()
+        # reads step-0 logits from a pad position for the shorter rows. Training
+        # uses right padding (train.py:1233), so set left ONLY for the batched
+        # probe and restore below — no train/inference mismatch is introduced.
+        # Guarded by _vbatch>1 so the default path is byte-identical (no write).
+        _saved_pad_side = getattr(self.model.config, "tokenizer_padding_side", "right")
+        if _vbatch > 1:
+            self.model.config.tokenizer_padding_side = "left"
+
         if "chest" in self._dataset_name:
             modality = "chest X-ray"
         elif "endo" in self._dataset_name:
@@ -420,7 +440,38 @@ class SPRInTValidationManager:
                 for j, lbl in enumerate(self._label_names):
                     all_labels[i][j] = 1 if lbl in gt_parts else 0
 
-                for j, lbl in enumerate(self._label_names):
+                # Batched per-class scoring (opt-in: SPRINT_PROBE_BATCH_SIZE>1).
+                # Builds every class probe (same prompt logic as below), scores
+                # them in left-padded batches via the shared helper, and fills
+                # all_scores[i]. P(Yes) is verified == unbatched on the first
+                # sample, so AUC/mAP are unchanged.
+                if _vbatch > 1:
+                    _prompts = []
+                    for j, lbl in enumerate(self._label_names):
+                        orig_lbl = self._cfg.label_names[j] if self._cfg is not None else lbl
+                        if self._cfg is not None and self._cfg.class_definitions:
+                            _ht = build_per_class_prompt(
+                                cfg=self._cfg, dataset=self._dataset_name, class_name=orig_lbl,
+                                sym_mappings=sym_mappings,
+                                apply_to_text_fn=(self.symbol_manager.apply_to_text
+                                                  if self.symbol_manager is not None else None),
+                                image_token=DEFAULT_IMAGE_TOKEN,
+                            )
+                        else:
+                            _ht = (DEFAULT_IMAGE_TOKEN + "\n"
+                                   + f"Does this {modality} show {lbl.replace('_', ' ')}? Answer Yes or No.")
+                        _prompts.append(_ht)
+                        if i == 0:
+                            sprint_log("VAL-AUC-PROBE", dataset=self._dataset_name, cls=orig_lbl,
+                                       sym_used=bool(sym_mappings), probe=_ht)
+                    _sc = score_probes_pyes(
+                        _prompts, self.tokenizer, self.model, image_tensor, None,
+                        no_id, yes_id, batch_size=_vbatch, verify=(i == 0),
+                    )
+                    for j in range(n_cls):
+                        all_scores[i][j] = _sc[j]
+
+                for j, lbl in enumerate([] if _vbatch > 1 else self._label_names):
                     # Original-case label drives the def-block key lookup; the
                     # lowercased self._label_names[j] is kept for GT matching above.
                     orig_lbl = self._cfg.label_names[j] if self._cfg is not None else lbl
@@ -490,6 +541,10 @@ class SPRInTValidationManager:
                 del image_tensor
                 if torch.cuda.is_available() and i % 10 == 0:
                     torch.cuda.empty_cache()
+
+        # Restore the training padding side (no-op when batching was off).
+        if _vbatch > 1:
+            self.model.config.tokenizer_padding_side = _saved_pad_side
 
         auc_per_cls, ap_per_cls = [], []
         for j in range(n_cls):
