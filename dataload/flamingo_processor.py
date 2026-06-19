@@ -1,19 +1,25 @@
 """
-FlamingoProcessor
-=================
-Processor for nvidia/audio-flamingo-3-hf using AutoProcessor.apply_chat_template.
+FlamingoProcessor for nvidia/audio-flamingo-3-hf.
 
-Design:
-- Dataset returns RAW fields.
-- Symbol replacement happens on RAW batch.
-- Tokenization happens in orchestrator/validator by calling process_inputs per item.
-- collate_batch:
-    RAW items  -> dict-of-lists
-    tokenized  -> pad/stack tensors
+Key design constraint vs Qwen:
+  Qwen inserts exactly 1 <|AUDIO|> token per clip regardless of duration.
+  Flamingo inserts N <sound> tokens per clip where N = f(audio_duration / 30s).
+  Therefore we CANNOT use tokenize=False (text string) because the token count
+  would be wrong. We must call apply_chat_template(tokenize=True) with the actual
+  audio array so the processor can determine the correct N internally.
+
+Data flow:
+  process_inputs()  → stores raw prompt dict + raw audio numpy array in the batch
+                       (does NOT tokenize — symbol replacement happens first)
+  tokenize_batch()  → receives prompt dicts with _audio injected by training loop,
+                       calls apply_chat_template(tokenize=True, return_dict=True)
+                       which handles <sound> expansion and audio feature extraction
+                       in one shot, then appends completion tokens for training.
 """
 
-from typing import Any, Dict, List, Optional
 import copy
+import logging
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import torch
@@ -22,270 +28,23 @@ from config.data_config.master_config import DatasetType
 from .model_processors import ModelProcessor
 
 
-class FlamingoProcessor(ModelProcessor):
-    """Processor for nvidia/audio-flamingo-3-hf."""
-
-    def __init__(self, processor, max_length: int = 512):
-        self.processor = processor  
-        self.max_length = max_length
-
-    def format_prompt(
-        self,
-        template: str,
-        text: str,
-        examples: Optional[List[Dict]] = None,
-        input_mode: str = "speech_only",
-        fewshot_mode: str = "text",
-        dataset_type: Optional[DatasetType] = None,
-        **kwargs,
-    ) -> Dict[str, Any]:
-        conversation = [{"role": "system", "content": template}]
-        user_content: List[Dict] = []
-
-        if examples:
-            user_content.append({"type": "text", "text": "Here are a few examples:\n"})
-            for example in examples:
-                example_text = example.get("text", "")
-                example_label = example.get("label", "")
-                if fewshot_mode == "speech" and example.get("audio") is not None:
-                    user_content.extend(
-                        [
-                            {"type": "audio", "audio": _ensure_numpy(example["audio"])},
-                            {"type": "text", "text": f"Label: {example_label}\n"},
-                        ]
-                    )
-                else:
-                    user_content.extend(
-                        [
-                            {"type": "text", "text": f"Text: {example_text}\n"},
-                            {"type": "text", "text": f"Label: {example_label}\n"},
-                        ]
-                    )
-
-        user_content.append({"type": "text", "text": "\nNow analyse this input:\n"})
-
-        if input_mode == "text_only":
-            user_content.append({"type": "text", "text": text})
-        else:
-            user_content.append({"type": "text", "text": "__AUDIO_PLACEHOLDER__"})
-
-        conversation.append({"role": "user", "content": user_content})
-        return {"conversation": conversation, "input_mode": input_mode}
-
-    def process_inputs(self, data: Dict[str, Any], is_training: bool = False) -> Dict[str, Any]:
-        prompt_obj = data.get("prompt")
-        if not isinstance(prompt_obj, dict) or "conversation" not in prompt_obj:
-            raise ValueError(
-                "FlamingoProcessor expects data['prompt'] to be a dict returned by format_prompt() "
-                "with key 'conversation'."
-            )
-
-        conversation = copy.deepcopy(prompt_obj["conversation"])
-
-        audio = data.get("audio")
-        completion: str = data.get("completion", "")
-        input_mode: str = data.get("input_mode", prompt_obj.get("input_mode", "speech_only"))
-
-        for msg in conversation:
-            if msg.get("role") != "user":
-                continue
-            content = msg.get("content", [])
-            if not isinstance(content, list):
-                continue
-
-            new_content: List[Dict] = []
-            for part in content:
-                if (
-                    isinstance(part, dict)
-                    and part.get("type") == "text"
-                    and "__AUDIO_PLACEHOLDER__" in part.get("text", "")
-                ):
-                    cleaned = part.get("text", "").replace("__AUDIO_PLACEHOLDER__", "").strip()
-                    if cleaned:
-                        new_content.append({"type": "text", "text": cleaned})
-                    if input_mode != "text_only" and audio is not None:
-                        new_content.append({"type": "audio", "audio": _ensure_numpy(audio)})
-                else:
-                    new_content.append(part)
-            msg["content"] = new_content
-
-        prompt_only_conv = [c for c in conversation if c.get("role") != "assistant"]
-
-        # apply_chat_template(tokenize=False) renders the jinja template → text string with
-        # a single '<sound>' placeholder already inserted by the template.
-        # We then call processor(text=..., audio=numpy_array) which:
-        #   1. processes the numpy audio → input_features
-        #   2. expands '<sound>' to '<sound>' * N in the text
-        #   3. tokenizes the expanded text → input_ids with correct audio token IDs
-        # This is necessary because apply_chat_template(tokenize=True) internally calls
-        # load_audio(path) expecting a file path, not a pre-loaded numpy array.
-        prompt_text = self.processor.apply_chat_template(
-            prompt_only_conv,
-            tokenize=False,
-            add_generation_prompt=True,
-        )
-
-        has_audio = input_mode != "text_only" and audio is not None
-
-        import logging as _logging
-        _logging.info("DEBUG prompt_text (last 200 chars): %s", prompt_text[-200:])
-        _logging.info("DEBUG has_audio=%s  '<sound>' in prompt_text=%s", has_audio, "<sound>" in prompt_text)
-
-        if has_audio:
-            prompt_inputs = self.processor(
-                text=[prompt_text],
-                audio=[_ensure_numpy(audio)],
-                return_tensors="pt",
-                sampling_rate=16000,
-            )
-        else:
-            prompt_inputs = self.processor(
-                text=[prompt_text],
-                return_tensors="pt",
-            )
-
-        _logging.info("DEBUG prompt_inputs keys=%s", list(prompt_inputs.keys()))
-        _logging.info("DEBUG input_ids shape=%s  sound_token_count=%s",
-                      list(prompt_inputs["input_ids"].shape),
-                      (prompt_inputs["input_ids"] == 151669).sum().item())
-
-        prompt_ids = prompt_inputs["input_ids"]
-        if prompt_ids.dim() > 1 and prompt_ids.shape[0] == 1:
-            prompt_ids = prompt_ids.squeeze(0)
-
-        prompt_mask = prompt_inputs["attention_mask"]
-        if prompt_mask.dim() > 1 and prompt_mask.shape[0] == 1:
-            prompt_mask = prompt_mask.squeeze(0)
-
-        if is_training and completion:
-            eos = self.processor.tokenizer.eos_token or ""
-            completion_text = f"{completion}{eos}"
-
-            completion_inputs = self.processor.tokenizer(
-                completion_text,
-                add_special_tokens=False,
-                return_tensors="pt"
-            )
-            completion_ids = completion_inputs["input_ids"].squeeze(0)
-            completion_mask = completion_inputs["attention_mask"].squeeze(0)
-
-            full_ids = torch.cat([prompt_ids, completion_ids], dim=-1)
-            full_mask = torch.cat([prompt_mask, completion_mask], dim=-1)
-
-            full_inputs = dict(prompt_inputs)
-            full_inputs["input_ids"] = full_ids
-            full_inputs["attention_mask"] = full_mask
-            
-            prompt_length = int(prompt_ids.shape[-1])
-            
-        else:
-            full_inputs = dict(prompt_inputs)
-            full_inputs["input_ids"] = prompt_ids
-            full_inputs["attention_mask"] = prompt_mask
-            
-            prompt_length = int(prompt_ids.shape[-1])
-
-        seq_len = int(full_inputs["input_ids"].shape[-1])
-        
-        if is_training and prompt_length >= seq_len:
-            raise ValueError(
-                f"prompt_length ({prompt_length}) >= seq_len ({seq_len}). "
-                "This usually means assistant completion wasn't included in tokenization."
-            )
-
-        result: Dict[str, Any] = {"prompt_length": prompt_length}
-        for key, value in full_inputs.items():
-            if isinstance(value, torch.Tensor):
-                if value.dim() > 1 and value.shape[0] == 1:
-                    value = value.squeeze(0)
-                result[key] = value
-            else:
-                result[key] = value
-        return result
-
-    def tokenize_batch(self, prompts: List, completions: Optional[List[str]] = None, padding_side: str = "right") -> Dict[str, torch.Tensor]:
-        items = []
-        for i, prompt in enumerate(prompts):
-            completion = completions[i] if completions is not None else ""
-            audio = None
-            input_mode = "speech_only"
-            if isinstance(prompt, dict):
-                input_mode = prompt.get("input_mode", "speech_only")
-                audio = prompt.get("_audio")  # injected by orchestrator; keep it so DPO's second call (rejected) still has audio
-            data = {"prompt": prompt, "completion": completion, "audio": audio, "input_mode": input_mode}
-            items.append(self.process_inputs(data, is_training=bool(completion)))
-        return self.collate_batch(items)
-
-    def collate_batch(self, batch_items: List[Dict[str, Any]]) -> Dict[str, Any]:
-        if not batch_items:
-            return {}
-
-        if "input_ids" not in batch_items[0]:
-            batch: Dict[str, Any] = {}
-            keys = set().union(*[item.keys() for item in batch_items])
-            for key in keys:
-                batch[key] = [item.get(key) for item in batch_items]
-            return batch
-
-        batch: Dict[str, Any] = {}
-        keys = set().union(*[item.keys() for item in batch_items])
-
-        passthrough = {
-            "prompt", "text", "true_label", "dataset_type", 
-            "completion", "audio", "examples_audio", 
-            "input_mode", "fewshot_mode", "is_training",
-        }
-
-        for key in keys:
-            values = [item[key] for item in batch_items if key in item]
-            if not values:
-                continue
-
-            if key in passthrough:
-                batch[key] = values
-                continue
-
-            if key == "prompt_length":
-                batch[key] = torch.tensor([int(item.get("prompt_length", 0)) for item in batch_items])
-                continue
-
-            if not isinstance(values[0], torch.Tensor):
-                batch[key] = values
-                continue
-
-            if key == "input_ids":
-                batch[key] = _pad_sequence(values, pad_value=self.processor.tokenizer.pad_token_id or 0)
-            elif key == "attention_mask":
-                batch[key] = _pad_sequence(values, pad_value=0)
-            elif key in ("input_features", "input_features_mask"):
-                # audio tensors may differ in time dimension across samples — pad on dim 1
-                try:
-                    batch[key] = _pad_audio_batch(values)
-                except Exception:
-                    batch[key] = values
-            else:
-                try:
-                    batch[key] = torch.stack(values)
-                except RuntimeError:
-                    batch[key] = values
-
-        return batch
+def _pad_sequence(tensors: List[torch.Tensor], pad_value: int = 0, padding_side: str = "right") -> torch.Tensor:
+    max_len = max(t.shape[-1] for t in tensors)
+    out = []
+    for t in tensors:
+        if t.dim() == 0:
+            t = t.unsqueeze(0)
+        pad_size = max_len - t.shape[-1]
+        if pad_size > 0:
+            pad_args = (pad_size, 0) if padding_side == "left" else (0, pad_size)
+            t = torch.nn.functional.pad(t, pad_args, value=pad_value)
+        out.append(t)
+    return torch.stack(out)
 
 
-def _ensure_numpy(audio) -> np.ndarray:
-    if isinstance(audio, np.ndarray):
-        return audio.astype(np.float32)
-    if isinstance(audio, torch.Tensor):
-        return audio.float().cpu().numpy()
-    return np.asarray(audio, dtype=np.float32)
-
-
-def _pad_audio_batch(tensors: List[torch.Tensor]) -> torch.Tensor:
-    """Pad audio feature/mask tensors along their time dimension (dim 1) to the longest in the batch."""
-    if not tensors:
-        return torch.stack(tensors)
-    t0 = tensors[0]
-    if t0.dim() < 2:
+def _pad_features(tensors: List[torch.Tensor]) -> torch.Tensor:
+    """Pad audio feature tensors along dim=1 (time) to the longest in the batch."""
+    if not tensors or tensors[0].dim() < 2:
         return torch.stack(tensors)
     max_len = max(t.shape[1] for t in tensors)
     padded = []
@@ -299,14 +58,207 @@ def _pad_audio_batch(tensors: List[torch.Tensor]) -> torch.Tensor:
     return torch.stack(padded)
 
 
-def _pad_sequence(tensors: List[torch.Tensor], pad_value: int = 0) -> torch.Tensor:
-    max_len = max(t.shape[-1] for t in tensors)
-    out = []
-    for t in tensors:
-        if t.dim() == 0:
-            t = t.unsqueeze(0)
-        pad_size = max_len - t.shape[-1]
-        if pad_size > 0:
-            t = torch.nn.functional.pad(t, (0, pad_size), value=pad_value)
-        out.append(t)
-    return torch.stack(out)
+class FlamingoProcessor(ModelProcessor):
+    """Processor for nvidia/audio-flamingo-3-hf."""
+
+    SAMPLING_RATE = 16000
+
+    def __init__(self, processor, max_length: int = 512):
+        self.processor = processor
+        self.tokenizer = processor.tokenizer
+        self.max_length = max_length
+        self._log_count = 0
+
+    def format_prompt(
+        self,
+        template: str,
+        text: str,
+        examples: Optional[List[Dict]] = None,
+        input_mode: str = "speech_only",
+        fewshot_mode: str = "text",
+        dataset_type: Optional[DatasetType] = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Returns a conversation dict. Audio arrays go directly into the conversation."""
+        conversation = [{"role": "system", "content": template}]
+        user_content: List[Dict] = []
+
+        if examples:
+            user_content.append({"type": "text", "text": "Here are a few examples:\n"})
+            for example in examples:
+                if fewshot_mode == "speech" and example.get("audio") is not None:
+                    user_content.extend([
+                        {"type": "audio", "audio": _ensure_numpy(example["audio"]), "sampling_rate": self.SAMPLING_RATE},
+                        {"type": "text", "text": f"Label: {example.get('label', '')}\n"},
+                    ])
+                else:
+                    user_content.extend([
+                        {"type": "text", "text": f"Text: {example.get('text', '')}\n"},
+                        {"type": "text", "text": f"Label: {example.get('label', '')}\n"},
+                    ])
+
+        user_content.append({"type": "text", "text": "\nNow analyse this input:\n"})
+        if input_mode == "text_only":
+            user_content.append({"type": "text", "text": text})
+        else:
+            # Placeholder filled by tokenize_batch via _audio injected by training/val loop
+            user_content.append({"type": "audio", "audio": None, "sampling_rate": self.SAMPLING_RATE})
+
+        conversation.append({"role": "user", "content": user_content})
+        return {"conversation": conversation, "input_mode": input_mode}
+
+    def process_inputs(self, data: Dict[str, Any], is_training: bool = False) -> Dict[str, Any]:
+        """Store raw prompt + raw audio. Do NOT tokenize here — symbol replacement happens first."""
+        audio = data.get("audio")
+        return {
+            "prompt": data.get("prompt"),
+            "completion": data.get("completion", ""),
+            # Keep raw audio in batch so training/val loop can inject it into prompt dict
+            "audio": _ensure_numpy(audio) if audio is not None else None,
+        }
+
+    def tokenize_batch(
+        self,
+        prompts: List[Any],
+        completions: Optional[List[str]] = None,
+        padding_side: str = "right",
+    ) -> Dict[str, Any]:
+        """
+        Full tokenization after symbol replacement.
+        Expects prompt dicts with _audio already injected by the training/val loop:
+            for p, a in zip(batch["prompt"], batch["audio"]):
+                if isinstance(p, dict): p["_audio"] = a
+        """
+        items = []
+        for i, prompt in enumerate(prompts):
+            completion = completions[i] if completions is not None else ""
+            audio = prompt.get("_audio") if isinstance(prompt, dict) else None
+            items.append(self._tokenize_one(prompt, audio, completion))
+        return self.collate_batch(items, padding_side=padding_side)
+
+    def _tokenize_one(self, prompt_obj: Dict, audio, completion: str) -> Dict[str, Any]:
+        if not isinstance(prompt_obj, dict) or "conversation" not in prompt_obj:
+            raise ValueError("FlamingoProcessor expects prompt to be a dict with 'conversation' key.")
+
+        conversation = copy.deepcopy(prompt_obj["conversation"])
+        input_mode = prompt_obj.get("input_mode", "speech_only")
+        has_audio = input_mode != "text_only" and audio is not None
+
+        # Fill or remove audio placeholder
+        for msg in conversation:
+            if msg.get("role") != "user":
+                continue
+            content = msg.get("content", [])
+            if not isinstance(content, list):
+                continue
+            if has_audio:
+                for part in content:
+                    if isinstance(part, dict) and part.get("type") == "audio" and part.get("audio") is None:
+                        part["audio"] = _ensure_numpy(audio)
+            else:
+                msg["content"] = [
+                    p for p in content
+                    if not (isinstance(p, dict) and p.get("type") == "audio" and p.get("audio") is None)
+                ]
+
+        prompt_only_conv = [c for c in conversation if c.get("role") != "assistant"]
+
+        prompt_inputs = self.processor.apply_chat_template(
+            prompt_only_conv,
+            tokenize=True,
+            add_generation_prompt=True,
+            return_dict=True,
+            return_tensors="pt",
+        )
+
+        prompt_ids = prompt_inputs["input_ids"].squeeze(0)
+        prompt_mask = prompt_inputs["attention_mask"].squeeze(0)
+        prompt_length = int(prompt_ids.shape[-1])
+
+        if completion:
+            eos = self.tokenizer.eos_token or ""
+            comp_out = self.tokenizer(
+                f"{completion}{eos}",
+                add_special_tokens=False,
+                return_tensors="pt",
+            )
+            comp_ids = comp_out["input_ids"].squeeze(0)
+            comp_mask = comp_out["attention_mask"].squeeze(0)
+            full_ids = torch.cat([prompt_ids, comp_ids], dim=-1)
+            full_mask = torch.cat([prompt_mask, comp_mask], dim=-1)
+        else:
+            full_ids = prompt_ids
+            full_mask = prompt_mask
+
+        if self._log_count < 3:
+            audio_token_id = getattr(self.processor, "audio_token_id", None)
+            n_sound = int((prompt_ids == audio_token_id).sum().item()) if audio_token_id is not None else -1
+            dur_s = round(len(audio) / self.SAMPLING_RATE, 2) if audio is not None else None
+            feat_shape = list(prompt_inputs["input_features"].shape) if "input_features" in prompt_inputs else None
+            logging.info(
+                "FlamingoProcessor [call %d]: audio_dur=%ss  <sound>_tokens=%d  input_features=%s  prompt_len=%d  total_len=%d",
+                self._log_count, dur_s, n_sound, feat_shape, prompt_length, int(full_ids.shape[-1]),
+            )
+            self._log_count += 1
+
+        result: Dict[str, Any] = {
+            "prompt_length": prompt_length,
+            "input_ids": full_ids,
+            "attention_mask": full_mask,
+        }
+        for key, value in prompt_inputs.items():
+            if key in ("input_ids", "attention_mask"):
+                continue
+            if isinstance(value, torch.Tensor):
+                result[key] = value.squeeze(0) if value.dim() > 1 and value.shape[0] == 1 else value
+            else:
+                result[key] = value
+        return result
+
+    def collate_batch(self, batch_items: List[Dict[str, Any]], padding_side: str = "right") -> Dict[str, Any]:
+        if not batch_items:
+            return {}
+
+        # Raw (un-tokenized) items — just group by key
+        if "input_ids" not in batch_items[0]:
+            batch: Dict[str, Any] = {}
+            for key in set().union(*[item.keys() for item in batch_items]):
+                batch[key] = [item.get(key) for item in batch_items]
+            return batch
+
+        passthrough = {"prompt", "text", "true_label", "dataset_type", "completion", "audio", "input_mode"}
+        batch: Dict[str, Any] = {}
+
+        for key in set().union(*[item.keys() for item in batch_items]):
+            values = [item[key] for item in batch_items if key in item]
+            if not values:
+                continue
+            if key in passthrough:
+                batch[key] = values
+            elif key == "prompt_length":
+                batch[key] = torch.tensor([int(v) for v in values])
+            elif not isinstance(values[0], torch.Tensor):
+                batch[key] = values
+            elif key == "input_ids":
+                batch[key] = _pad_sequence(values, pad_value=self.tokenizer.pad_token_id or 0, padding_side=padding_side)
+            elif key == "attention_mask":
+                batch[key] = _pad_sequence(values, pad_value=0, padding_side=padding_side)
+            elif key in ("input_features", "input_features_mask"):
+                try:
+                    batch[key] = _pad_features(values)
+                except Exception:
+                    batch[key] = values
+            else:
+                try:
+                    batch[key] = torch.stack(values)
+                except RuntimeError:
+                    batch[key] = values
+        return batch
+
+
+def _ensure_numpy(audio) -> np.ndarray:
+    if isinstance(audio, np.ndarray):
+        return audio.astype(np.float32)
+    if isinstance(audio, torch.Tensor):
+        return audio.float().cpu().numpy()
+    return np.asarray(audio, dtype=np.float32)

@@ -234,7 +234,8 @@ class CustomFlamingo(nn.Module):
         with self._autocast_ctx():
             generated_ids = self.model.generate(
                 **model_inputs,
-                max_new_tokens=10,
+                max_new_tokens=20,
+                do_sample = False,
             )
 
         if generated_ids.size(1) <= input_ids.size(1):
