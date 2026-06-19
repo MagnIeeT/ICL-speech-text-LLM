@@ -226,7 +226,8 @@ class CustomQwen(nn.Module):
                 attention_mask=attention_mask,
                 input_features=input_features,
                 feature_attention_mask=feature_attention_mask,
-                max_new_tokens=10,
+                max_new_tokens=20,
+                do_sample = False,
             )
             if generated_ids.size(1) <= input_ids.size(1):
                 return [""] * input_ids.size(0)

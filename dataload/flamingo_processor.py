@@ -110,12 +110,44 @@ class FlamingoProcessor(ModelProcessor):
             msg["content"] = new_content
 
         prompt_only_conv = [c for c in conversation if c.get("role") != "assistant"]
-        prompt_inputs = self.processor.apply_chat_template(
+
+        # apply_chat_template(tokenize=False) renders the jinja template → text string with
+        # a single '<sound>' placeholder already inserted by the template.
+        # We then call processor(text=..., audio=numpy_array) which:
+        #   1. processes the numpy audio → input_features
+        #   2. expands '<sound>' to '<sound>' * N in the text
+        #   3. tokenizes the expanded text → input_ids with correct audio token IDs
+        # This is necessary because apply_chat_template(tokenize=True) internally calls
+        # load_audio(path) expecting a file path, not a pre-loaded numpy array.
+        prompt_text = self.processor.apply_chat_template(
             prompt_only_conv,
-            tokenize=True,
+            tokenize=False,
             add_generation_prompt=True,
-            return_dict=True,
         )
+
+        has_audio = input_mode != "text_only" and audio is not None
+
+        import logging as _logging
+        _logging.info("DEBUG prompt_text (last 200 chars): %s", prompt_text[-200:])
+        _logging.info("DEBUG has_audio=%s  '<sound>' in prompt_text=%s", has_audio, "<sound>" in prompt_text)
+
+        if has_audio:
+            prompt_inputs = self.processor(
+                text=[prompt_text],
+                audio=[_ensure_numpy(audio)],
+                return_tensors="pt",
+                sampling_rate=16000,
+            )
+        else:
+            prompt_inputs = self.processor(
+                text=[prompt_text],
+                return_tensors="pt",
+            )
+
+        _logging.info("DEBUG prompt_inputs keys=%s", list(prompt_inputs.keys()))
+        _logging.info("DEBUG input_ids shape=%s  sound_token_count=%s",
+                      list(prompt_inputs["input_ids"].shape),
+                      (prompt_inputs["input_ids"] == 151669).sum().item())
 
         prompt_ids = prompt_inputs["input_ids"]
         if prompt_ids.dim() > 1 and prompt_ids.shape[0] == 1:
@@ -171,6 +203,19 @@ class FlamingoProcessor(ModelProcessor):
                 result[key] = value
         return result
 
+    def tokenize_batch(self, prompts: List, completions: Optional[List[str]] = None, padding_side: str = "right") -> Dict[str, torch.Tensor]:
+        items = []
+        for i, prompt in enumerate(prompts):
+            completion = completions[i] if completions is not None else ""
+            audio = None
+            input_mode = "speech_only"
+            if isinstance(prompt, dict):
+                input_mode = prompt.get("input_mode", "speech_only")
+                audio = prompt.get("_audio")  # injected by orchestrator; keep it so DPO's second call (rejected) still has audio
+            data = {"prompt": prompt, "completion": completion, "audio": audio, "input_mode": input_mode}
+            items.append(self.process_inputs(data, is_training=bool(completion)))
+        return self.collate_batch(items)
+
     def collate_batch(self, batch_items: List[Dict[str, Any]]) -> Dict[str, Any]:
         if not batch_items:
             return {}
@@ -212,6 +257,12 @@ class FlamingoProcessor(ModelProcessor):
                 batch[key] = _pad_sequence(values, pad_value=self.processor.tokenizer.pad_token_id or 0)
             elif key == "attention_mask":
                 batch[key] = _pad_sequence(values, pad_value=0)
+            elif key in ("input_features", "input_features_mask"):
+                # audio tensors may differ in time dimension across samples — pad on dim 1
+                try:
+                    batch[key] = _pad_audio_batch(values)
+                except Exception:
+                    batch[key] = values
             else:
                 try:
                     batch[key] = torch.stack(values)
@@ -227,6 +278,25 @@ def _ensure_numpy(audio) -> np.ndarray:
     if isinstance(audio, torch.Tensor):
         return audio.float().cpu().numpy()
     return np.asarray(audio, dtype=np.float32)
+
+
+def _pad_audio_batch(tensors: List[torch.Tensor]) -> torch.Tensor:
+    """Pad audio feature/mask tensors along their time dimension (dim 1) to the longest in the batch."""
+    if not tensors:
+        return torch.stack(tensors)
+    t0 = tensors[0]
+    if t0.dim() < 2:
+        return torch.stack(tensors)
+    max_len = max(t.shape[1] for t in tensors)
+    padded = []
+    for t in tensors:
+        pad = max_len - t.shape[1]
+        if pad > 0:
+            pad_shape = list(t.shape)
+            pad_shape[1] = pad
+            t = torch.cat([t, torch.zeros(pad_shape, dtype=t.dtype)], dim=1)
+        padded.append(t)
+    return torch.stack(padded)
 
 
 def _pad_sequence(tensors: List[torch.Tensor], pad_value: int = 0) -> torch.Tensor:

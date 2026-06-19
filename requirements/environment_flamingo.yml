@@ -7,10 +7,10 @@ channels:
 dependencies:
   # --- THE ENGINE (GPU Safe) ---
   - python=3.10
-  - pytorch==2.1.2
-  - torchvision==0.16.2
-  - torchaudio==2.1.2
-  - pytorch-cuda=11.8
+  - pytorch=2.5.1
+  - torchvision
+  - torchaudio
+  - pytorch-cuda=12.4
   - ffmpeg
 
   # --- AI TOOLS ---
@@ -19,7 +19,10 @@ dependencies:
   - tiktoken
   - einops
   - sentencepiece
-  - protobuf
+  - protobuf<5              # pin: protobuf 29+ triggers abseil ABI mismatch with pyarrow
+  - abseil-cpp              # pin: must match what pyarrow was compiled against
+  - pyarrow<16              # pin: pyarrow>=16 links against incompatible abseil/protobuf
+  - fsspec<=2023.10.0       # pin: newer fsspec can break datasets compatibility
   - huggingface_hub
   - datasets
   - fire
@@ -27,8 +30,11 @@ dependencies:
 
   # --- DATA & AUDIO ---
   - pandas
+  - numpy<2                 # pin: numpy 2.x breaks many audio/ML packages
+  - pillow>=9.1.0           # pin: PIL.Image.Resampling added in 9.1.0; required by transformers>=5.0
   - scipy
   - pysoundfile
+  - librosa
   - scikit-learn
   - matplotlib
   - tensorboard

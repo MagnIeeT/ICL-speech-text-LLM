@@ -1,6 +1,7 @@
 """Validation logic for Symbol Adapter training and inference."""
 
 import logging
+import random
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
@@ -13,7 +14,7 @@ from config.train_config.training_configs import (
 )
 
 from utils.evaluation_utils import evaluate_predictions
-from .symbol_manager import SymbolManager
+from .symbol_manager import SymbolManager, get_dataset_info, compute_slot_offsets
 
 logger = logging.getLogger(__name__)
 
@@ -100,26 +101,16 @@ class ValidationManager:
         dspo_module = getattr(model, "dspo_module", None)
 
         # Per-dataset slot assignment cache: computed once per dataset per validation run.
-        # Keyed by ds_name_str -> (p_map, c_map, slot_replacement).
-        # Slot indices are seeded from the dataset name so the same label always gets
-        # the same slot index across epochs; the vocab token each slot resolves to
-        # can change naturally as the router trains.
+        training_ds_names = set(self.config.data_config.dataset_type.split("-"))
+        slot_offsets = compute_slot_offsets(training_ds_names)
+        total_slots = router.num_slots if router is not None else 0
         dataset_slot_cache: Dict[str, tuple] = {}
         logged_datasets: set = set()   # tracks which datasets have had their mapping log
         logged_prompts: set = set()    # tracks which datasets have had their prompt log
 
         try:
             for batch in progress_bar:
-                dataset_types = batch.get("dataset_type", [])
-                ds_name = dataset_types[0] if isinstance(dataset_types, list) and len(dataset_types) > 0 else "unknown"
-                ds_name_str = ds_name.value if hasattr(ds_name, "value") else str(ds_name)
-
-                relevant_labels = []
-                for dt_enum, ds_cfg in DATASET_CONFIGS.items():
-                    if dt_enum.value == ds_name_str:
-                        relevant_labels = sorted(list(ds_cfg.valid_labels))
-                        break
-                if not relevant_labels: relevant_labels = self.symbol_manager.original_labels
+                ds_name_str, relevant_labels = get_dataset_info(batch, self.symbol_manager.original_labels)
 
                 # Determine mappings and slot_replacement for this batch.
                 slot_replacement = None
@@ -127,9 +118,14 @@ class ValidationManager:
                     p_map, c_map = {}, {}
                 elif router is not None and dspo_module is not None and not use_dynamic:
                     if ds_name_str not in dataset_slot_cache:
-                        # Fixed slot assignment: same alphabetical ordering as training.
-                        # slot_0 → label[0], slot_1 → label[1], ... (labels sorted alphabetically).
-                        slots = list(range(len(relevant_labels)))
+                        if ds_name_str in slot_offsets:
+                            # Training dataset: use its exact non-overlapping slot range
+                            offset = slot_offsets[ds_name_str]
+                            slots = list(range(offset, offset + len(relevant_labels)))
+                        else:
+                            # Validation-only dataset: deterministically sample from trained pool
+                            rng = random.Random(hash(ds_name_str) & 0x7FFFFFFF)
+                            slots = sorted(rng.sample(range(total_slots), min(len(relevant_labels), total_slots)))
 
                         # Log confidence scores for monitoring (not used for slot selection)
                         confidence = router.get_confidence_scores()
@@ -182,6 +178,12 @@ class ValidationManager:
 
                 # 2. Tokenization
                 if self.processor is not None:
+                    # For Flamingo: inject audio into prompt dicts so tokenize_batch can embed it.
+                    # (Qwen/SALMONN prompts are strings, isinstance(p, dict) is False → harmless.)
+                    if updated_batch.get("audio"):
+                        for p, a in zip(updated_batch["prompt"], updated_batch["audio"]):
+                            if isinstance(p, dict):
+                                p["_audio"] = a
                     tokenized_data = self.processor.tokenize_batch(updated_batch["prompt"], completions=None, padding_side="left")
                     updated_batch.update(tokenized_data)
 

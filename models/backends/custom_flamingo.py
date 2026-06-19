@@ -97,7 +97,7 @@ class CustomFlamingo(nn.Module):
 
         if ckpt_path:
             checkpoint = load_checkpoint(ckpt_path, map_location=self.device)
-            self.model.load_state_dict(checkpoint["model"], strict=False)
+            self.model.load_state_dict(checkpoint["model_state"], strict=False)
 
         self.prompt_template = prompt_template
         self.max_txt_len = max_txt_len
@@ -121,7 +121,7 @@ class CustomFlamingo(nn.Module):
         logging.debug("get_speech_embeddings: not used by AF3")
         return None, None, None, None
 
-    _SKIP_KEYS = frozenset(["prompt_length", "prompt", "text", "true_label", "dataset_type", "completion"])
+    _SKIP_KEYS = frozenset(["prompt_length", "prompt", "text", "true_label", "dataset_type", "completion", "dspo_probs"])
 
     def _prepare_model_inputs(self, samples: Dict[str, Any]) -> Dict[str, torch.Tensor]:
         model_inputs: Dict[str, torch.Tensor] = {}
@@ -146,7 +146,7 @@ class CustomFlamingo(nn.Module):
             return torch.autocast(device_type="cuda", dtype=torch.bfloat16)
         return nullcontext()
 
-    def forward(self, samples: Dict[str, Any]) -> Dict[str, torch.Tensor]:
+    def forward(self, samples: Dict[str, Any], router=None, dspo_module=None) -> Dict[str, torch.Tensor]:
         start_time = time.time()
         logging.debug("Forward pass – batch %d", self.batch_counter)
 
@@ -182,12 +182,29 @@ class CustomFlamingo(nn.Module):
             decoded_labels = self.input_processor.tokenizer.decode([x for x in labels[0][-20:] if x != -100])
             logging.info("Last 20 input tokens decoded : %s", decoded_input)
             logging.info("Last 20 labels decoded       : %s", decoded_labels)
+            if router is not None:
+                logging.info("D-SPO: Router detected in forward pass. Enabling differentiable injection.")
             logging.info("==============================")
 
         model_inputs = self._prepare_model_inputs(samples)
-        model_inputs["input_ids"] = input_ids
         model_inputs["attention_mask"] = attention_mask
         model_inputs["labels"] = labels
+
+        # D-SPO injection: replace slot token embeddings with soft Gumbel embeddings
+        if router is not None and dspo_module is not None:
+            embedding_layer = self.model.get_input_embeddings()
+            inputs_embeds = embedding_layer(input_ids)
+            inputs_embeds = dspo_module.inject_differentiable_symbols(
+                input_ids=input_ids,
+                input_embeds=inputs_embeds,
+                router=router,
+                embedding_layer=embedding_layer,
+                pre_computed_probs=samples.get("dspo_probs"),
+            )
+            model_inputs.pop("input_ids", None)  # _prepare_model_inputs added it; remove since inputs_embeds is mutually exclusive
+            model_inputs["inputs_embeds"] = inputs_embeds
+        else:
+            model_inputs["input_ids"] = input_ids  # already set by _prepare_model_inputs but explicit for clarity
 
         with self._autocast_ctx():
             outputs = self.model(**model_inputs, return_dict=True)
@@ -201,9 +218,14 @@ class CustomFlamingo(nn.Module):
         self.batch_counter += 1
         return {"loss": outputs.loss, "logits": outputs.logits, "labels": labels}
 
-    def generate_output(self, batch: Dict[str, Any]) -> List[str]:
+    def generate_output(self, batch: Dict[str, Any], slot_replacement=None) -> List[str]:
         input_ids = batch["input_ids"].to(self.device).long()
         attention_mask = batch["attention_mask"].to(self.device)
+
+        if slot_replacement:
+            input_ids = input_ids.clone()
+            for placeholder_id, hard_vocab_id in slot_replacement.items():
+                input_ids[input_ids == placeholder_id] = hard_vocab_id
 
         model_inputs = self._prepare_model_inputs(batch)
         model_inputs["input_ids"] = input_ids
@@ -225,7 +247,7 @@ class CustomFlamingo(nn.Module):
 
         generated_ids = generated_ids[:, input_ids.size(1):]
 
-        outputs = self.input_processor.batch_decode(
+        outputs = self.input_processor.tokenizer.batch_decode(
             generated_ids,
             skip_special_tokens=True,
             clean_up_tokenization_spaces=False,

@@ -20,12 +20,6 @@ from models.symbolAdapter.symbol_training_dpo import SymbolDPOOrchestrator
 from models.symbolAdapter.dspo_module import setup_dspo_tokenizer, setup_dspo_model
 from dataload.data_utils import create_combined_dataloader, load_datasets_for_config
 
-try:
-    from transformers import Qwen2AudioProcessor
-except ImportError:
-    Qwen2AudioProcessor = None
-
-
 def setup_tokenizer_and_processor(config):
     """Build tokenizer + processor for the selected backend."""
     model_type = config.model_type.value
@@ -40,8 +34,10 @@ def setup_tokenizer_and_processor(config):
         return tokenizer, processor
 
     if model_type == "qwen":
-        if Qwen2AudioProcessor is None:
-            raise ImportError("Qwen2AudioProcessor is not available. Please install/upgrade transformers.")
+        try:
+            from transformers import Qwen2AudioProcessor
+        except (ImportError, OSError) as e:
+            raise ImportError(f"Qwen2AudioProcessor is not available in this environment: {e}") from e
         input_processor = Qwen2AudioProcessor.from_pretrained(config.qwen_model_name, trust_remote_code=True)
         tokenizer = input_processor.tokenizer
         tokenizer.add_special_tokens({"pad_token": "[PAD]"})
@@ -56,6 +52,7 @@ def setup_tokenizer_and_processor(config):
         processor = get_processor(config.model_type.value, processor=input_processor)
         tokenizer = input_processor.tokenizer
         tokenizer.add_special_tokens({"pad_token": "[PAD]"})
+        tokenizer = setup_dspo_tokenizer(tokenizer, config)
         tokenizer.padding_side = "right"
         return tokenizer, processor
 
@@ -100,9 +97,10 @@ def initialize_model(config: TrainingConfig, tokenizer, symbol_manager, raw_proc
 
     if model_type == "flamingo":
         from models.backends.custom_flamingo import CustomFlamingo
-        return CustomFlamingo(model_path=config.flamingo_model_name, device=config.device, lora=True,
+        model = CustomFlamingo(model_path=config.flamingo_model_name, device=config.device, lora=True,
                                lora_rank=config.lora_config.rank, lora_alpha=config.lora_config.alpha,
                                lora_dropout=config.lora_config.dropout)
+        return setup_dspo_model(model, tokenizer, config)
 
     raise ValueError(f"Unknown model_type: {model_type}")
 
@@ -117,6 +115,17 @@ def main():
         args = parse_training_args()
         config = TrainingConfig.from_args(args)
         logging.info("Starting training with config: %s", config.run_name)
+
+        if config.diff_symbol_config.enabled:
+            from config.data_config.master_config import DATASET_CONFIGS
+            ds_names = set(config.data_config.dataset_type.split("-"))
+            total_training_labels = sum(
+                len(ds_cfg.valid_labels)
+                for dt, ds_cfg in DATASET_CONFIGS.items()
+                if dt.value in ds_names
+            )
+            config.diff_symbol_config.num_slots = total_training_labels
+            logging.info("D-SPO: num_slots auto-set to %d (total training labels)", total_training_labels)
 
         tokenizer, processor = setup_tokenizer_and_processor(config)
         

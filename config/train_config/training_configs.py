@@ -81,11 +81,12 @@ class DifferentiableSymbolConfig:
     slot_only: bool = False        # freeze LoRA, train router only
     tau: float = 1.0
     tau_min: float = 0.1
-    tau_anneal_rate: float = 0.001
+    tau_anneal_rate: float = 0.0001
     router_lr: float = 1e-2
     rotation_interval: int = 0      # 0 = rotate slot assignments per epoch; >0 = every N global steps
     integrity_alpha: float = 1.0
     integrity_beta: float = 1.0
+    phase1_patience: int = 0    # >0: slot-only Phase 1 → auto-switch to LoRA when conf_mean plateaus
 
     @property
     def pool_size(self) -> int:
@@ -210,11 +211,13 @@ class TrainingConfig:
 
         diff_symbol_config = DifferentiableSymbolConfig(
             enabled=getattr(args, "diff_symbol_enabled", False),
+            num_slots=getattr(args, "dspo_num_slots", 25),
             slot_vocab_size=getattr(args, "dspo_slot_vocab_size", 100),
             rotation_interval=getattr(args, "dspo_rotation_interval", 0),
             router_lr=getattr(args, "dspo_router_lr", 1e-3),
             tau_anneal_rate=getattr(args, "dspo_tau_anneal_rate", 0.0001),
             slot_only=getattr(args, "dspo_slot_only", False),
+            phase1_patience=getattr(args, "dspo_phase1_patience", 0),
         )
 
         data_config = DataConfig(
@@ -286,8 +289,10 @@ def parse_training_args() -> argparse.Namespace:
 
     parser.add_argument("--dynamic_symbols", action="store_true")
     parser.add_argument("--diff_symbol_enabled", action="store_true", help="Enable Differentiable Symbolic Preference Optimization (D-SPO)")
+    parser.add_argument("--dspo_num_slots", type=int, default=25, help="D-SPO: total number of slots (must be >= sum of all training dataset label counts)")
     parser.add_argument("--dspo_slot_vocab_size", type=int, default=100, help="D-SPO: private candidate tokens per slot")
     parser.add_argument("--dspo_slot_only", action="store_true", help="D-SPO: freeze LoRA, train router/slot matrix only")
+    parser.add_argument("--dspo_phase1_patience", type=int, default=0, help="D-SPO: epochs without conf_mean improvement before switching from slot-only Phase 1 to joint LoRA Phase 2 (0=disabled)")
     parser.add_argument("--dspo_rotation_interval", type=int, default=0, help="D-SPO: rotate slot assignments every N global steps (0 = per epoch)")
     parser.add_argument("--dspo_router_lr", type=float, default=1e-3, help="D-SPO: router learning rate")
     parser.add_argument("--dspo_tau_anneal_rate", type=float, default=0.0001, help="D-SPO: tau annealing rate per step")

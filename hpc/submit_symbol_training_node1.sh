@@ -10,21 +10,25 @@ if [[ -f "${PROJECT_ROOT}/.env" ]]; then
     set -a; source "${PROJECT_ROOT}/.env"; set +a
 fi
 
+# --- Model ---
+MODEL_TYPE="${MODEL_TYPE:-flamingo}"                                                  # model backend: qwen | salmonn | flamingo
+
 # --- Infrastructure ---
-CONDA_ENV="${CONDA_ENV:-qwen}"                                                    # conda environment to activate
+# Auto-select conda env based on MODEL_TYPE unless explicitly overridden.
+# qwen/salmonn need transformers==4.45.2; flamingo needs transformers>=5.0.
+_DEFAULT_CONDA_ENV="qwen"
+if [[ "${MODEL_TYPE}" == "flamingo" ]]; then _DEFAULT_CONDA_ENV="flamingo"; fi
+CONDA_ENV="${CONDA_ENV:-${_DEFAULT_CONDA_ENV}}"                                   # conda environment (auto: qwen→qwen env, flamingo→flamingo env)
 DEVICE="${DEVICE:-cuda:0}"                                                        # torch device for training
-CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-7}"                                 # which GPU(s) the process can see
+CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-5}"                                 # which GPU(s) the process can see
 OUTPUT_DIR="${OUTPUT_DIR:-${HOME}/training/symbol_training}"                      # root output directory for checkpoints
 LOG_DIR="${LOGS_DIR:-${HOME}/training/logs}/$(date +"%Y-%m-%d")"                 # log directory (dated subfolder)
 NUM_WORKERS="${NUM_WORKERS:-2}"                                                   # dataloader worker processes
 
-# --- Model ---
-MODEL_TYPE="${MODEL_TYPE:-qwen}"                                                  # model backend: qwen | salmonn | flamingo
-
 # --- Data ---
-DATASET_TYPE="${DATASET_TYPE:-voxceleb-hvb}"                                      # training dataset(s), dash-separated
+DATASET_TYPE="${DATASET_TYPE:-meld_emotion}"                                      # training dataset(s), dash-separated
 VAL_DATASET_TYPE="${VAL_DATASET_TYPE:-voxceleb-hvb-voxpopuli-meld_emotion}"      # validation dataset(s), dash-separated
-MAX_SAMPLES="${MAX_SAMPLES:-10}"                                                  # max training samples (0 = full dataset)
+MAX_SAMPLES="${MAX_SAMPLES:-0}"                                                  # max training samples (0 = full dataset)
 INPUT_MODE="${INPUT_MODE:-speech_only}"                                           # query modality: speech_only | text_only
 FEWSHOT_MODE="${FEWSHOT_MODE:-text}"                                              # few-shot example modality: text | speech
 NUM_EXAMPLES="${NUM_EXAMPLES:-0}"                                                 # few-shot examples in training prompt (0 = zero-shot)
@@ -47,8 +51,9 @@ DPO_BETA="${DPO_BETA:-0.1}"                                                     
 # D-SPO: differentiable slot routing (set DIFF_SYMBOL_ENABLED=true to activate)
 DIFF_SYMBOL_ENABLED="${DIFF_SYMBOL_ENABLED:-true}"                               # true = enable D-SPO differentiable slot routing
 DSPO_ROUTER_LR="${DSPO_ROUTER_LR:-1e-2}"                                         # D-SPO router (slot preference matrix) learning rate
-DSPO_TAU_ANNEAL_RATE="${DSPO_TAU_ANNEAL_RATE:-0.00001}"                          # D-SPO Gumbel temperature decay rate per step
-DSPO_SLOT_ONLY="${DSPO_SLOT_ONLY:-true}"                                         # true = freeze LoRA, train only slot matrix (also needs DIFF_SYMBOL_ENABLED=true)
+DSPO_TAU_ANNEAL_RATE="${DSPO_TAU_ANNEAL_RATE:-0.0001}"                          # D-SPO Gumbel temperature decay rate per step
+DSPO_SLOT_ONLY="${DSPO_SLOT_ONLY:-false}"                                         # true = freeze LoRA, train only slot matrix (also needs DIFF_SYMBOL_ENABLED=true)
+DSPO_PHASE1_PATIENCE="${DSPO_PHASE1_PATIENCE:-3}"                                # >0: auto-switch from slot-only Phase 1 to joint LoRA Phase 2 when conf_mean plateaus for this many epochs
 
 # Fixed/dynamic symbols
 NO_SYMBOLS="${NO_SYMBOLS:-false}"                                                 # true = disable symbol replacement, use raw labels (must be false for DPO)
@@ -138,6 +143,7 @@ python train.py \
     --dspo_router_lr "${DSPO_ROUTER_LR}" \
     --dspo_tau_anneal_rate "${DSPO_TAU_ANNEAL_RATE}" \
     $( [[ "${DSPO_SLOT_ONLY}" == "true" ]] && printf '%s' "--dspo_slot_only" ) \
+    --dspo_phase1_patience "${DSPO_PHASE1_PATIENCE}" \
     $( [[ "${SWAP_LABELS}" == "true" ]] && printf '%s' "--swap_labels" ) \
     $( [[ "${USE_DPO}" == "true" ]] && printf '%s' "--use_dpo" ) \
     $( [[ "${USE_DPO}" == "true" ]] && printf '%s' "--dpo_beta ${DPO_BETA}" ) \

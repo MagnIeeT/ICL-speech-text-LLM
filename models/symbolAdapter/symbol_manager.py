@@ -6,8 +6,32 @@ import logging
 import random
 import re
 import string
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from transformers import PreTrainedTokenizer
+
+from config.data_config.master_config import DATASET_CONFIGS
+
+
+def get_dataset_info(batch: Dict, fallback_labels: Optional[List[str]] = None) -> Tuple[str, List[str]]:
+    """Extract dataset name string and sorted label list from a batch."""
+    ds = batch.get("dataset_type", [])
+    ds = ds[0] if isinstance(ds, list) and ds else ds
+    ds_name_str = ds.value if hasattr(ds, "value") else str(ds)
+    for dt_enum, ds_cfg in DATASET_CONFIGS.items():
+        if dt_enum.value == ds_name_str:
+            return ds_name_str, sorted(list(ds_cfg.valid_labels))
+    return ds_name_str, (fallback_labels or [])
+
+
+def compute_slot_offsets(training_ds_names: set) -> Dict[str, int]:
+    """Return {ds_name: slot_offset} for each training dataset, sorted alphabetically.
+    Guarantees non-overlapping slot ranges across datasets."""
+    offsets, offset = {}, 0
+    for dt_enum, ds_cfg in sorted(DATASET_CONFIGS.items(), key=lambda x: x[0].value):
+        if dt_enum.value in training_ds_names:
+            offsets[dt_enum.value] = offset
+            offset += len(ds_cfg.valid_labels)
+    return offsets
 
 
 class SymbolManager:
@@ -74,18 +98,10 @@ class SymbolManager:
         return {v.lower(): k for k, v in active.items()}
 
     def _generate_symbol_mappings(self, force: bool = False) -> Dict[str, str]:
-        if self.swap_labels: return self._generate_swap_mappings()
         if self.no_symbols and not force: return {}
         if self.symbol_type == "two_token": symbols = self._generate_two_token_symbols(len(self.original_labels))
         else: symbols = ["".join(random.choices(string.ascii_lowercase, k=4)) for _ in self.original_labels]
         return dict(zip(self.original_labels, symbols))
-
-    def _generate_swap_mappings(self) -> Dict[str, str]:
-        labels = list(self.original_labels)
-        if len(labels) <= 1: return {l: l for l in labels}
-        shuffled = labels[:]
-        random.shuffle(shuffled)
-        return dict(zip(labels, shuffled))
 
     def generate_swap_mapping_for_labels(
         self,
@@ -96,13 +112,12 @@ class SymbolManager:
         """
         Generate a swap mapping scoped to the given dataset's label set.
 
-        no_symbols=True  → shuffle original label names within this set
-        no_symbols=False → keep the same symbols but shuffle which symbol is
-                           assigned to which label (swap at symbol level)
-
-        epoch: when provided (per_epoch mode), seed the shuffle from (epoch, labels)
-               so each epoch is guaranteed a different mapping. When None
-               (per_instance mode), uses global random state for batch-level variety.
+        base_symbol_mapping: if provided (self.no_symbols=False), shuffles symbols across
+                             labels (swap at symbol level). If None (self.no_symbols=True),
+                             shuffles the original label names within this set.
+        epoch: if provided (per_epoch mode), seeds the shuffle from (epoch, labels) so
+               the same epoch always produces the same mapping. If None (per_instance
+               mode), uses global random state for batch-level variety.
         """
         labels = sorted(list(set(relevant_labels)))
         if len(labels) <= 1:
@@ -143,9 +158,8 @@ class SymbolManager:
             except: continue
         return words[:num_symbols]
 
-    def _apply_mapping_safe(self, text: str, mapping: Dict[str, str], active_keys: Optional[set] = None) -> str:
+    def _apply_mapping_safe(self, text: str, mapping: Dict[str, str]) -> str:
         if not mapping: return text
-        if active_keys is None: active_keys = set(mapping.keys())
 
         # Protect description text in bullet lines from label replacement.
         # "- label: DESCRIPTION" — DESCRIPTION may contain the label word as a regular
@@ -159,7 +173,7 @@ class SymbolManager:
         protected = re.sub(r'(?m)^([ \t]*-[^:\n]+: )(.+)$', _protect_desc, text)
 
         placeholders, transformed = {}, protected
-        sorted_keys = sorted([k for k in mapping.keys() if k in active_keys], key=len, reverse=True)
+        sorted_keys = sorted(mapping.keys(), key=len, reverse=True)
         for idx, src in enumerate(sorted_keys):
             placeholder = f"__SWAP_PLACEHOLDER_{idx}__"
             placeholders[placeholder] = mapping[src]
@@ -171,30 +185,28 @@ class SymbolManager:
             transformed = transformed.replace(key, val)
         return transformed
 
-    def _apply_mapping_to_prompt_obj(self, prompt_obj: Any, mapping: Dict[str, str], active_keys: set) -> Any:
-        if isinstance(prompt_obj, str): return self._apply_mapping_safe(prompt_obj, mapping, active_keys)
+    def _apply_mapping_to_prompt_obj(self, prompt_obj: Any, mapping: Dict[str, str]) -> Any:
+        if isinstance(prompt_obj, str): return self._apply_mapping_safe(prompt_obj, mapping)
         if isinstance(prompt_obj, dict) and "conversation" in prompt_obj:
             new_obj = dict(prompt_obj)
             new_conv = []
             for msg in prompt_obj.get("conversation", []):
                 new_msg = dict(msg)
-                if isinstance(new_msg.get("content"), str): new_msg["content"] = self._apply_mapping_safe(new_msg["content"], mapping, active_keys)
+                if isinstance(new_msg.get("content"), str): new_msg["content"] = self._apply_mapping_safe(new_msg["content"], mapping)
                 elif isinstance(new_msg.get("content"), list):
-                    new_msg["content"] = [{"type": p["type"], "text": self._apply_mapping_safe(p["text"], mapping, active_keys)} if p.get("type") == "text" else p for p in new_msg["content"]]
+                    new_msg["content"] = [{"type": p["type"], "text": self._apply_mapping_safe(p["text"], mapping)} if p.get("type") == "text" else p for p in new_msg["content"]]
                 new_conv.append(new_msg)
             new_obj["conversation"] = new_conv
             return new_obj
         return prompt_obj
 
-    def replace_symbols_in_batch(self, batch, epoch=None, prompt_mappings=None, completion_mappings=None, random_mask=False, force_new_symbols=False):
-        if prompt_mappings is not None: p_map, c_map = prompt_mappings, (completion_mappings or prompt_mappings)
-        elif epoch is not None: p_map = c_map = self.get_symbols_for_epoch(epoch, force_new_symbols=force_new_symbols)
-        else: p_map = c_map = self.get_current_symbols()
+    def replace_symbols_in_batch(self, batch, prompt_mappings, completion_mappings=None):
+        p_map = prompt_mappings
+        c_map = completion_mappings or prompt_mappings
         if not p_map: return batch
         updated = batch.copy()
-        mask = set(random.sample(list(p_map.keys()), max(1, len(p_map)//8))) if random_mask else set(p_map.keys())
-        if "prompt" in batch: updated["prompt"] = [self._apply_mapping_to_prompt_obj(p, p_map, mask) for p in batch["prompt"]]
-        if "completion" in batch: updated["completion"] = [self._apply_mapping_safe(c, c_map, set(c_map.keys())) for c in batch["completion"]]
+        if "prompt" in batch: updated["prompt"] = [self._apply_mapping_to_prompt_obj(p, p_map) for p in batch["prompt"]]
+        if "completion" in batch: updated["completion"] = [self._apply_mapping_safe(c, c_map) for c in batch["completion"]]
         return updated
 
     def convert_symbols_back(self, text: str, epoch: Optional[int] = None, mappings: Optional[Dict[str, str]] = None) -> str:

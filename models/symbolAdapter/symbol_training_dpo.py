@@ -19,7 +19,7 @@ from tqdm import tqdm
 
 from config.train_config.training_configs import TrainingConfig, SymbolUpdateStrategy
 from config.data_config.master_config import DATASET_CONFIGS
-from .symbol_manager import SymbolManager
+from .symbol_manager import SymbolManager, get_dataset_info
 from .validation import ValidationManager
 
 
@@ -89,6 +89,11 @@ class SymbolDPOOrchestrator:
             eps=1e-8,
             weight_decay=self.config.lora_config.weight_decay,
         )
+        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            self.optimizer, T_max=max(self.config.lora_config.epochs, 1), eta_min=0.0
+        )
+        logging.info("DPO optimizer: %d LoRA params, CosineAnnealingLR T_max=%d lr=%.2e",
+                     sum(p.numel() for p in lora_params), self.config.lora_config.epochs, self.config.lora_config.learning_rate)
 
     def _move_batch_to_device(self, batch: Dict[str, Any]) -> Dict[str, Any]:
         device_batch = {}
@@ -101,21 +106,9 @@ class SymbolDPOOrchestrator:
                 device_batch[key] = value
         return device_batch
 
-    def _get_relevant_labels(self, batch: Dict[str, Any]) -> List[str]:
-        dataset_types = batch.get("dataset_type", [])
-        ds_name = dataset_types[0] if isinstance(dataset_types, list) and dataset_types else "unknown"
-        ds_name_str = ds_name.value if hasattr(ds_name, "value") else str(ds_name)
-        for dt_enum, ds_cfg in DATASET_CONFIGS.items():
-            if dt_enum.value == ds_name_str:
-                return sorted(list(ds_cfg.valid_labels))
-        return self.symbol_manager.original_labels if self.symbol_manager else []
-
     def _determine_mappings(self, batch: Dict[str, Any], epoch: int, batch_idx: int) -> Tuple[Dict, Dict]:
         """Return (prompt_mappings, completion_mappings) for this batch."""
-        relevant_labels = self._get_relevant_labels(batch)
-        dataset_types = batch.get("dataset_type", [])
-        ds_name = dataset_types[0] if isinstance(dataset_types, list) and dataset_types else "unknown"
-        ds_name_str = ds_name.value if hasattr(ds_name, "value") else str(ds_name)
+        ds_name_str, relevant_labels = get_dataset_info(batch, self.symbol_manager.original_labels if self.symbol_manager else [])
         per_instance = self.config.symbol_config.update_strategy == SymbolUpdateStrategy.PER_INSTANCE
 
         if self.config.symbol_config.swap_labels:
@@ -165,17 +158,17 @@ class SymbolDPOOrchestrator:
         Everything else is shared metadata → keep as-is.
         """
         token_keys = {"input_ids", "attention_mask", "prompt_length"}
-        audio_keys = {"input_features", "feature_attention_mask"}
         merged = {}
         for key, c_val in chosen_batch.items():
             if not isinstance(c_val, torch.Tensor):
                 merged[key] = c_val
             elif key in token_keys:
+                # Token sequences differ between chosen and rejected (different completions)
                 merged[key] = torch.cat([c_val, rejected_batch[key]], dim=0)
-            elif key in audio_keys:
-                merged[key] = torch.cat([c_val, c_val], dim=0)  # same audio, duplicated
             else:
-                merged[key] = c_val
+                # Audio features and all other tensors are identical (same prompt/audio)
+                # Duplicate chosen's value to match the merged batch size of 2×B
+                merged[key] = torch.cat([c_val, c_val], dim=0)
         return merged
 
     def _get_completion_logps(self, batch: Dict[str, Any]) -> torch.Tensor:
@@ -279,21 +272,26 @@ class SymbolDPOOrchestrator:
                     continue
 
                 rejected_completion = [
-            self._sample_rejected_symbol(sym, c_mappings) or sym
-            for sym in chosen_completion
-        ]
+                    self._sample_rejected_symbol(sym, c_mappings) or sym
+                    for sym in chosen_completion
+                ]
 
                 if self._epoch_log_count < 2:
                     original_label = raw_batch["completion"][0] if raw_batch.get("completion") else "?"
+                    logged_rejected = rejected_completion[0] if rejected_completion else ""
                     logging.info("=" * 60)
                     logging.info(
                         "DPO train epoch=%d batch=%d  label=%r  chosen=%r  rejected=%r  mapping=%s",
-                        epoch + 1, batch_idx, original_label, chosen_sym, rejected_sym, c_mappings,
+                        epoch + 1, batch_idx, original_label, chosen_sym, logged_rejected, c_mappings,
                     )
                     logging.info("=" * 60)
                     self._epoch_log_count += 1
 
                 # Tokenize separately: same prompt, different completion
+                # For Flamingo: embed audio into prompt dicts so tokenize_batch can access it
+                if text_batch.get("audio"):
+                    for p, a in zip(text_batch["prompt"], text_batch["audio"]):
+                        if isinstance(p, dict): p["_audio"] = a
                 chosen_tok   = self.processor.tokenize_batch(text_batch["prompt"], chosen_completion)
                 rejected_tok  = self.processor.tokenize_batch(text_batch["prompt"], rejected_completion)
 
@@ -401,6 +399,7 @@ class SymbolDPOOrchestrator:
             logging.info("DPO Epoch %d/%d", epoch + 1, self.config.lora_config.epochs)
             epoch_loss = self._train_one_epoch(epoch)
             validation_scores = self._run_validation(epoch)
+            self.scheduler.step()
             logging.info("Epoch %d  dpo_loss=%.6f", epoch + 1, epoch_loss)
             logging.info("Epoch %d  validation=%s", epoch + 1, validation_scores)
             history.append({"epoch": epoch + 1, "train_loss": epoch_loss, "validation": validation_scores})

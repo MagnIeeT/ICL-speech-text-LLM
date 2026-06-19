@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 from config.train_config.training_configs import TrainingConfig, SymbolUpdateStrategy
 from config.data_config.master_config import DATASET_CONFIGS
-from .symbol_manager import SymbolManager
+from .symbol_manager import SymbolManager, get_dataset_info, compute_slot_offsets
 from .validation import ValidationManager
 from .symbol_router import SymbolRouter
 from .vocab_filter import VocabFilter
@@ -47,6 +47,7 @@ class SymbolTrainingOrchestrator:
         self._swap_cache: dict = {}       # per-dataset swap mapping; reset each epoch
         self._slot_assignments: dict = {} # ds_name → list[slot_idx]; reset per rotation
         self._assignment_steps: dict = {} # ds_name → global_step when last assigned
+        self._slot_offsets: dict = compute_slot_offsets(self.train_dataset_names)
 
         self.validator = ValidationManager(
             config=config,
@@ -127,22 +128,27 @@ class SymbolTrainingOrchestrator:
             json.dump(self.config.to_dict(), f, indent=2)
         logging.info("Training environment setup complete")
 
-    def _setup_lora_optimizer(self):
+    def _setup_lora_optimizer(self, remaining_epochs: int = None):
         trainable_params = []
         slot_only = self.config.diff_symbol_config.slot_only
         if not slot_only:
-            lora_params = []
-            for name, param in self.model.named_parameters():
-                if param.requires_grad and "lora" in name.lower():
-                    lora_params.append(param)
+            lora_params = [p for n, p in self.model.named_parameters() if p.requires_grad and "lora" in n.lower()]
             if lora_params:
                 trainable_params.append({"params": lora_params, "lr": self.config.lora_config.learning_rate})
         if self.router is not None:
-            trainable_params.append({"params": self.router.parameters(), "lr": self.config.diff_symbol_config.router_lr})
-        if not trainable_params: raise ValueError("No trainable parameters found")
-        if slot_only:
-            logging.info("slot_only=True: LoRA frozen, training router only (%d params)", sum(p.numel() for p in self.router.parameters()))
+            # filter by requires_grad so a frozen router (Phase 2) is automatically excluded
+            router_params = [p for p in self.router.parameters() if p.requires_grad]
+            if router_params:
+                trainable_params.append({"params": router_params, "lr": self.config.diff_symbol_config.router_lr})
+        if not trainable_params:
+            raise ValueError("No trainable parameters found")
+        n_lora = sum(p.numel() for n, p in self.model.named_parameters() if p.requires_grad and "lora" in n.lower())
+        n_router = sum(p.numel() for p in self.router.parameters() if p.requires_grad) if self.router else 0
+        logging.info("Optimizer: slot_only=%s  lora_params=%d  router_params=%d", slot_only, n_lora, n_router)
         self.optimizer = torch.optim.AdamW(trainable_params, lr=self.config.lora_config.learning_rate, betas=(0.9, 0.999), eps=1e-8, weight_decay=self.config.lora_config.weight_decay)
+        t_max = remaining_epochs if remaining_epochs is not None else self.config.lora_config.epochs
+        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=max(t_max, 1), eta_min=0.0)
+        logging.info("CosineAnnealingLR T_max=%d lr=%.2e", t_max, self.config.lora_config.learning_rate)
 
     def _move_batch_to_device(self, batch: Dict[str, Any]) -> Dict[str, Any]:
         device_batch = {}
@@ -155,16 +161,7 @@ class SymbolTrainingOrchestrator:
 
     def _apply_symbol_replacement(self, batch: Dict[str, Any], epoch: int, batch_idx: int) -> Dict[str, Any]:
         """Coordination logic: identify labels, bind slots, and Use MODULAR Tokenization."""
-        dataset_types = batch.get("dataset_type", [])
-        ds_name = dataset_types[0] if isinstance(dataset_types, list) and len(dataset_types) > 0 else "unknown"
-        ds_name_str = ds_name.value if hasattr(ds_name, "value") else str(ds_name)
-        
-        relevant_labels = []
-        for dt_enum, ds_cfg in DATASET_CONFIGS.items():
-            if dt_enum.value == ds_name_str:
-                relevant_labels = sorted(list(ds_cfg.valid_labels))
-                break
-        if not relevant_labels: relevant_labels = self.symbol_manager.original_labels
+        ds_name_str, relevant_labels = get_dataset_info(batch, self.symbol_manager.original_labels)
 
         p_mappings, c_mappings = None, None
         _dspo_probs = None  # pre-computed probs to pass to injection (same gumbel sample as targets)
@@ -173,7 +170,8 @@ class SymbolTrainingOrchestrator:
             # Matches validation which uses the same alphabetical ordering.
             num_labels = len(relevant_labels)
             if ds_name_str not in self._slot_assignments:
-                self._slot_assignments[ds_name_str] = list(range(num_labels))
+                offset = self._slot_offsets.get(ds_name_str, 0)
+                self._slot_assignments[ds_name_str] = list(range(offset, offset + num_labels))
                 logging.info(
                     "D-SPO fixed slot assignment (dataset=%s): %s → slots %s",
                     ds_name_str, relevant_labels, self._slot_assignments[ds_name_str],
@@ -275,6 +273,9 @@ class SymbolTrainingOrchestrator:
 
         updated_batch = self.symbol_manager.replace_symbols_in_batch(batch, prompt_mappings=p_mappings, completion_mappings=c_mappings)
         if self.processor is not None and "prompt" in updated_batch:
+            if updated_batch.get("audio"):
+                for p, a in zip(updated_batch["prompt"], updated_batch["audio"]):
+                    if isinstance(p, dict): p["_audio"] = a
             tokenized_data = self.processor.tokenize_batch(updated_batch["prompt"], updated_batch["completion"])
             updated_batch.update(tokenized_data)
         if _dspo_probs is not None:
@@ -390,7 +391,19 @@ class SymbolTrainingOrchestrator:
         logging.info(f"Saved checkpoint: {os.path.basename(checkpoint_path)}")
 
     def run_complete_training(self) -> Dict[str, Any]:
-        logging.info("Starting simple LoRA training (no phases, no cycles, no steps)")
+        phase1_patience = self.config.diff_symbol_config.phase1_patience
+        in_phase2 = False
+        best_conf_mean = -1.0
+        best_router_state = None
+        patience_counter = 0
+
+        # phase1_patience > 0 implies slot-only for Phase 1 regardless of the slot_only flag
+        if phase1_patience > 0 and self.router is not None:
+            self.config.diff_symbol_config.slot_only = True
+            logging.info("phase1_patience=%d: forcing slot_only=True for Phase 1. LoRA unlocks when conf_mean plateaus.", phase1_patience)
+
+        logging.info("Starting training — slot_only=%s  phase1_patience=%d  epochs=%d",
+                     self.config.diff_symbol_config.slot_only, phase1_patience, self.config.lora_config.epochs)
         self._setup_lora_optimizer()
         self.optimizer.zero_grad(set_to_none=True)
         history = []
@@ -403,15 +416,44 @@ class SymbolTrainingOrchestrator:
 
         for epoch in range(self.config.lora_config.epochs):
             self._epoch_log_count = 0
-            logging.info(f"Epoch {epoch + 1}/{self.config.lora_config.epochs}")
+            phase_tag = " [Phase2-LoRA]" if in_phase2 else (" [Phase1-Slots]" if phase1_patience > 0 else "")
+            logging.info(f"Epoch {epoch + 1}/{self.config.lora_config.epochs}{phase_tag}")
             epoch_loss = self._train_one_epoch(epoch)
             validation_scores = self._run_validation(epoch)
+            self.scheduler.step()
             logging.info(f"Epoch {epoch + 1} loss: {epoch_loss:.6f}")
             logging.info(f"Epoch {epoch + 1} validation: {validation_scores}")
 
             history.append({"epoch": epoch + 1, "train_loss": epoch_loss, "validation": validation_scores})
             if self.config.checkpoint_frequency > 0 and (epoch + 1) % self.config.checkpoint_frequency == 0:
                 self._save_checkpoint(epoch, "periodic")
+
+            # Phase 1 convergence check: track best conf_mean, switch to Phase 2 when patience exceeded
+            if phase1_patience > 0 and not in_phase2 and self.router is not None:
+                current_conf_mean = self.router.get_confidence_scores().mean().item()
+                if current_conf_mean > best_conf_mean:
+                    best_conf_mean = current_conf_mean
+                    best_router_state = {k: v.detach().cpu().clone() for k, v in self.router.state_dict().items()}
+                    patience_counter = 0
+                    logging.info("Phase 1: new best conf_mean=%.4f at epoch %d (saved to CPU RAM)", best_conf_mean, epoch + 1)
+                else:
+                    patience_counter += 1
+                    logging.info("Phase 1: conf_mean=%.4f, no improvement %d/%d", current_conf_mean, patience_counter, phase1_patience)
+
+                remaining = self.config.lora_config.epochs - (epoch + 1)
+                if patience_counter >= phase1_patience and remaining > 0:
+                    logging.info("=" * 60)
+                    logging.info("PHASE 2: Slots converged (best conf_mean=%.4f). Switching to joint LoRA training.", best_conf_mean)
+                    logging.info("%d epochs remaining.", remaining)
+                    logging.info("=" * 60)
+                    device = next(self.router.parameters()).device
+                    self.router.load_state_dict({k: v.to(device) for k, v in best_router_state.items()})
+                    for p in self.router.parameters():
+                        p.requires_grad_(False)
+                    self.config.diff_symbol_config.slot_only = False
+                    self._setup_lora_optimizer(remaining_epochs=remaining)
+                    self.optimizer.zero_grad(set_to_none=True)
+                    in_phase2 = True
         
         # 1. Consolidated Validation Summary Table
         logging.info("=" * 30 + " Consolidated Validation Summary " + "=" * 30)
