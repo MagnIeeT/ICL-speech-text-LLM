@@ -108,13 +108,36 @@ class FlamingoProcessor(ModelProcessor):
         return {"conversation": conversation, "input_mode": input_mode}
 
     def process_inputs(self, data: Dict[str, Any], is_training: bool = False) -> Dict[str, Any]:
-        """Store raw prompt + raw audio. Do NOT tokenize here — symbol replacement happens first."""
+        """Store raw prompt + pre-compute audio features in DataLoader workers.
+
+        Pre-computing here (in workers, parallel to GPU) avoids blocking the main thread
+        in tokenize_batch. _tokenize_one uses these features via the fast path, skipping
+        the expensive apply_chat_template feature-extractor call entirely.
+        """
         audio = data.get("audio")
+        precomputed = None
+        if audio is not None:
+            audio_np = _ensure_numpy(audio)
+            try:
+                audio_inputs, _ = self.processor._process_audio(
+                    [audio_np],
+                    sampling_rate=self.SAMPLING_RATE,
+                    return_attention_mask=True,
+                    padding="max_length",
+                    return_tensors="pt",
+                )
+                precomputed = {
+                    "input_features": audio_inputs["input_features"],       # [n_win, 128, 3000]
+                    "input_features_mask": audio_inputs["input_features_mask"],
+                    "num_audio_tokens": int(audio_inputs["num_audio_tokens"][0].item()),
+                }
+            except Exception as exc:
+                logging.warning("FlamingoProcessor: pre-compute failed (%s), will fall back to slow path", exc)
         return {
             "prompt": data.get("prompt"),
             "completion": data.get("completion", ""),
-            # Keep raw audio in batch so training/val loop can inject it into prompt dict
             "audio": _ensure_numpy(audio) if audio is not None else None,
+            "_precomputed": precomputed,
         }
 
     def tokenize_batch(
@@ -125,18 +148,21 @@ class FlamingoProcessor(ModelProcessor):
     ) -> Dict[str, Any]:
         """
         Full tokenization after symbol replacement.
-        Expects prompt dicts with _audio already injected by the training/val loop:
-            for p, a in zip(batch["prompt"], batch["audio"]):
-                if isinstance(p, dict): p["_audio"] = a
+        Expects prompt dicts with _audio and _precomputed already injected:
+            for p, a, pre in zip(batch["prompt"], batch["audio"], batch["_precomputed"]):
+                if isinstance(p, dict):
+                    p["_audio"] = a
+                    if pre is not None: p["_precomputed"] = pre
         """
         items = []
         for i, prompt in enumerate(prompts):
             completion = completions[i] if completions is not None else ""
             audio = prompt.get("_audio") if isinstance(prompt, dict) else None
-            items.append(self._tokenize_one(prompt, audio, completion))
+            precomputed = prompt.get("_precomputed") if isinstance(prompt, dict) else None
+            items.append(self._tokenize_one(prompt, audio, completion, precomputed=precomputed))
         return self.collate_batch(items, padding_side=padding_side)
 
-    def _tokenize_one(self, prompt_obj: Dict, audio, completion: str) -> Dict[str, Any]:
+    def _tokenize_one(self, prompt_obj: Dict, audio, completion: str, precomputed=None) -> Dict[str, Any]:
         if not isinstance(prompt_obj, dict) or "conversation" not in prompt_obj:
             raise ValueError("FlamingoProcessor expects prompt to be a dict with 'conversation' key.")
 
@@ -144,32 +170,62 @@ class FlamingoProcessor(ModelProcessor):
         input_mode = prompt_obj.get("input_mode", "speech_only")
         has_audio = input_mode != "text_only" and audio is not None
 
-        # Fill or remove audio placeholder
-        for msg in conversation:
-            if msg.get("role") != "user":
-                continue
-            content = msg.get("content", [])
-            if not isinstance(content, list):
-                continue
-            if has_audio:
-                for part in content:
-                    if isinstance(part, dict) and part.get("type") == "audio" and part.get("audio") is None:
-                        part["audio"] = _ensure_numpy(audio)
-            else:
+        if precomputed is not None and has_audio:
+            # Fast path: substitute <sound>*N as text so apply_chat_template skips the feature
+            # extractor (already computed in DataLoader workers). The Flamingo chat template
+            # renders audio items as text anyway — so token sequences are identical.
+            N = precomputed["num_audio_tokens"]
+            for msg in conversation:
+                if msg.get("role") != "user":
+                    continue
+                content = msg.get("content", [])
+                if not isinstance(content, list):
+                    continue
                 msg["content"] = [
-                    p for p in content
-                    if not (isinstance(p, dict) and p.get("type") == "audio" and p.get("audio") is None)
+                    {"type": "text", "text": self.processor.audio_token * N}
+                    if (isinstance(p, dict) and p.get("type") == "audio" and p.get("audio") is None)
+                    else p
+                    for p in content
                 ]
 
-        prompt_only_conv = [c for c in conversation if c.get("role") != "assistant"]
+            prompt_only_conv = [c for c in conversation if c.get("role") != "assistant"]
+            prompt_inputs = self.processor.apply_chat_template(
+                prompt_only_conv,
+                tokenize=True,
+                add_generation_prompt=True,
+                return_dict=True,
+                return_tensors="pt",
+            )
+            # Inject pre-computed features (not returned since no audio items in conv)
+            prompt_inputs["input_features"] = precomputed["input_features"]
+            prompt_inputs["input_features_mask"] = precomputed["input_features_mask"]
+        else:
+            # Slow path (fallback): embed audio array directly, let apply_chat_template run
+            # the feature extractor. Used when pre-computation failed or text_only mode.
+            for msg in conversation:
+                if msg.get("role") != "user":
+                    continue
+                content = msg.get("content", [])
+                if not isinstance(content, list):
+                    continue
+                if has_audio:
+                    for part in content:
+                        if isinstance(part, dict) and part.get("type") == "audio" and part.get("audio") is None:
+                            part["audio"] = _ensure_numpy(audio)
+                else:
+                    msg["content"] = [
+                        p for p in content
+                        if not (isinstance(p, dict) and p.get("type") == "audio" and p.get("audio") is None)
+                    ]
 
-        prompt_inputs = self.processor.apply_chat_template(
-            prompt_only_conv,
-            tokenize=True,
-            add_generation_prompt=True,
-            return_dict=True,
-            return_tensors="pt",
-        )
+            prompt_only_conv = [c for c in conversation if c.get("role") != "assistant"]
+            prompt_inputs = self.processor.apply_chat_template(
+                prompt_only_conv,
+                tokenize=True,
+                add_generation_prompt=True,
+                return_dict=True,
+                return_tensors="pt",
+            )
 
         prompt_ids = prompt_inputs["input_ids"].squeeze(0)
         prompt_mask = prompt_inputs["attention_mask"].squeeze(0)

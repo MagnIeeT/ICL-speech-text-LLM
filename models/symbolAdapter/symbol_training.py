@@ -274,8 +274,12 @@ class SymbolTrainingOrchestrator:
         updated_batch = self.symbol_manager.replace_symbols_in_batch(batch, prompt_mappings=p_mappings, completion_mappings=c_mappings)
         if self.processor is not None and "prompt" in updated_batch:
             if updated_batch.get("audio"):
-                for p, a in zip(updated_batch["prompt"], updated_batch["audio"]):
-                    if isinstance(p, dict): p["_audio"] = a
+                precomp_list = updated_batch.get("_precomputed", [None] * len(updated_batch["prompt"]))
+                for p, a, pre in zip(updated_batch["prompt"], updated_batch["audio"], precomp_list):
+                    if isinstance(p, dict):
+                        p["_audio"] = a
+                        if pre is not None:
+                            p["_precomputed"] = pre
             tokenized_data = self.processor.tokenize_batch(updated_batch["prompt"], updated_batch["completion"])
             updated_batch.update(tokenized_data)
         if _dspo_probs is not None:

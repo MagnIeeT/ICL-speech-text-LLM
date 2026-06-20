@@ -181,9 +181,12 @@ class ValidationManager:
                     # For Flamingo: inject audio into prompt dicts so tokenize_batch can embed it.
                     # (Qwen/SALMONN prompts are strings, isinstance(p, dict) is False → harmless.)
                     if updated_batch.get("audio"):
-                        for p, a in zip(updated_batch["prompt"], updated_batch["audio"]):
+                        precomp_list = updated_batch.get("_precomputed", [None] * len(updated_batch["prompt"]))
+                        for p, a, pre in zip(updated_batch["prompt"], updated_batch["audio"], precomp_list):
                             if isinstance(p, dict):
                                 p["_audio"] = a
+                                if pre is not None:
+                                    p["_precomputed"] = pre
                     tokenized_data = self.processor.tokenize_batch(updated_batch["prompt"], completions=None, padding_side="left")
                     updated_batch.update(tokenized_data)
 
