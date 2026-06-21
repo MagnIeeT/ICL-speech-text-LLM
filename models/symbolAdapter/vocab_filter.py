@@ -88,7 +88,34 @@ class VocabFilter:
 
         if len(candidate_ids) < pool_size:
             logger.warning(f"Could only find {len(candidate_ids)} candidates, but requested {pool_size}.")
-            return candidate_ids
-        
+            return [(tid,) for tid in candidate_ids]
+
         # Take the top N rarest (highest ID) candidates
-        return candidate_ids[:pool_size]
+        return [(tid,) for tid in candidate_ids[:pool_size]]
+
+    def generate_fresh_symbol_pool(
+        self,
+        pool_size: int,
+        token_size: int = 1,
+    ) -> List:
+        """
+        Generate a pool of fresh symbol token IDs by sampling random strings
+        that tokenize to exactly `token_size` tokens with comma-consistency checks.
+
+        Always returns List[Tuple[int,...]] — each symbol is a tuple of token_size IDs.
+        This ensures torch.tensor() produces [pool_size, token_size] consistently.
+        """
+        from .symbol_manager import generate_fresh_symbols
+
+        symbols = generate_fresh_symbols(self.tokenizer, pool_size, token_size)
+
+        token_ids = []
+        for sym in symbols:
+            ids = self.tokenizer.encode(sym, add_special_tokens=False)
+            token_ids.append(tuple(ids[:token_size]))
+
+        logger.info(
+            "D-SPO fresh pool: generated %d/%d symbols (token_size=%d)",
+            len(token_ids), pool_size, token_size,
+        )
+        return token_ids

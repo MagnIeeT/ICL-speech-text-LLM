@@ -134,7 +134,7 @@ def main():
             original_labels=dataset_labels,
             tokenizer=tokenizer,
             dynamic_per_epoch=config.symbol_config.dynamic_symbols,
-            symbol_type=config.symbol_config.symbol_type,
+            token_size=config.symbol_config.symbol_token_size,
             no_symbols=config.symbol_config.no_symbols,
             swap_labels=config.symbol_config.swap_labels,
         )

@@ -155,7 +155,7 @@ class InferenceOrchestrator:
                 original_labels=dataset_labels,
                 tokenizer=tokenizer,
                 dynamic_per_epoch=False,
-                symbol_type=self.config.symbol_config.symbol_type,
+                token_size=self.config.symbol_config.symbol_token_size,
                 no_symbols=self.config.symbol_config.no_symbols,
                 swap_labels=self.config.symbol_config.swap_labels,
             )

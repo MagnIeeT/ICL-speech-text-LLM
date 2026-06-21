@@ -48,7 +48,7 @@ class SymbolConfig:
     dynamic_symbols: bool = False
     no_symbols: bool = False
     update_strategy: SymbolUpdateStrategy = SymbolUpdateStrategy.PER_EPOCH
-    symbol_type: str = "two_token"
+    symbol_token_size: int = 2
     seed: Optional[int] = None
     validation_modes: str = "fixed,original,fresh"
     swap_labels: bool = False
@@ -77,7 +77,7 @@ from utils.environment import get_env_path
 class DifferentiableSymbolConfig:
     enabled: bool = False
     num_slots: int = 25
-    slot_vocab_size: int = 100     # K: private vocab tokens per slot (non-overlapping)
+    slot_vocab_size: int = 25     # K: private vocab tokens per slot (non-overlapping)
     slot_only: bool = False        # freeze LoRA, train router only
     tau: float = 1.0
     tau_min: float = 0.1
@@ -86,7 +86,11 @@ class DifferentiableSymbolConfig:
     rotation_interval: int = 0      # 0 = rotate slot assignments per epoch; >0 = every N global steps
     integrity_alpha: float = 1.0
     integrity_beta: float = 1.0
+    phase0_epochs: int = 0      # >0: LoRA-only warmup on original labels before D-SPO starts
     phase1_patience: int = 0    # >0: slot-only Phase 1 → auto-switch to LoRA when conf_mean plateaus
+    phase1_epochs: int = 0      # >0: max Phase 1 epochs — switch to Phase 2 after this many epochs even if patience not triggered
+    use_fresh_symbols: bool = True  # True = generate fresh random symbols; False = BPE vocab scan
+    symbol_token_size: int = 2      # tokens per symbol: 1 = single-token, 2 = two-token (future)
 
     @property
     def pool_size(self) -> int:
@@ -168,7 +172,7 @@ class TrainingConfig:
                 "dynamic_symbols": self.symbol_config.dynamic_symbols,
                 "no_symbols": self.symbol_config.no_symbols,
                 "update_strategy": self.symbol_config.update_strategy.value,
-                "symbol_type": self.symbol_config.symbol_type,
+                "symbol_token_size": self.symbol_config.symbol_token_size,
                   "validation_modes": self.symbol_config.validation_modes,
                   "swap_labels": self.symbol_config.swap_labels,
             },
@@ -202,7 +206,7 @@ class TrainingConfig:
             dynamic_symbols=getattr(args, "dynamic_symbols", False),
             no_symbols=getattr(args, "no_symbols", False),
             update_strategy=SymbolUpdateStrategy(getattr(args, "symbol_update_strategy", "per_epoch")),
-            symbol_type="two_token",
+            symbol_token_size=2,
               validation_modes=getattr(args, "validation_modes", "fixed,original,fresh"),
               swap_labels=getattr(args, "swap_labels", False),
         )
@@ -217,7 +221,9 @@ class TrainingConfig:
             router_lr=getattr(args, "dspo_router_lr", 1e-3),
             tau_anneal_rate=getattr(args, "dspo_tau_anneal_rate", 0.0001),
             slot_only=getattr(args, "dspo_slot_only", False),
+            phase0_epochs=getattr(args, "dspo_phase0_epochs", 0),
             phase1_patience=getattr(args, "dspo_phase1_patience", 0),
+            phase1_epochs=getattr(args, "dspo_phase1_epochs", 0),
         )
 
         data_config = DataConfig(
@@ -292,7 +298,9 @@ def parse_training_args() -> argparse.Namespace:
     parser.add_argument("--dspo_num_slots", type=int, default=25, help="D-SPO: total number of slots (must be >= sum of all training dataset label counts)")
     parser.add_argument("--dspo_slot_vocab_size", type=int, default=100, help="D-SPO: private candidate tokens per slot")
     parser.add_argument("--dspo_slot_only", action="store_true", help="D-SPO: freeze LoRA, train router/slot matrix only")
-    parser.add_argument("--dspo_phase1_patience", type=int, default=0, help="D-SPO: epochs without conf_mean improvement before switching from slot-only Phase 1 to joint LoRA Phase 2 (0=disabled)")
+    parser.add_argument("--dspo_phase0_epochs", type=int, default=0, help="D-SPO: LoRA-only warmup epochs on original labels before D-SPO starts (0=disabled)")
+    parser.add_argument("--dspo_phase1_patience", type=int, default=0, help="D-SPO: epochs without conf_mean improvement before switching from slot-only Phase 1 to LoRA Phase 2 (0=disabled)")
+    parser.add_argument("--dspo_phase1_epochs", type=int, default=0, help="D-SPO: max Phase 1 epochs — hard cap, switches to Phase 2 even if patience not triggered (0=disabled)")
     parser.add_argument("--dspo_rotation_interval", type=int, default=0, help="D-SPO: rotate slot assignments every N global steps (0 = per epoch)")
     parser.add_argument("--dspo_router_lr", type=float, default=1e-3, help="D-SPO: router learning rate")
     parser.add_argument("--dspo_tau_anneal_rate", type=float, default=0.0001, help="D-SPO: tau annealing rate per step")

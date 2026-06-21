@@ -12,6 +12,48 @@ from transformers import PreTrainedTokenizer
 from config.data_config.master_config import DATASET_CONFIGS
 
 
+def generate_fresh_symbols(
+    tokenizer: "PreTrainedTokenizer",
+    num_symbols: int,
+    token_size: int = 2,
+) -> List[str]:
+    """
+    Generate random lowercase strings that tokenize to exactly `token_size` tokens
+    and remain atomic when adjacent to punctuation (comma checks).
+
+    Works for any token_size: standalone len == token_size, "word," len == token_size+1
+    with first token_size IDs matching, and ", word" len == token_size+1.
+    """
+    words, used, attempts = [], set(), 0
+    while len(words) < num_symbols and attempts < 100_000:
+        attempts += 1
+        w = "".join(random.choice(string.ascii_lowercase) for _ in range(random.choice([4, 5])))
+        if w in used:
+            continue
+        used.add(w)
+        try:
+            w_ids = tokenizer.encode(w, add_special_tokens=False)
+            if len(w_ids) != token_size:
+                continue
+            w_comma_ids = tokenizer.encode(f"{w},", add_special_tokens=False)
+            cs_w_ids = tokenizer.encode(f", {w}", add_special_tokens=False)
+            if not (
+                len(w_comma_ids) == token_size + 1
+                and w_comma_ids[:token_size] == w_ids
+                and len(cs_w_ids) == token_size + 1
+            ):
+                continue
+            words.append(w)
+        except Exception:
+            continue
+    if len(words) < num_symbols:
+        logging.warning(
+            "generate_fresh_symbols: only generated %d/%d symbols (token_size=%d)",
+            len(words), num_symbols, token_size,
+        )
+    return words[:num_symbols]
+
+
 def get_dataset_info(batch: Dict, fallback_labels: Optional[List[str]] = None) -> Tuple[str, List[str]]:
     """Extract dataset name string and sorted label list from a batch."""
     ds = batch.get("dataset_type", [])
@@ -42,14 +84,14 @@ class SymbolManager:
         original_labels: List[str],
         tokenizer: PreTrainedTokenizer,
         dynamic_per_epoch: bool = False,
-        symbol_type: str = "two_token",
+        token_size: int = 2,
         no_symbols: bool = False,
         swap_labels: bool = False,
     ):
         self.original_labels = sorted(list(set(original_labels)))
         self.tokenizer = tokenizer
         self.dynamic_per_epoch = dynamic_per_epoch
-        self.symbol_type = symbol_type
+        self.token_size = token_size
         self.no_symbols = no_symbols
         self.swap_labels = swap_labels
 
@@ -61,10 +103,7 @@ class SymbolManager:
         # swap_labels. Used as the base pool when doing symbol-level swap.
         self._pure_symbol_mappings: Dict[str, str] = {}
         if not self.no_symbols:
-            if self.symbol_type == "two_token":
-                syms = self._generate_two_token_symbols(len(self.original_labels))
-            else:
-                syms = ["".join(random.choices(string.ascii_lowercase, k=4)) for _ in self.original_labels]
+            syms = self._generate_two_token_symbols(len(self.original_labels), self.token_size)
             self._pure_symbol_mappings = dict(zip(self.original_labels, syms))
 
         if self.no_symbols and not self.swap_labels:
@@ -99,8 +138,7 @@ class SymbolManager:
 
     def _generate_symbol_mappings(self, force: bool = False) -> Dict[str, str]:
         if self.no_symbols and not force: return {}
-        if self.symbol_type == "two_token": symbols = self._generate_two_token_symbols(len(self.original_labels))
-        else: symbols = ["".join(random.choices(string.ascii_lowercase, k=4)) for _ in self.original_labels]
+        symbols = self._generate_two_token_symbols(len(self.original_labels), self.token_size)
         return dict(zip(self.original_labels, symbols))
 
     def generate_swap_mapping_for_labels(
@@ -138,25 +176,8 @@ class SymbolManager:
             shuffle_fn(symbols)
             return dict(zip(labels, symbols))
 
-    def _generate_two_token_symbols(self, num_symbols: int) -> List[str]:
-        words, used, attempts = [], set(), 0
-        while len(words) < num_symbols and attempts < 10000:
-            attempts += 1
-            w = "".join(random.choice(string.ascii_lowercase) for _ in range(random.choice([4, 5])))
-            if w in used: continue
-            used.add(w)
-            try:
-                w_ids = self.tokenizer.encode(w, add_special_tokens=False)
-                w_comma_ids = self.tokenizer.encode(f"{w},", add_special_tokens=False)
-                cs_w_ids = self.tokenizer.encode(f", {w}", add_special_tokens=False)
-                if (
-                    len(w_ids) == 2
-                    and len(w_comma_ids) == 3 and w_comma_ids[:2] == w_ids
-                    and len(cs_w_ids) == 3
-                ):
-                    words.append(w)
-            except: continue
-        return words[:num_symbols]
+    def _generate_two_token_symbols(self, num_symbols: int, token_size: int = 2) -> List[str]:
+        return generate_fresh_symbols(self.tokenizer, num_symbols, token_size)
 
     def _apply_mapping_safe(self, text: str, mapping: Dict[str, str]) -> str:
         if not mapping: return text

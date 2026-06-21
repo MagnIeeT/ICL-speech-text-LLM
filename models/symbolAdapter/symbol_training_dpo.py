@@ -373,7 +373,7 @@ class SymbolDPOOrchestrator:
                 "symbol_mappings": {
                     "current_epoch_mappings": self.symbol_manager.get_symbols_for_epoch(epoch) if self.symbol_manager else {},
                     "original_labels": self.symbol_manager.original_labels if self.symbol_manager else [],
-                    "symbol_type": self.symbol_manager.symbol_type if self.symbol_manager else "",
+                    "symbol_token_size": self.symbol_manager.token_size if self.symbol_manager else 2,
                     "dynamic_per_epoch": self.symbol_manager.dynamic_per_epoch if self.symbol_manager else False,
                 },
                 "dpo_config": {"beta": self.beta},

@@ -143,16 +143,23 @@ class ValidationManager:
                         # --- END ---
 
                         vocab_indices, _ = router.get_slot_mappings(slots, hard=True, deterministic=True)
-                        p_map = {label: f"<slot_{s}>" for label, s in zip(relevant_labels, slots)}
+                        _token_size = dspo_module.slot_placeholder_ids.shape[1]
+                        p_map = {
+                            label: "".join(f"<slot_{s}_{p}>" for p in range(_token_size))
+                            for label, s in zip(relevant_labels, slots)
+                        }
                         symbols = [
-                            self.tokenizer.decode([idx]).strip() or f"<tok_{idx.item()}>"
+                            self.tokenizer.decode(idx.tolist()).strip()
+                            or f"<tok_{idx.tolist()}>"
                             for idx in vocab_indices
                         ]
                         c_map = {label: sym for label, sym in zip(relevant_labels, symbols)}
-                        slot_replacement = {
-                            int(dspo_module.slot_token_ids[s].item()): int(vocab_indices[i].item())
-                            for i, s in enumerate(slots)
-                        }
+                        slot_replacement = {}
+                        for i, s in enumerate(slots):
+                            for p in range(_token_size):
+                                placeholder_id = int(dspo_module.slot_placeholder_ids[s, p].item())
+                                vocab_id = int(vocab_indices[i, p].item())
+                                slot_replacement[placeholder_id] = vocab_id
                         dataset_slot_cache[ds_name_str] = (p_map, c_map, slot_replacement)
                         logger.info("D-SPO val slots fixed for %s: %s", ds_name_str,
                                     {lbl: f"slot_{s}→{sym}" for (lbl, s, sym) in zip(relevant_labels, slots, symbols)})

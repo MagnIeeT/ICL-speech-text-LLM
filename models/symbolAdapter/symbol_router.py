@@ -20,7 +20,7 @@ class SymbolRouter(nn.Module):
         self,
         num_slots: int,
         slot_vocab_size: int,
-        slot_vocab_indices: List[List[int]],  # [num_slots][K] — token IDs, non-overlapping
+        slot_vocab_indices: List,  # [num_slots, K, token_size] — token IDs per symbol position
         initial_tau: float = 1.0,
         tau_min: float = 0.1,
     ):
@@ -28,7 +28,7 @@ class SymbolRouter(nn.Module):
         self.num_slots = num_slots
         self.slot_vocab_size = slot_vocab_size
 
-        # [num_slots, K] — each slot's private token IDs, not learnable
+        # [num_slots, K, token_size] — each slot's private symbol token IDs, not learnable
         self.register_buffer(
             "slot_vocab_indices",
             torch.tensor(slot_vocab_indices, dtype=torch.long),
@@ -57,7 +57,7 @@ class SymbolRouter(nn.Module):
                 If False (default), gumbel noise is added each call (original behaviour).
 
         Returns:
-            vocab_indices: [S] — the chosen real vocab token ID for each slot
+            vocab_indices: [S, token_size] — chosen token IDs per position for each slot
             probs:         [S, K] — weights used for soft embedding (grad-connected)
         """
         slot_prefs = self.preferences[slot_indices]                           # [S, K]
@@ -72,12 +72,12 @@ class SymbolRouter(nn.Module):
             probs = F.gumbel_softmax(slot_prefs, tau=self.tau, hard=hard, dim=-1)  # [S, K]
             discrete_indices = torch.argmax(probs, dim=-1)                   # [S]
 
-        # discrete_indices[i] is an index into slot_vocab_indices[slot_indices[i]]
-        slot_vocab = self.slot_vocab_indices[slot_indices]                    # [S, K]
+        # discrete_indices[i] indexes into slot_vocab_indices[slot_indices[i], :, :]
+        slot_vocab = self.slot_vocab_indices[slot_indices]                    # [S, K, token_size]
         vocab_indices = slot_vocab[
             torch.arange(len(slot_indices), device=slot_vocab.device),
             discrete_indices,
-        ]  # [S] — actual token IDs in the model's vocabulary
+        ]  # [S, token_size] — token IDs for each position of the chosen symbol
 
         return vocab_indices, probs
 
