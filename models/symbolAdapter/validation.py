@@ -1,20 +1,19 @@
 """Validation logic for Symbol Adapter training and inference."""
 
 import logging
-import random
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional
 
 import torch
 from tqdm import tqdm
 
-from config.data_config.master_config import DatasetType, DATASET_CONFIGS
+from config.data_config.master_config import DatasetType
 from config.train_config.training_configs import (
     TrainingConfig,
     ValidationSymbolMode,
 )
 
 from utils.evaluation_utils import evaluate_predictions
-from .symbol_manager import SymbolManager, get_dataset_info, compute_slot_offsets
+from .symbol_manager import SymbolManager, get_dataset_info, tokenize_batch_with_audio
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +58,7 @@ class ValidationManager:
         self, model, val_dataloader, epoch: int,
         use_original_labels: bool = False,
         use_dynamic_symbols: bool = False,
-        symbol_mappings: Optional[Dict[str, str]] = None,
+        symbol_map: Optional[Dict[str, str]] = None,
     ):
         model.eval()
         if use_original_labels:
@@ -69,7 +68,8 @@ class ValidationManager:
             symbol_mappings_to_use = self.symbol_manager._generate_symbol_mappings(force=True)
             mode_name = "Fresh-Symbols"
         else:
-            symbol_mappings_to_use = symbol_mappings if symbol_mappings is not None else self.symbol_manager.get_symbols_for_epoch(epoch)
+            # symbol_map comes pre-built from trainer (_build_current_symbol_map); fallback for non-trainer callers
+            symbol_mappings_to_use = symbol_map if symbol_map is not None else self.symbol_manager.get_symbols_for_epoch(epoch)
             mode_name = "Fixed-Symbols"
 
         logger.info("")
@@ -84,7 +84,6 @@ class ValidationManager:
                     val_dataloader=val_dataloader,
                     symbol_mappings=symbol_mappings_to_use,
                     use_original_labels=use_original_labels,
-                    use_dynamic=use_dynamic_symbols,
                 )
             return metrics_by_dataset
         except Exception as exc:
@@ -94,108 +93,36 @@ class ValidationManager:
         finally:
             model.train()
 
-    def _run_validation_with_utils(self, model, val_dataloader, symbol_mappings: Dict[str, str], use_original_labels: bool = False, use_dynamic: bool = False):
+    def _run_validation_with_utils(self, model, val_dataloader, symbol_mappings: Dict[str, str], use_original_labels: bool = False):
         all_results = {}
         progress_bar = tqdm(val_dataloader, desc="Evaluating", total=len(val_dataloader), leave=False)
-        router = getattr(model, "router", None)
-        dspo_module = getattr(model, "dspo_module", None)
-
-        # Per-dataset slot assignment cache: computed once per dataset per validation run.
-        training_ds_names = set(self.config.data_config.dataset_type.split("-"))
-        slot_offsets = compute_slot_offsets(training_ds_names)
-        total_slots = router.num_slots if router is not None else 0
-        dataset_slot_cache: Dict[str, tuple] = {}
-        logged_datasets: set = set()   # tracks which datasets have had their mapping log
-        logged_prompts: set = set()    # tracks which datasets have had their prompt log
+        logged_datasets: set = set()
+        logged_prompts: set = set()
 
         try:
             for batch in progress_bar:
                 ds_name_str, relevant_labels = get_dataset_info(batch, self.symbol_manager.original_labels)
 
-                # Determine mappings and slot_replacement for this batch.
-                slot_replacement = None
                 if use_original_labels:
-                    p_map, c_map = {}, {}
-                elif router is not None and dspo_module is not None and not use_dynamic:
-                    if ds_name_str not in dataset_slot_cache:
-                        if ds_name_str in slot_offsets:
-                            # Training dataset: use its exact non-overlapping slot range
-                            offset = slot_offsets[ds_name_str]
-                            slots = list(range(offset, offset + len(relevant_labels)))
-                        else:
-                            # Validation-only dataset: deterministically sample from trained pool
-                            rng = random.Random(hash(ds_name_str) & 0x7FFFFFFF)
-                            slots = sorted(rng.sample(range(total_slots), min(len(relevant_labels), total_slots)))
-
-                        # Log confidence scores for monitoring (not used for slot selection)
-                        confidence = router.get_confidence_scores()
-                        conf_str = "  ".join(
-                            f"slot_{i}={'*' if i in slots else ''}{confidence[i].item():.3f}"
-                            for i in range(router.num_slots)
-                        )
-                        logger.info("D-SPO val confidence [%s]: %s", ds_name_str, conf_str)
-
-                        # --- TOP-K CONFIDENCE SELECTION DISABLED (kept for reference) ---
-                        # num_needed = min(len(relevant_labels), self.config.diff_symbol_config.num_slots)
-                        # confidence = router.get_confidence_scores()
-                        # slots = confidence.topk(num_needed).indices.tolist()
-                        # slots = sorted(slots, key=lambda s: confidence[s].item(), reverse=True)
-                        # --- END ---
-
-                        vocab_indices, _ = router.get_slot_mappings(slots, hard=True, deterministic=True)
-                        _token_size = dspo_module.slot_placeholder_ids.shape[1]
-                        p_map = {
-                            label: "".join(f"<slot_{s}_{p}>" for p in range(_token_size))
-                            for label, s in zip(relevant_labels, slots)
-                        }
-                        symbols = [
-                            self.tokenizer.decode(idx.tolist()).strip()
-                            or f"<tok_{idx.tolist()}>"
-                            for idx in vocab_indices
-                        ]
-                        c_map = {label: sym for label, sym in zip(relevant_labels, symbols)}
-                        slot_replacement = {}
-                        for i, s in enumerate(slots):
-                            for p in range(_token_size):
-                                placeholder_id = int(dspo_module.slot_placeholder_ids[s, p].item())
-                                vocab_id = int(vocab_indices[i, p].item())
-                                slot_replacement[placeholder_id] = vocab_id
-                        dataset_slot_cache[ds_name_str] = (p_map, c_map, slot_replacement)
-                        logger.info("D-SPO val slots fixed for %s: %s", ds_name_str,
-                                    {lbl: f"slot_{s}→{sym}" for (lbl, s, sym) in zip(relevant_labels, slots, symbols)})
-                    else:
-                        p_map, c_map, slot_replacement = dataset_slot_cache[ds_name_str]
+                    p_map = c_map = {}
                 else:
-                    p_map = c_map = symbol_mappings
+                    # Labels present in map get symbols; missing labels fall through to original in replace_symbols_in_batch
+                    p_map = c_map = {l: symbol_mappings[l] for l in relevant_labels if l in symbol_mappings}
 
-                # One-time log per dataset showing what replacement is active for this mode.
                 if ds_name_str not in logged_datasets:
                     logged_datasets.add(ds_name_str)
                     if use_original_labels:
-                        logger.info("VAL [%s] no symbol replacement (original labels)", ds_name_str)
-                    elif router is not None and dspo_module is not None:
-                        pass  # already logged by D-SPO branch above
+                        logger.info("VAL [%s] original labels (no replacement)", ds_name_str)
                     elif p_map:
                         logger.info("VAL [%s] symbol mapping: %s", ds_name_str, p_map)
                     else:
-                        logger.info("VAL [%s] empty mapping — model sees original labels", ds_name_str)
+                        logger.info("VAL [%s] no matching symbols — falling back to original labels", ds_name_str)
 
                 # 1. Text Replacement
                 updated_batch = self.symbol_manager.replace_symbols_in_batch(batch, prompt_mappings=p_map, completion_mappings=c_map)
 
-                # 2. Tokenization
-                if self.processor is not None:
-                    # For Flamingo: inject audio into prompt dicts so tokenize_batch can embed it.
-                    # (Qwen/SALMONN prompts are strings, isinstance(p, dict) is False → harmless.)
-                    if updated_batch.get("audio"):
-                        precomp_list = updated_batch.get("_precomputed", [None] * len(updated_batch["prompt"]))
-                        for p, a, pre in zip(updated_batch["prompt"], updated_batch["audio"], precomp_list):
-                            if isinstance(p, dict):
-                                p["_audio"] = a
-                                if pre is not None:
-                                    p["_precomputed"] = pre
-                    tokenized_data = self.processor.tokenize_batch(updated_batch["prompt"], completions=None, padding_side="left")
-                    updated_batch.update(tokenized_data)
+                # 2. Tokenization (left-pad for generation)
+                updated_batch = tokenize_batch_with_audio(updated_batch, self.processor, completions=None, padding_side="left")
 
                 # Log one full prompt per dataset per validation mode
                 if ds_name_str not in logged_prompts and "input_ids" in updated_batch:
@@ -207,7 +134,7 @@ class ValidationManager:
 
                 # 3. Move to device and generate
                 updated_batch = {k: v.to(model.device) if isinstance(v, torch.Tensor) else v for k, v in updated_batch.items()}
-                predictions = model.generate_output(updated_batch, slot_replacement=slot_replacement)
+                predictions = model.generate_output(updated_batch)
 
                 for i, pred in enumerate(predictions):
                     dt_val = batch["dataset_type"][i]
@@ -245,11 +172,11 @@ class ValidationManager:
                 final_metrics[ds_name] = {"score": 0.0}
         return final_metrics
 
-    def run_comprehensive_validation(self, model, val_dataloader, epoch: int, symbol_mappings: Optional[Dict[str, str]] = None):
+    def run_comprehensive_validation(self, model, val_dataloader, epoch: int, symbol_map: Optional[Dict[str, str]] = None):
         mode_defs = self._resolve_validation_modes()
         comprehensive_results = {}
         for mode_suffix, use_original, use_dynamic in mode_defs:
-            metrics_by_dataset = self.validate_model(model, val_dataloader, epoch, use_original, use_dynamic, symbol_mappings)
+            metrics_by_dataset = self.validate_model(model, val_dataloader, epoch, use_original, use_dynamic, symbol_map)
             comprehensive_results[mode_suffix] = metrics_by_dataset
 
         self.log_validation_summary(comprehensive_results, epoch)

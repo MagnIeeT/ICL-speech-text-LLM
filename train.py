@@ -124,8 +124,11 @@ def main():
                 for dt, ds_cfg in DATASET_CONFIGS.items()
                 if dt.value in ds_names
             )
-            config.diff_symbol_config.num_slots = total_training_labels
-            logging.info("D-SPO: num_slots auto-set to %d (total training labels)", total_training_labels)
+            if config.diff_symbol_config.num_slots < total_training_labels:
+                config.diff_symbol_config.num_slots = total_training_labels
+                logging.info("D-SPO: num_slots raised to %d (minimum = total training labels)", total_training_labels)
+            else:
+                logging.info("D-SPO: num_slots=%d (pool), %d training labels", config.diff_symbol_config.num_slots, total_training_labels)
 
         tokenizer, processor = setup_tokenizer_and_processor(config)
         

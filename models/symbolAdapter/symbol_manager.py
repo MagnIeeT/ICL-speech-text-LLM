@@ -76,6 +76,22 @@ def compute_slot_offsets(training_ds_names: set) -> Dict[str, int]:
     return offsets
 
 
+def tokenize_batch_with_audio(batch: Dict, processor, completions, padding_side: str = "right") -> Dict:
+    """Inject precomputed audio into prompt dicts then tokenize. Shared by training and validation."""
+    if processor is None or "prompt" not in batch:
+        return batch
+    if batch.get("audio"):
+        precomp_list = batch.get("_precomputed", [None] * len(batch["prompt"]))
+        for p, a, pre in zip(batch["prompt"], batch["audio"], precomp_list):
+            if isinstance(p, dict):
+                p["_audio"] = a
+                if pre is not None:
+                    p["_precomputed"] = pre
+    tokenized_data = processor.tokenize_batch(batch["prompt"], completions=completions, padding_side=padding_side)
+    batch.update(tokenized_data)
+    return batch
+
+
 class SymbolManager:
     """Manages mappings used to rewrite labels in prompt/completion text."""
 

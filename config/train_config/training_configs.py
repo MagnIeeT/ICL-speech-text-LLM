@@ -41,6 +41,7 @@ class LoRAConfig:
     epochs: int = 5
     gradient_accumulation_steps: int = 8
     max_grad_norm: float = 1.0
+    warmup_steps: int = 100
 
 
 @dataclass
@@ -77,13 +78,14 @@ from utils.environment import get_env_path
 class DifferentiableSymbolConfig:
     enabled: bool = False
     num_slots: int = 25
-    slot_vocab_size: int = 25     # K: private vocab tokens per slot (non-overlapping)
+    slot_vocab_size: int = 100     # K: private vocab tokens per slot (non-overlapping)
     slot_only: bool = False        # freeze LoRA, train router only
     tau: float = 1.0
     tau_min: float = 0.1
     tau_anneal_rate: float = 0.0001
     router_lr: float = 1e-2
-    rotation_interval: int = 0      # 0 = rotate slot assignments per epoch; >0 = every N global steps
+    rotation_interval: int = -1     # Phase 1 slot rotation: -1 = fixed assignment; 0 = per epoch; >0 = every N steps
+    phase2_rotation: int = -1       # Phase 2 symbol refresh: -1 = fixed; 0 = per epoch; 1 = per instance; >1 = every N steps
     integrity_alpha: float = 1.0
     integrity_beta: float = 1.0
     phase0_epochs: int = 0      # >0: LoRA-only warmup on original labels before D-SPO starts
@@ -216,14 +218,14 @@ class TrainingConfig:
         diff_symbol_config = DifferentiableSymbolConfig(
             enabled=getattr(args, "diff_symbol_enabled", False),
             num_slots=getattr(args, "dspo_num_slots", 25),
-            slot_vocab_size=getattr(args, "dspo_slot_vocab_size", 100),
-            rotation_interval=getattr(args, "dspo_rotation_interval", 0),
-            router_lr=getattr(args, "dspo_router_lr", 1e-3),
+            router_lr=getattr(args, "dspo_router_lr", 1e-2),
             tau_anneal_rate=getattr(args, "dspo_tau_anneal_rate", 0.0001),
             slot_only=getattr(args, "dspo_slot_only", False),
             phase0_epochs=getattr(args, "dspo_phase0_epochs", 0),
             phase1_patience=getattr(args, "dspo_phase1_patience", 0),
             phase1_epochs=getattr(args, "dspo_phase1_epochs", 0),
+            rotation_interval=getattr(args, "dspo_rotation_interval", -1),
+            phase2_rotation=getattr(args, "dspo_phase2_rotation", -1),
         )
 
         data_config = DataConfig(
@@ -295,15 +297,15 @@ def parse_training_args() -> argparse.Namespace:
 
     parser.add_argument("--dynamic_symbols", action="store_true")
     parser.add_argument("--diff_symbol_enabled", action="store_true", help="Enable Differentiable Symbolic Preference Optimization (D-SPO)")
-    parser.add_argument("--dspo_num_slots", type=int, default=25, help="D-SPO: total number of slots (must be >= sum of all training dataset label counts)")
-    parser.add_argument("--dspo_slot_vocab_size", type=int, default=100, help="D-SPO: private candidate tokens per slot")
     parser.add_argument("--dspo_slot_only", action="store_true", help="D-SPO: freeze LoRA, train router/slot matrix only")
-    parser.add_argument("--dspo_phase0_epochs", type=int, default=0, help="D-SPO: LoRA-only warmup epochs on original labels before D-SPO starts (0=disabled)")
-    parser.add_argument("--dspo_phase1_patience", type=int, default=0, help="D-SPO: epochs without conf_mean improvement before switching from slot-only Phase 1 to LoRA Phase 2 (0=disabled)")
-    parser.add_argument("--dspo_phase1_epochs", type=int, default=0, help="D-SPO: max Phase 1 epochs — hard cap, switches to Phase 2 even if patience not triggered (0=disabled)")
-    parser.add_argument("--dspo_rotation_interval", type=int, default=0, help="D-SPO: rotate slot assignments every N global steps (0 = per epoch)")
-    parser.add_argument("--dspo_router_lr", type=float, default=1e-3, help="D-SPO: router learning rate")
-    parser.add_argument("--dspo_tau_anneal_rate", type=float, default=0.0001, help="D-SPO: tau annealing rate per step")
+    parser.add_argument("--dspo_phase0_epochs", type=int, default=None, help="D-SPO: LoRA-only warmup epochs before D-SPO starts (0=disabled)")
+    parser.add_argument("--dspo_phase1_patience", type=int, default=None, help="D-SPO: epochs without conf_mean improvement before switching Phase 1→2 (0=disabled)")
+    parser.add_argument("--dspo_phase1_epochs", type=int, default=None, help="D-SPO: max Phase 1 epochs hard cap (0=disabled)")
+    parser.add_argument("--dspo_num_slots", type=int, default=25, help="D-SPO: total slot pool size (>= num training labels)")
+    parser.add_argument("--dspo_rotation_interval", type=int, default=-1, help="D-SPO Phase 1 slot rotation: -1=fixed, 0=per epoch, >0=every N steps")
+    parser.add_argument("--dspo_phase2_rotation", type=int, default=-1, help="D-SPO Phase 2 symbol refresh: -1=fixed, 0=per epoch, 1=per instance, >1=every N steps")
+    parser.add_argument("--dspo_router_lr", type=float, default=None, help="D-SPO: router learning rate")
+    parser.add_argument("--dspo_tau_anneal_rate", type=float, default=None, help="D-SPO: tau annealing rate per step")
     parser.add_argument("--no_symbols", action="store_true")
     parser.add_argument("--swap_labels", action="store_true", help="Swap labels (e.g., positive<->negative) during prompt/completion rewriting")
     parser.add_argument(

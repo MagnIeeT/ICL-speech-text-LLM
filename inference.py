@@ -5,6 +5,7 @@ import argparse
 import json
 import logging
 import os
+import random
 from typing import Any, Dict, List, Optional, Tuple
 
 import torch
@@ -68,6 +69,7 @@ class InferenceOrchestrator:
         self.symbol_manager = None
         self.validator = None
         self.val_dataloader = None
+        self._slot_symbol_map = None
 
     def _setup_logging(self):
         logs_dir = self.config.get_logs_dir()
@@ -275,6 +277,42 @@ class InferenceOrchestrator:
                     self.model.router = router
                     self.model.dspo_module = dspo_module
                     logging.info("D-SPO router restored from checkpoint (%d slots, K=%d)", cfg.num_slots, cfg.slot_vocab_size)
+
+                    # Use saved Phase 2 label→symbol map if available; otherwise decode from router
+                    phase2_map = checkpoint.get("dspo_phase2_label_map")
+                    if phase2_map:
+                        # new format: {ds_name: {label: symbol}}; old format: {label: symbol}
+                        first_val = next(iter(phase2_map.values()))
+                        if isinstance(first_val, dict):
+                            merged = {}
+                            for m in phase2_map.values():
+                                merged.update(m)
+                            self.current_mappings = merged
+                        else:
+                            self.current_mappings = phase2_map
+                        logging.info("D-SPO: using saved phase2_label_map (%d labels)", len(self.current_mappings))
+                    else:
+                        slot_symbol_map = checkpoint.get("dspo_slot_symbol_map") or {}
+                        # decode label→symbol using offset-based slot assignment (matches Phase 0/1 path)
+                        from config.data_config.master_config import DATASET_CONFIGS, DatasetType as _DT
+                        from models.symbolAdapter.symbol_manager import compute_slot_offsets
+                        train_ds_names = set(self.config.data_config.dataset_type.split("-"))
+                        slot_offsets = compute_slot_offsets(train_ds_names)
+                        decoded_map = {}
+                        for ds_name in train_ds_names:
+                            try:
+                                labels = list(DATASET_CONFIGS[_DT(ds_name)].valid_labels)
+                            except (ValueError, KeyError):
+                                continue
+                            offset = slot_offsets.get(ds_name, 0)
+                            slot_indices = list(range(offset, offset + len(labels)))
+                            vocab_indices, _ = router.get_slot_mappings(slot_indices, hard=True, deterministic=True)
+                            for label, idx in zip(labels, vocab_indices):
+                                decoded_map[label] = tokenizer.decode(idx.tolist()).strip() or f"<tok_{idx.tolist()}>"
+                        self.current_mappings = decoded_map
+                        logging.info("D-SPO: decoded symbol_map from router (%d labels)", len(decoded_map))
+                    # store slot pool for cross-task extension in run_comprehensive_inference
+                    self._slot_symbol_map = checkpoint.get("dspo_slot_symbol_map")
                 else:
                     logging.warning("D-SPO enabled but no router_state in checkpoint — router not restored")
 
@@ -295,11 +333,29 @@ class InferenceOrchestrator:
 
         self.config.inference_mode = True
 
+        symbol_map = dict(self.current_mappings)
+        if self._slot_symbol_map:
+            from config.data_config.master_config import DATASET_CONFIGS as _DC, DatasetType as _DT
+            pool = list(self._slot_symbol_map.values())
+            train_ds_names = set(self.config.data_config.dataset_type.split("-"))
+            extended_map = {}
+            for ds_type, ds_cfg in _DC.items():
+                if ds_type.value in train_ds_names:
+                    continue
+                labels = list(ds_cfg.valid_labels or [])
+                if not labels:
+                    continue
+                chosen = random.sample(pool, k=min(len(labels), len(pool)))
+                extended_map.update(zip(labels, chosen))
+            extended_map.update(symbol_map)  # training symbols take precedence
+            symbol_map = extended_map
+            logging.info("Inference: extended symbol_map for cross-task from slot pool (%d slots)", len(pool))
+
         results = self.validator.run_comprehensive_validation(
             model=self.model,
             val_dataloader=self.val_dataloader,
             epoch=0,
-            symbol_mappings=self.current_mappings,
+            symbol_map=symbol_map,
         )
 
         validation_scores = {}

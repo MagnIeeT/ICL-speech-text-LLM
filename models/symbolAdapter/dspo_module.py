@@ -85,11 +85,18 @@ class DspoModule(nn.Module):
                 soft_embed = torch.matmul(probs[i].to(slot_embeds_p.dtype), slot_embeds_p)  # [hidden]
 
                 if DspoModule._inject_log_count < 5:
+                    k_idx = torch.argmax(probs[i]).item()
+                    hard_token_id = slot_tok_ids_p[k_idx]
+                    hard_embed = embedding_layer(hard_token_id.unsqueeze(0)).squeeze(0).to(soft_embed.dtype)
+                    max_diff = (soft_embed - hard_embed).abs().max().item()
+                    mean_diff = (soft_embed - hard_embed).abs().mean().item()
                     logging.info(
                         "D-SPO: Slot %d pos %d — injecting at %d positions. "
-                        "Soft Embed Stats: mean=%.4f, std=%.4f",
+                        "Soft Embed Stats: mean=%.4f, std=%.4f | "
+                        "Hard token id=%d | soft==hard? max_diff=%.2e mean_diff=%.2e",
                         i, p, mask.sum().item(),
                         soft_embed.mean().item(), soft_embed.std().item(),
+                        hard_token_id.item(), max_diff, mean_diff,
                     )
                     DspoModule._inject_log_count += 1
 
