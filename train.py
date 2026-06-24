@@ -140,6 +140,7 @@ def main():
             token_size=config.symbol_config.symbol_token_size,
             no_symbols=config.symbol_config.no_symbols,
             swap_labels=config.symbol_config.swap_labels,
+            labels_per_dataset=extract_dataset_labels_dict(config),
         )
 
         train_datasets, val_datasets = load_datasets_for_config(config)

@@ -58,7 +58,7 @@ class ValidationManager:
         self, model, val_dataloader, epoch: int,
         use_original_labels: bool = False,
         use_dynamic_symbols: bool = False,
-        symbol_map: Optional[Dict[str, str]] = None,
+        symbol_map: Optional[Dict[str, Dict[str, str]]] = None,
     ):
         model.eval()
         if use_original_labels:
@@ -93,7 +93,7 @@ class ValidationManager:
         finally:
             model.train()
 
-    def _run_validation_with_utils(self, model, val_dataloader, symbol_mappings: Dict[str, str], use_original_labels: bool = False):
+    def _run_validation_with_utils(self, model, val_dataloader, symbol_mappings: Dict[str, Dict[str, str]], use_original_labels: bool = False):
         all_results = {}
         progress_bar = tqdm(val_dataloader, desc="Evaluating", total=len(val_dataloader), leave=False)
         logged_datasets: set = set()
@@ -106,8 +106,9 @@ class ValidationManager:
                 if use_original_labels:
                     p_map = c_map = {}
                 else:
-                    # Labels present in map get symbols; missing labels fall through to original in replace_symbols_in_batch
-                    p_map = c_map = {l: symbol_mappings[l] for l in relevant_labels if l in symbol_mappings}
+                    # Look up flat {label: symbol} for this dataset; missing labels fall back to original
+                    ds_map = symbol_mappings.get(ds_name_str, {})
+                    p_map = c_map = {l: ds_map[l] for l in relevant_labels if l in ds_map}
 
                 if ds_name_str not in logged_datasets:
                     logged_datasets.add(ds_name_str)
@@ -172,7 +173,7 @@ class ValidationManager:
                 final_metrics[ds_name] = {"score": 0.0}
         return final_metrics
 
-    def run_comprehensive_validation(self, model, val_dataloader, epoch: int, symbol_map: Optional[Dict[str, str]] = None):
+    def run_comprehensive_validation(self, model, val_dataloader, epoch: int, symbol_map: Optional[Dict[str, Dict[str, str]]] = None):
         mode_defs = self._resolve_validation_modes()
         comprehensive_results = {}
         for mode_suffix, use_original, use_dynamic in mode_defs:

@@ -103,24 +103,26 @@ class SymbolManager:
         token_size: int = 2,
         no_symbols: bool = False,
         swap_labels: bool = False,
+        labels_per_dataset: Optional[Dict[str, List[str]]] = None,
     ):
         self.original_labels = sorted(list(set(original_labels)))
+        self.labels_per_dataset: Dict[str, List[str]] = labels_per_dataset or {}
         self.tokenizer = tokenizer
         self.dynamic_per_epoch = dynamic_per_epoch
         self.token_size = token_size
         self.no_symbols = no_symbols
         self.swap_labels = swap_labels
 
-        self.fixed_mappings: Dict[str, str] = {}
-        self.epoch_mappings_history: Dict[int, Dict[str, str]] = {}
+        # Per-dataset symbol mappings: {ds_name: {label: symbol}}
+        # Each dataset gets independently generated symbols so overlapping labels
+        # (e.g. "neutral" in meld_emotion AND voxceleb) map to different symbols.
+        self.fixed_mappings: Dict[str, Dict[str, str]] = {}
+        self.epoch_mappings_history: Dict[int, Dict[str, Dict[str, str]]] = {}
         self.current_epoch = 0
 
-        # Pure symbol mappings: label→symbol, generated once at init, never affected by
-        # swap_labels. Used as the base pool when doing symbol-level swap.
-        self._pure_symbol_mappings: Dict[str, str] = {}
+        self._pure_symbol_mappings: Dict[str, Dict[str, str]] = {}
         if not self.no_symbols:
-            syms = self._generate_two_token_symbols(len(self.original_labels), self.token_size)
-            self._pure_symbol_mappings = dict(zip(self.original_labels, syms))
+            self._pure_symbol_mappings = self._generate_per_ds_symbols()
 
         if self.no_symbols and not self.swap_labels:
             logging.info("No-symbol mode enabled - symbol replacement is disabled")
@@ -129,12 +131,13 @@ class SymbolManager:
             if self._pure_symbol_mappings:
                 logging.info("Base symbol pool for swap: %s", self._pure_symbol_mappings)
         elif not self.dynamic_per_epoch:
-            self.fixed_mappings = self._pure_symbol_mappings.copy()
+            self.fixed_mappings = {ds: dict(m) for ds, m in self._pure_symbol_mappings.items()}
             logging.info("Generated fixed mappings: %s", self.fixed_mappings)
         else:
             logging.info("Dynamic mode enabled - mappings will be generated per epoch")
 
-    def get_symbols_for_epoch(self, epoch: int, force_new_symbols: bool = False) -> Dict[str, str]:
+    def get_symbols_for_epoch(self, epoch: int, force_new_symbols: bool = False) -> Dict[str, Dict[str, str]]:
+        """Return {ds_name: {label: symbol}} for all datasets."""
         if self.no_symbols and not self.swap_labels: return {}
         if not self.dynamic_per_epoch: return self.fixed_mappings
         if force_new_symbols or epoch not in self.epoch_mappings_history:
@@ -142,20 +145,41 @@ class SymbolManager:
         self.current_epoch = epoch
         return self.epoch_mappings_history[epoch]
 
-    def get_current_symbols(self) -> Dict[str, str]:
+    def get_flat_symbols_for_ds(self, ds_name: str, epoch: Optional[int] = None) -> Dict[str, str]:
+        """Return flat {label: symbol} for a single dataset.
+        Falls back to the "" key for backward compat when labels_per_dataset was not set."""
+        per_ds = self.get_symbols_for_epoch(epoch) if epoch is not None else self.fixed_mappings
+        return dict(per_ds.get(ds_name) or per_ds.get("") or {})
+
+    def get_current_symbols(self) -> Dict[str, Dict[str, str]]:
         if not self.dynamic_per_epoch: return self.fixed_mappings
         return self.epoch_mappings_history.get(self.current_epoch, {})
 
     def get_reverse_mappings(self, epoch: Optional[int] = None, mappings: Optional[Dict[str, str]] = None) -> Dict[str, str]:
-        if mappings is not None: active = mappings
-        elif epoch is not None: active = self.get_symbols_for_epoch(epoch)
-        else: active = self.get_current_symbols()
+        """Reverse a flat {label: symbol} mapping. Pass mappings= explicitly; epoch is ignored (per-dataset maps cannot be auto-flattened)."""
+        active = mappings or {}
         return {v.lower(): k for k, v in active.items()}
 
-    def _generate_symbol_mappings(self, force: bool = False) -> Dict[str, str]:
+    def _generate_per_ds_symbols(self) -> Dict[str, Dict[str, str]]:
+        """Generate globally unique symbols across all datasets, then slice per dataset."""
+        result = {}
+        if self.labels_per_dataset:
+            ds_items = sorted(self.labels_per_dataset.items())
+            total = sum(len(labels) for _, labels in ds_items)
+            all_syms = self._generate_two_token_symbols(total, self.token_size)
+            offset = 0
+            for ds_name, labels in ds_items:
+                n = len(labels)
+                result[ds_name] = dict(zip(labels, all_syms[offset:offset + n]))
+                offset += n
+        else:
+            syms = self._generate_two_token_symbols(len(self.original_labels), self.token_size)
+            result[""] = dict(zip(self.original_labels, syms))
+        return result
+
+    def _generate_symbol_mappings(self, force: bool = False) -> Dict[str, Dict[str, str]]:
         if self.no_symbols and not force: return {}
-        symbols = self._generate_two_token_symbols(len(self.original_labels), self.token_size)
-        return dict(zip(self.original_labels, symbols))
+        return self._generate_per_ds_symbols()
 
     def generate_swap_mapping_for_labels(
         self,

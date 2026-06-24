@@ -212,7 +212,7 @@ class SymbolTrainingOrchestrator:
         if per_instance or ds_name_str not in self._swap_cache:
             base_mapping = None
             if not self.config.symbol_config.no_symbols:
-                full_base = self.symbol_manager._pure_symbol_mappings
+                full_base = self.symbol_manager._pure_symbol_mappings.get(ds_name_str, {})
                 base_mapping = {l: full_base[l] for l in relevant_labels if l in full_base}
             mapping = self.symbol_manager.generate_swap_mapping_for_labels(
                 relevant_labels,
@@ -316,7 +316,8 @@ class SymbolTrainingOrchestrator:
             p_mappings = c_mappings = self._get_swap_mappings(ds_name_str, relevant_labels, epoch, batch_idx)
         else:
             force_new = (self.config.symbol_config.update_strategy == SymbolUpdateStrategy.PER_INSTANCE) or (batch_idx == 0)
-            p_mappings = c_mappings = self.symbol_manager.get_symbols_for_epoch(epoch, force_new_symbols=force_new)
+            all_ds_mappings = self.symbol_manager.get_symbols_for_epoch(epoch, force_new_symbols=force_new)
+            p_mappings = c_mappings = all_ds_mappings.get(ds_name_str) or all_ds_mappings.get("") or {}
             if batch_idx < 2:
                 logging.info("Symbol mapping (epoch=%d batch=%d dataset=%s): %s", epoch + 1, batch_idx, ds_name_str, p_mappings)
 
@@ -411,19 +412,16 @@ class SymbolTrainingOrchestrator:
         progress_bar.close()
         return total_loss / max(num_batches, 1)
 
-    def _build_current_symbol_map(self, epoch: int) -> dict:
-        """Build label→symbol map for 'fixed' validation mode — always reflects current training state."""
-        # Phase 2: merge all per-dataset maps into one flat symbol map
+    def _build_current_symbol_map(self, epoch: int) -> Dict[str, Dict[str, str]]:
+        """Build {ds_name: {label: symbol}} for 'fixed' validation — always reflects current training state."""
+        # Phase 2: _phase2_label_map is already {ds_name: {label: symbol}}
         if self._phase2_label_map:
-            merged = {}
-            for m in self._phase2_label_map.values():
-                merged.update(m)
-            return merged
+            return dict(self._phase2_label_map)
 
-        # D-SPO Phase 0/1: decode from router (_full_router survives Phase 0's self.router = None)
+        # D-SPO Phase 0/1: decode per-dataset from router
         active_router = self._full_router or self.router
         if active_router is not None:
-            current_map = {}
+            current_map: Dict[str, Dict[str, str]] = {}
             for ds_name in self.train_dataset_names:
                 if ds_name in self._slot_assignments:
                     slot_indices = self._slot_assignments[ds_name]
@@ -439,11 +437,13 @@ class SymbolTrainingOrchestrator:
                 if not labels or not slot_indices:
                     continue
                 vocab_indices, _ = active_router.get_slot_mappings(slot_indices, hard=True, deterministic=True)
-                for label, idx in zip(labels, vocab_indices):
-                    current_map[label] = self.tokenizer.decode(idx.tolist()).strip() or f"<tok_{idx.tolist()}>"
+                current_map[ds_name] = {
+                    label: self.tokenizer.decode(idx.tolist()).strip() or f"<tok_{idx.tolist()}>"
+                    for label, idx in zip(labels, vocab_indices)
+                }
             return current_map
 
-        # Non-D-SPO: use symbol_manager — matches what was used during training this epoch
+        # Non-D-SPO: symbol_manager already returns {ds_name: {label: symbol}}
         return self.symbol_manager.get_symbols_for_epoch(epoch)
 
     def _run_validation(self, epoch: int) -> Dict[str, Any]:
@@ -457,24 +457,25 @@ class SymbolTrainingOrchestrator:
         if active_router is not None:
             rotation_interval = self.config.diff_symbol_config.rotation_interval
             if rotation_interval == -1:
-                pool = list(symbol_map.values())
+                # pool = unique training symbols across all training datasets
+                pool = list({s for ds_map in symbol_map.values() for s in ds_map.values()})
             else:
                 all_indices = list(range(active_router.num_slots))
                 vocab_indices, _ = active_router.get_slot_mappings(all_indices, hard=True, deterministic=True)
                 pool = [self.tokenizer.decode(v.tolist()).strip() or f"<tok_{v.tolist()}>" for v in vocab_indices]
 
-            extended_map = {}
+            per_ds_map = {}
             for ds_type, ds_cfg in DATASET_CONFIGS.items():
-                if ds_type.value in self.train_dataset_names:
-                    continue  # handled below
+                ds_name = ds_type.value
                 labels = list(ds_cfg.valid_labels or [])
                 if not labels:
                     continue
-                chosen = random.sample(pool, k=min(len(labels), len(pool)))
-                extended_map.update(zip(labels, chosen))
-            # training symbols applied last → overwrite any overlapping cross-task assignments
-            extended_map.update(symbol_map)
-            symbol_map = extended_map
+                if ds_name in self.train_dataset_names:
+                    per_ds_map[ds_name] = dict(symbol_map.get(ds_name, {}))
+                else:
+                    chosen = random.sample(pool, k=min(len(labels), len(pool)))
+                    per_ds_map[ds_name] = dict(zip(labels, chosen))
+            symbol_map = per_ds_map
 
         return self.validator.run_comprehensive_validation(
             model=self.model,

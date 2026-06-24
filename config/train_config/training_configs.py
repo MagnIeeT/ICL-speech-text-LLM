@@ -202,6 +202,7 @@ class TrainingConfig:
             epochs=args.lora_epochs,
             gradient_accumulation_steps=args.gradient_accumulation_steps,
             max_grad_norm=args.max_grad_norm,
+            warmup_steps=getattr(args, "warmup_steps", 100),
         )
 
         symbol_config = SymbolConfig(
@@ -218,6 +219,7 @@ class TrainingConfig:
         diff_symbol_config = DifferentiableSymbolConfig(
             enabled=getattr(args, "diff_symbol_enabled", False),
             num_slots=getattr(args, "dspo_num_slots", 25),
+            slot_vocab_size=getattr(args, "dspo_slot_vocab_size", 100),
             router_lr=getattr(args, "dspo_router_lr", 1e-2),
             tau_anneal_rate=getattr(args, "dspo_tau_anneal_rate", 0.0001),
             slot_only=getattr(args, "dspo_slot_only", False),
@@ -302,10 +304,12 @@ def parse_training_args() -> argparse.Namespace:
     parser.add_argument("--dspo_phase1_patience", type=int, default=None, help="D-SPO: epochs without conf_mean improvement before switching Phase 1→2 (0=disabled)")
     parser.add_argument("--dspo_phase1_epochs", type=int, default=None, help="D-SPO: max Phase 1 epochs hard cap (0=disabled)")
     parser.add_argument("--dspo_num_slots", type=int, default=25, help="D-SPO: total slot pool size (>= num training labels)")
+    parser.add_argument("--dspo_slot_vocab_size", type=int, default=100, help="D-SPO: private vocab tokens per slot (K)")
     parser.add_argument("--dspo_rotation_interval", type=int, default=-1, help="D-SPO Phase 1 slot rotation: -1=fixed, 0=per epoch, >0=every N steps")
     parser.add_argument("--dspo_phase2_rotation", type=int, default=-1, help="D-SPO Phase 2 symbol refresh: -1=fixed, 0=per epoch, 1=per instance, >1=every N steps")
     parser.add_argument("--dspo_router_lr", type=float, default=None, help="D-SPO: router learning rate")
     parser.add_argument("--dspo_tau_anneal_rate", type=float, default=None, help="D-SPO: tau annealing rate per step")
+    parser.add_argument("--warmup_steps", type=int, default=100, help="LR scheduler warmup steps")
     parser.add_argument("--no_symbols", action="store_true")
     parser.add_argument("--swap_labels", action="store_true", help="Swap labels (e.g., positive<->negative) during prompt/completion rewriting")
     parser.add_argument(
