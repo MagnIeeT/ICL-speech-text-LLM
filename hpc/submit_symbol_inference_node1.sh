@@ -22,6 +22,7 @@ MAX_VAL_SAMPLES="${MAX_VAL_SAMPLES:-100}"                                       
 NUM_EXAMPLES="${NUM_EXAMPLES:-5}"                                                  # few-shot examples in prompt
 NUM_WORKERS="${NUM_WORKERS:-2}"
 VALIDATION_MODES="${VALIDATION_MODES:-fixed}"
+SPLIT="${SPLIT:-test}"                                                            # test | validation
 
 # Symbol map probe — swap to any of:
 #   analysis/symbol_maps/ep3_fixed.json   (voxceleb F1=0.028, meld F1=0.142)
@@ -68,6 +69,7 @@ printf '%s\n' "Model:           ${MODEL_TYPE}"
 printf '%s\n' "Dataset:         ${DATASET_TYPE}"
 printf '%s\n' "Checkpoint:      ${CHECKPOINT_PATH}"
 printf '%s\n' "Symbol Map:      ${SYMBOL_MAP_FILE:-<from checkpoint>}"
+printf '%s\n' "Split:           ${SPLIT}"
 printf '%s\n' "Samples:         ${SAMPLES_TAG}"
 printf '%s\n' "Metrics Dir:     ${METRICS_DIR}/${RUN_NAME}"
 printf '%s\n' "Run Name:        ${RUN_NAME}"
@@ -87,6 +89,7 @@ python inference.py \
     --output_dir "${OUTPUT_DIR}" \
     --run_name "${RUN_NAME}" \
     --validation_modes "${VALIDATION_MODES}" \
+    --split "${SPLIT}" \
     --metrics_dir "${METRICS_DIR}" \
     $( [[ -n "${SYMBOL_MAP_FILE}" ]] && printf '%s %s' "--symbol_map_file" "${SYMBOL_MAP_FILE}" ) \
     >> "${LOG_FILE}" 2>&1

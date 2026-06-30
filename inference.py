@@ -43,6 +43,7 @@ class InferenceOrchestrator:
         num_workers: int = 2,
         symbol_map_file: Optional[str] = None,
         metrics_dir: Optional[str] = None,
+        split: str = "test",
     ):
         self.checkpoint_path = checkpoint_path
         self.dataset_type = dataset_type
@@ -54,6 +55,7 @@ class InferenceOrchestrator:
         self.run_name = run_name
         self.num_workers = num_workers
         self.symbol_map_file = symbol_map_file
+        self.split = split
 
         self.config = TrainingConfig()
 
@@ -176,7 +178,7 @@ class InferenceOrchestrator:
                             labels = list(ds_cfg.valid_labels or [])
                             self.current_mappings[ds_name] = {l: raw[l] for l in labels if l in raw}
 
-            self.config.data_config.split = "test"
+            self.config.data_config.split = self.split
             self.config.data_config.max_samples = self.max_val_samples
 
             _, test_datasets = load_datasets_for_config(
@@ -437,9 +439,11 @@ class InferenceOrchestrator:
             return
         with open(self.symbol_map_file) as f:
             override = json.load(f)
-        # Merge: file entries win, checkpoint entries fill the rest
         for ds_name, sym_dict in override.items():
             self.current_mappings[ds_name] = sym_dict
+        # Checkpoint may have been saved with no_symbols=True (e.g. Phase 0).
+        # Force symbols on since we're explicitly providing a map.
+        self.config.symbol_config.no_symbols = False
         logging.info("Symbol map overridden from %s: %s",
                      self.symbol_map_file,
                      {ds: list(v.keys()) for ds, v in override.items()})
@@ -488,6 +492,8 @@ def main():
                         help="JSON file with symbol overrides {ds_name: {label: symbol}}; merged over checkpoint mappings")
     parser.add_argument("--metrics_dir", type=str, default=None,
                         help="Directory for metrics/predictions output (dated subfolder recommended)")
+    parser.add_argument("--split", type=str, default="test", choices=["test", "validation"],
+                        help="Dataset split to run inference on")
 
     args = parser.parse_args()
 
@@ -505,6 +511,7 @@ def main():
             num_workers=args.num_workers,
             symbol_map_file=args.symbol_map_file,
             metrics_dir=args.metrics_dir,
+            split=args.split,
         )
 
         results = orchestrator.run_complete_inference()
