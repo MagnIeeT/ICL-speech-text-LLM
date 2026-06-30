@@ -42,6 +42,7 @@ class InferenceOrchestrator:
         validation_modes: Optional[str] = None,
         num_workers: int = 2,
         symbol_map_file: Optional[str] = None,
+        metrics_dir: Optional[str] = None,
     ):
         self.checkpoint_path = checkpoint_path
         self.dataset_type = dataset_type
@@ -58,7 +59,8 @@ class InferenceOrchestrator:
 
         if output_dir:
             self.config.output_dir = output_dir
-
+        if metrics_dir:
+            self.config.metrics_dir = metrics_dir
         if run_name:
             self.config.run_name = run_name
 
@@ -484,6 +486,8 @@ def main():
                         help="Override validation modes from checkpoint (e.g. original,fixed,fresh)")
     parser.add_argument("--symbol_map_file", type=str, default=None,
                         help="JSON file with symbol overrides {ds_name: {label: symbol}}; merged over checkpoint mappings")
+    parser.add_argument("--metrics_dir", type=str, default=None,
+                        help="Directory for metrics/predictions output (dated subfolder recommended)")
 
     args = parser.parse_args()
 
@@ -500,6 +504,7 @@ def main():
             validation_modes=args.validation_modes,
             num_workers=args.num_workers,
             symbol_map_file=args.symbol_map_file,
+            metrics_dir=args.metrics_dir,
         )
 
         results = orchestrator.run_complete_inference()
