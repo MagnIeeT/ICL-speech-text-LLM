@@ -117,10 +117,13 @@ class InferenceOrchestrator:
 
                 output_dir = self.config.output_dir
                 run_name = self.config.run_name
+                metrics_dir = self.config.metrics_dir
 
                 self.config = old_config
                 self.config.output_dir = output_dir
                 self.config.run_name = run_name
+                if metrics_dir:
+                    self.config.metrics_dir = metrics_dir
 
             else:
                 self.config.model_type = ModelType(self.model_type)
@@ -343,6 +346,7 @@ class InferenceOrchestrator:
     ) -> Tuple[Dict[str, float], Dict[str, Any], List[Dict[str, Any]]]:
 
         self.config.inference_mode = True
+        self.validator.is_inference_mode = True  # ValidationManager captures this at init; set it directly
 
         symbol_map: Dict[str, Dict[str, str]] = dict(self.current_mappings)
         if self._slot_symbol_map:

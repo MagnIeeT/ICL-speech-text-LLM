@@ -135,7 +135,11 @@ class ValidationManager:
 
                 # 3. Move to device and generate
                 updated_batch = {k: v.to(model.device) if isinstance(v, torch.Tensor) else v for k, v in updated_batch.items()}
-                raw = model.generate_output(updated_batch)
+                try:
+                    raw = model.generate_output(updated_batch)
+                except Exception as gen_exc:
+                    logger.warning("Skipping batch (generate_output failed): %s", gen_exc)
+                    continue
                 # Qwen returns (texts, token_log_probs); Flamingo/Salmonn return List[str]
                 if isinstance(raw, tuple):
                     predictions, token_log_probs = raw
