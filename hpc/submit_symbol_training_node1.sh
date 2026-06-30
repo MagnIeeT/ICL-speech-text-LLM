@@ -21,7 +21,8 @@ if [[ "${MODEL_TYPE}" == "flamingo" ]]; then _DEFAULT_CONDA_ENV="flamingo"; fi
 CONDA_ENV="${CONDA_ENV:-${_DEFAULT_CONDA_ENV}}"                                   # conda environment (auto: qwen→qwen env, flamingo→flamingo env)
 DEVICE="${DEVICE:-cuda:0}"                                                        # torch device for training
 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"                                 # which GPU(s) the process can see
-OUTPUT_DIR="${OUTPUT_DIR:-${HOME}/training/symbol_training}"                      # root output directory for checkpoints
+OUTPUT_DIR="${OUTPUT_DIR:-${HOME}/training/symbol_training}"                      # root output directory
+CHECKPOINT_DIR="${CHECKPOINT_BASE:-${HOME}/training/symbol_training/checkpoints}/$(date +"%Y-%m-%d")"  # checkpoint directory (dated subfolder)
 LOG_DIR="${LOGS_DIR:-${HOME}/training/logs}/$(date +"%Y-%m-%d")"                 # log directory (dated subfolder)
 NUM_WORKERS="${NUM_WORKERS:-2}"                                                   # dataloader worker processes
 
@@ -102,7 +103,7 @@ export TOKENIZERS_PARALLELISM="false"
 # Force line-buffered output when redirected to a file
 export PYTHONUNBUFFERED=1
 
-mkdir -p "${LOG_DIR}" "${OUTPUT_DIR}"
+mkdir -p "${LOG_DIR}" "${OUTPUT_DIR}" "${CHECKPOINT_DIR}"
 LOG_FILE="${LOG_DIR}/${RUN_NAME}.log"
 
 if [[ "${_NOHUP_LAUNCHED:-0}" != "1" ]]; then
@@ -121,6 +122,7 @@ printf '%s\n' "Model:        ${MODEL_TYPE}"
 printf '%s\n' "Dataset:      ${DATASET_TYPE}"
 printf '%s\n' "Val Dataset:  ${VAL_DATASET_TYPE}"
 printf '%s\n' "Run Name:     ${RUN_NAME}"
+printf '%s\n' "Checkpoint:   ${CHECKPOINT_DIR}/${RUN_NAME}"
 printf '%s\n' "Log File:     ${LOG_FILE}"
 printf '%s\n' "============================================================"
 
@@ -142,6 +144,7 @@ python train.py \
     --gradient_accumulation_steps "${GRADIENT_ACCUMULATION_STEPS}" \
     --warmup_steps "${WARMUP_STEPS}" \
     --output_dir "${OUTPUT_DIR}" \
+    --checkpoint_dir "${CHECKPOINT_DIR}" \
     --run_name "${RUN_NAME}" \
     --validation_modes "${VALIDATION_MODES}" \
     --symbol_update_strategy "${SYMBOL_UPDATE_STRATEGY}" \

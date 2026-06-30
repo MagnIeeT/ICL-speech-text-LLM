@@ -143,7 +143,7 @@ class ValidationManager:
                     all_results.setdefault(dt_key, [])
                     true_label = batch["completion"][i]
                     conv_pred = self.symbol_manager.convert_symbols_back(pred, mappings=c_map) if not use_original_labels and c_map else pred
-                    all_results[dt_key].append({"text": batch["text"][i], "true_label": true_label, "predicted_label": conv_pred.strip(), "dataset_type": dt_key})
+                    all_results[dt_key].append({"text": batch["text"][i], "true_label": true_label, "raw_prediction": pred, "predicted_label": conv_pred.strip(), "dataset_type": dt_key})
         finally:
             progress_bar.close()
 
