@@ -1,0 +1,1024 @@
+================================================================================
+SYMBOL ANALYSIS — 041203_qwen_meld_emotion_dspo
+Run: 2026-06-25  |  Model: Qwen2-Audio-7B  |  Train: meld_emotion
+Modes: fixed=router-decoded  fresh=random-from-pool  original=no-symbols
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+EPOCH 1/11  [Phase0-LoRA]
+────────────────────────────────────────────────────────────────────────────────
+SCORES:
+  original  :  voxceleb=0.521  hvb=0.0751  voxpopuli=0.1502  meld_emotion=0.3085  → avg=0.2637
+  fixed     :  voxceleb=0.2146  hvb=0.0946  voxpopuli=0.1149  meld_emotion=0.183  → avg=0.1518
+  fresh     :  voxceleb=0.3  hvb=0.0829  voxpopuli=0.1187  meld_emotion=0.07  → avg=0.1429
+
+SYMBOLS+TOKENS [FIXED]:
+  [voxceleb]  F1=0.2146
+    negative             → czamb       2tok  ['cz', 'amb']
+    neutral              → jqam        2tok  ['jq', 'am']
+    positive             → wrbl        2tok  ['wr', 'bl']
+  [hvb]  F1=0.0946
+    acknowledge          → puyc        2tok  ['pu', 'yc']
+    answer_agree         → ovsl        2tok  ['ov', 'sl']
+    answer_dis           → gefs        2tok  ['ge', 'fs']
+    answer_general       → hhvh        2tok  ['hh', 'vh']
+    apology              → czamb       2tok  ['cz', 'amb']
+    backchannel          → rdfd        2tok  ['rdf', 'd']
+    disfluency           → jqam        2tok  ['jq', 'am']
+    other                → dzlm        2tok  ['dz', 'lm']
+    question_check       → zbkes       2tok  ['zb', 'kes']
+    question_general     → erhk        2tok  ['er', 'hk']
+    question_repeat      → odso        2tok  ['od', 'so']
+    self                 → cxbr        2tok  ['cx', 'br']
+    statement_close      → twbam       2tok  ['tw', 'bam']
+    statement_general    → divqx       2tok  ['div', 'qx']
+    statement_instruct   → mtci        2tok  ['mt', 'ci']
+    statement_open       → hkdk        2tok  ['hk', 'dk']
+    statement_problem    → tepvm       2tok  ['tep', 'vm']
+    thanks               → mjdeo       2tok  ['mj', 'deo']
+    ⚠️  TOKEN OVERLAP: question_general ∩ statement_open = ['hk']
+  [voxpopuli]  F1=0.1149
+    law                  → twbam       2tok  ['tw', 'bam']
+    norp                 → wrbl        2tok  ['wr', 'bl']
+    org                  → dzlm        2tok  ['dz', 'lm']
+    person               → ovsl        2tok  ['ov', 'sl']
+    place                → divqx       2tok  ['div', 'qx']
+    quant                → ebes        2tok  ['eb', 'es']
+    when                 → zbkes       2tok  ['zb', 'kes']
+  [meld_emotion]  F1=0.183
+    anger                → zbkes       2tok  ['zb', 'kes']
+    disgust              → gefs        2tok  ['ge', 'fs']
+    fear                 → twbam       2tok  ['tw', 'bam']
+    joy                  → mtci        2tok  ['mt', 'ci']
+    neutral              → erhk        2tok  ['er', 'hk']
+    sadness              → hhvh        2tok  ['hh', 'vh']
+    surprise             → divqx       2tok  ['div', 'qx']
+
+SYMBOLS+TOKENS [FRESH]:
+  [voxceleb]  F1=0.3
+    negative             → ihuy        2tok  ['ih', 'uy']
+    neutral              → aoqs        2tok  ['ao', 'qs']
+    positive             → akss        2tok  ['ak', 'ss']
+  [hvb]  F1=0.0829
+    acknowledge          → clrb        2tok  ['cl', 'rb']
+    answer_agree         → aoeh        2tok  ['ao', 'eh']
+    answer_dis           → czyr        2tok  ['czy', 'r']
+    answer_general       → wmght       2tok  ['wm', 'ght']
+    apology              → smll        2tok  ['sm', 'll']
+    backchannel          → rzta        2tok  ['rz', 'ta']
+    disfluency           → ivjt        2tok  ['iv', 'jt']
+    other                → rsyr        2tok  ['rs', 'yr']
+    question_check       → meem        2tok  ['me', 'em']
+    question_general     → abhr        2tok  ['ab', 'hr']
+    question_repeat      → sapue       2tok  ['sap', 'ue']
+    self                 → dcnn        2tok  ['dc', 'nn']
+    statement_close      → cdinp       2tok  ['cd', 'inp']
+    statement_general    → ixavg       2tok  ['ix', 'avg']
+    statement_instruct   → qwzt        2tok  ['qw', 'zt']
+    statement_open       → dnasy       2tok  ['dn', 'asy']
+    statement_problem    → drna        2tok  ['dr', 'na']
+    thanks               → rfkt        2tok  ['rf', 'kt']
+  [voxpopuli]  F1=0.1187
+    law                  → rqbn        2tok  ['rq', 'bn']
+    norp                 → quje        2tok  ['qu', 'je']
+    org                  → kwxi        2tok  ['kw', 'xi']
+    person               → snsni       2tok  ['sns', 'ni']
+    place                → bhcea       2tok  ['bh', 'cea']
+    quant                → gfxum       2tok  ['gfx', 'um']
+    when                 → bjdm        2tok  ['bj', 'dm']
+  [meld_emotion]  F1=0.07
+    anger                → wcpy        2tok  ['w', 'cpy']
+    disgust              → ndgg        2tok  ['nd', 'gg']
+    fear                 → zhst        2tok  ['zh', 'st']
+    joy                  → yyfn        2tok  ['yy', 'fn']
+    neutral              → qdoi        2tok  ['q', 'doi']
+    sadness              → usson       2tok  ['us', 'son']
+    surprise             → niabl       2tok  ['ni', 'abl']
+
+────────────────────────────────────────────────────────────────────────────────
+EPOCH 2/11  [Phase1-Slots]
+────────────────────────────────────────────────────────────────────────────────
+SCORES:
+  original  :  voxceleb=0.521  hvb=0.0751  voxpopuli=0.1502  meld_emotion=0.3085  → avg=0.2637
+  fixed     :  voxceleb=0.2408  hvb=0.0114  voxpopuli=0.1051  meld_emotion=0.157  → avg=0.1286
+  fresh     :  voxceleb=0.0833  hvb=0.108  voxpopuli=0.1141  meld_emotion=0.1015  → avg=0.1017
+
+SYMBOLS+TOKENS [FIXED]:
+  [voxceleb]  F1=0.2408
+    negative             → zags        2tok  ['z', 'ags']
+    neutral              → hidu        2tok  ['hid', 'u']
+    positive             → spfb        2tok  ['sp', 'fb']
+  [hvb]  F1=0.0114
+    acknowledge          → ricz        2tok  ['ric', 'z']
+    answer_agree         → ldca        2tok  ['ld', 'ca']
+    answer_dis           → berr        2tok  ['b', 'err']
+    answer_general       → uios        2tok  ['ui', 'os']
+    apology              → rdfd        2tok  ['rdf', 'd']
+    backchannel          → vhqv        2tok  ['vh', 'qv']
+    disfluency           → zags        2tok  ['z', 'ags']
+    other                → dwxt        2tok  ['dw', 'xt']
+    question_check       → gnlar       2tok  ['gn', 'lar']
+    question_general     → eltu        2tok  ['elt', 'u']
+    question_repeat      → eceu        2tok  ['ece', 'u']
+    self                 → qcqh        2tok  ['qc', 'qh']
+    statement_close      → duoo        2tok  ['du', 'oo']
+    statement_general    → sutq        2tok  ['sut', 'q']
+    statement_instruct   → ubwj        2tok  ['ub', 'wj']
+    statement_open       → hidu        2tok  ['hid', 'u']
+    statement_problem    → rndd        2tok  ['rnd', 'd']
+    thanks               → qwyt        2tok  ['qw', 'yt']
+    ⚠️  TOKEN OVERLAP: acknowledge ∩ disfluency = ['z']
+    ⚠️  TOKEN OVERLAP: apology ∩ statement_problem = ['d']
+    ⚠️  TOKEN OVERLAP: question_general ∩ question_repeat = ['u']
+    ⚠️  TOKEN OVERLAP: question_general ∩ statement_open = ['u']
+    ⚠️  TOKEN OVERLAP: question_repeat ∩ statement_open = ['u']
+  [voxpopuli]  F1=0.1051
+    law                  → rdfd        2tok  ['rdf', 'd']
+    norp                 → eltu        2tok  ['elt', 'u']
+    org                  → ricz        2tok  ['ric', 'z']
+    person               → sutq        2tok  ['sut', 'q']
+    place                → hidu        2tok  ['hid', 'u']
+    quant                → spfb        2tok  ['sp', 'fb']
+    when                 → eceu        2tok  ['ece', 'u']
+    ⚠️  TOKEN OVERLAP: norp ∩ place = ['u']
+    ⚠️  TOKEN OVERLAP: norp ∩ when = ['u']
+    ⚠️  TOKEN OVERLAP: place ∩ when = ['u']
+  [meld_emotion]  F1=0.157
+    anger                → rndd        2tok  ['rnd', 'd']
+    disgust              → uios        2tok  ['ui', 'os']
+    fear                 → gnlar       2tok  ['gn', 'lar']
+    joy                  → hidu        2tok  ['hid', 'u']
+    neutral              → berr        2tok  ['b', 'err']
+    sadness              → ldca        2tok  ['ld', 'ca']
+    surprise             → zxzf        2tok  ['zx', 'zf']
+
+SYMBOLS+TOKENS [FRESH]:
+  [voxceleb]  F1=0.0833
+    negative             → uips        2tok  ['u', 'ips']
+    neutral              → lucc        2tok  ['lu', 'cc']
+    positive             → khayo       2tok  ['kh', 'ayo']
+  [hvb]  F1=0.108
+    acknowledge          → plvh        2tok  ['pl', 'vh']
+    answer_agree         → lciew       2tok  ['lc', 'iew']
+    answer_dis           → csdd        2tok  ['cs', 'dd']
+    answer_general       → olvo        2tok  ['ol', 'vo']
+    apology              → ruwb        2tok  ['ru', 'wb']
+    backchannel          → enhgg       2tok  ['enh', 'gg']
+    disfluency           → nbxt        2tok  ['nb', 'xt']
+    other                → arow        2tok  ['ar', 'ow']
+    question_check       → pafc        2tok  ['p', 'afc']
+    question_general     → pmwo        2tok  ['pm', 'wo']
+    question_repeat      → kcki        2tok  ['k', 'cki']
+    self                 → tmpt        2tok  ['tm', 'pt']
+    statement_close      → rabf        2tok  ['rab', 'f']
+    statement_general    → likq        2tok  ['lik', 'q']
+    statement_instruct   → agonv       2tok  ['agon', 'v']
+    statement_open       → biexp       2tok  ['bi', 'exp']
+    statement_problem    → itdk        2tok  ['it', 'dk']
+    thanks               → otbf        2tok  ['ot', 'bf']
+  [voxpopuli]  F1=0.1141
+    law                  → sfudu       2tok  ['sf', 'udu']
+    norp                 → hmen        2tok  ['h', 'men']
+    org                  → btba        2tok  ['bt', 'ba']
+    person               → cjss        2tok  ['cj', 'ss']
+    place                → miim        2tok  ['mi', 'im']
+    quant                → icwx        2tok  ['ic', 'wx']
+    when                 → ezce        2tok  ['ez', 'ce']
+  [meld_emotion]  F1=0.1015
+    anger                → goon        2tok  ['go', 'on']
+    disgust              → gfep        2tok  ['gf', 'ep']
+    fear                 → hkgs        2tok  ['hk', 'gs']
+    joy                  → lbppo       2tok  ['lb', 'ppo']
+    neutral              → ovzb        2tok  ['ov', 'zb']
+    sadness              → xhma        2tok  ['x', 'hma']
+    surprise             → plpr        2tok  ['pl', 'pr']
+
+────────────────────────────────────────────────────────────────────────────────
+EPOCH 3/11  [Phase1-Slots]
+────────────────────────────────────────────────────────────────────────────────
+SCORES:
+  original  :  voxceleb=0.521  hvb=0.0751  voxpopuli=0.1502  meld_emotion=0.3085  → avg=0.2637
+  fixed     :  voxceleb=0.028  hvb=0.0484  voxpopuli=0.1474  meld_emotion=0.1422  → avg=0.0915
+  fresh     :  voxceleb=0.0238  hvb=0.1175  voxpopuli=0.1498  meld_emotion=0.3342  → avg=0.1563
+
+SYMBOLS+TOKENS [FIXED]:
+  [voxceleb]  F1=0.028
+    negative             → ubwj        2tok  ['ub', 'wj']
+    neutral              → sutq        2tok  ['sut', 'q']
+    positive             → hkdk        2tok  ['hk', 'dk']
+  [hvb]  F1=0.0484
+    acknowledge          → cwdol       2tok  ['cwd', 'ol']
+    answer_agree         → qcqh        2tok  ['qc', 'qh']
+    answer_dis           → elvo        2tok  ['el', 'vo']
+    answer_general       → fnir        2tok  ['fn', 'ir']
+    apology              → vhqv        2tok  ['vh', 'qv']
+    backchannel          → berr        2tok  ['b', 'err']
+    disfluency           → ubwj        2tok  ['ub', 'wj']
+    other                → npii        2tok  ['n', 'pii']
+    question_check       → eceu        2tok  ['ece', 'u']
+    question_general     → fabky       2tok  ['fab', 'ky']
+    question_repeat      → tekp        2tok  ['tek', 'p']
+    self                 → cafpp       2tok  ['caf', 'pp']
+    statement_close      → hkdk        2tok  ['hk', 'dk']
+    statement_general    → dwxt        2tok  ['dw', 'xt']
+    statement_instruct   → gnlar       2tok  ['gn', 'lar']
+    statement_open       → eltu        2tok  ['elt', 'u']
+    statement_problem    → rndd        2tok  ['rnd', 'd']
+    thanks               → ldca        2tok  ['ld', 'ca']
+    ⚠️  TOKEN OVERLAP: question_check ∩ statement_open = ['u']
+  [voxpopuli]  F1=0.1474
+    law                  → eceu        2tok  ['ece', 'u']
+    norp                 → cwdol       2tok  ['cwd', 'ol']
+    org                  → vhqv        2tok  ['vh', 'qv']
+    person               → tekp        2tok  ['tek', 'p']
+    place                → ldca        2tok  ['ld', 'ca']
+    quant                → berr        2tok  ['b', 'err']
+    when                 → fnir        2tok  ['fn', 'ir']
+  [meld_emotion]  F1=0.1422
+    anger                → dwxt        2tok  ['dw', 'xt']
+    disgust              → cafpp       2tok  ['caf', 'pp']
+    fear                 → npii        2tok  ['n', 'pii']
+    joy                  → tekp        2tok  ['tek', 'p']
+    neutral              → ubwj        2tok  ['ub', 'wj']
+    sadness              → gnlar       2tok  ['gn', 'lar']
+    surprise             → ldca        2tok  ['ld', 'ca']
+
+SYMBOLS+TOKENS [FRESH]:
+  [voxceleb]  F1=0.0238
+    negative             → cisrm       2tok  ['cis', 'rm']
+    neutral              → wyyc        2tok  ['wy', 'yc']
+    positive             → xnweg       2tok  ['xn', 'weg']
+  [hvb]  F1=0.1175
+    acknowledge          → bzvet       2tok  ['bz', 'vet']
+    answer_agree         → agzz        2tok  ['ag', 'zz']
+    answer_dis           → kiav        2tok  ['ki', 'av']
+    answer_general       → mwxs        2tok  ['mw', 'xs']
+    apology              → qiixe       2tok  ['qi', 'ixe']
+    backchannel          → hxah        2tok  ['hx', 'ah']
+    disfluency           → sprqv       2tok  ['spr', 'qv']
+    other                → esbr        2tok  ['es', 'br']
+    question_check       → abff        2tok  ['ab', 'ff']
+    question_general     → wlic        2tok  ['w', 'lic']
+    question_repeat      → lhir        2tok  ['l', 'hir']
+    self                 → bnxt        2tok  ['bn', 'xt']
+    statement_close      → avcm        2tok  ['av', 'cm']
+    statement_general    → kxbc        2tok  ['k', 'xbc']
+    statement_instruct   → gebh        2tok  ['geb', 'h']
+    statement_open       → dlxy        2tok  ['dl', 'xy']
+    statement_problem    → rtok        2tok  ['rt', 'ok']
+    thanks               → maab        2tok  ['ma', 'ab']
+    ⚠️  TOKEN OVERLAP: answer_dis ∩ statement_close = ['av']
+    ⚠️  TOKEN OVERLAP: question_check ∩ thanks = ['ab']
+  [voxpopuli]  F1=0.1498
+    law                  → cnfo        2tok  ['cn', 'fo']
+    norp                 → pzdz        2tok  ['pz', 'dz']
+    org                  → qcqv        2tok  ['qc', 'qv']
+    person               → hgidd       2tok  ['hg', 'idd']
+    place                → xcwu        2tok  ['xc', 'wu']
+    quant                → thij        2tok  ['th', 'ij']
+    when                 → citpx       2tok  ['cit', 'px']
+  [meld_emotion]  F1=0.3342
+    anger                → pjyo        2tok  ['pj', 'yo']
+    disgust              → muja        2tok  ['mu', 'ja']
+    fear                 → uept        2tok  ['ue', 'pt']
+    joy                  → njrho       2tok  ['nj', 'rho']
+    neutral              → urxt        2tok  ['ur', 'xt']
+    sadness              → xcdf        2tok  ['xc', 'df']
+    surprise             → cadf        2tok  ['cad', 'f']
+
+────────────────────────────────────────────────────────────────────────────────
+EPOCH 4/11  [Phase1-Slots]
+────────────────────────────────────────────────────────────────────────────────
+SCORES:
+  original  :  voxceleb=0.521  hvb=0.0751  voxpopuli=0.1502  meld_emotion=0.3085  → avg=0.2637
+  fixed     :  voxceleb=0.0534  hvb=0.0401  voxpopuli=0.1645  meld_emotion=0.2753  → avg=0.1333
+  fresh     :  voxceleb=0.4246  hvb=0.0642  voxpopuli=0.1401  meld_emotion=0.2505  → avg=0.2198
+
+SYMBOLS+TOKENS [FIXED]:
+  [voxceleb]  F1=0.0534
+    negative             → hkdk        2tok  ['hk', 'dk']
+    neutral              → wowhp       2tok  ['wow', 'hp']
+    positive             → npii        2tok  ['n', 'pii']
+  [hvb]  F1=0.0401
+    acknowledge          → fabky       2tok  ['fab', 'ky']
+    answer_agree         → eceu        2tok  ['ece', 'u']
+    answer_dis           → npii        2tok  ['n', 'pii']
+    answer_general       → hkdk        2tok  ['hk', 'dk']
+    apology              → wowhp       2tok  ['wow', 'hp']
+    backchannel          → qxlm        2tok  ['qx', 'lm']
+    disfluency           → mfby        2tok  ['mf', 'by']
+    other                → vhqv        2tok  ['vh', 'qv']
+    question_check       → sutq        2tok  ['sut', 'q']
+    question_general     → cwdol       2tok  ['cwd', 'ol']
+    question_repeat      → sxhh        2tok  ['sx', 'hh']
+    self                 → hbmm        2tok  ['hb', 'mm']
+    statement_close      → qcqh        2tok  ['qc', 'qh']
+    statement_general    → rndd        2tok  ['rnd', 'd']
+    statement_instruct   → escbp       2tok  ['esc', 'bp']
+    statement_open       → conq        2tok  ['con', 'q']
+    statement_problem    → ldca        2tok  ['ld', 'ca']
+    thanks               → vbnp        2tok  ['vb', 'np']
+    ⚠️  TOKEN OVERLAP: question_check ∩ statement_open = ['q']
+  [voxpopuli]  F1=0.1645
+    law                  → hbmm        2tok  ['hb', 'mm']
+    norp                 → npii        2tok  ['n', 'pii']
+    org                  → vbnp        2tok  ['vb', 'np']
+    person               → rndd        2tok  ['rnd', 'd']
+    place                → uios        2tok  ['ui', 'os']
+    quant                → mfby        2tok  ['mf', 'by']
+    when                 → sxhh        2tok  ['sx', 'hh']
+  [meld_emotion]  F1=0.2753
+    anger                → conq        2tok  ['con', 'q']
+    disgust              → vbnp        2tok  ['vb', 'np']
+    fear                 → escbp       2tok  ['esc', 'bp']
+    joy                  → wnvw        2tok  ['wn', 'vw']
+    neutral              → mfby        2tok  ['mf', 'by']
+    sadness              → uios        2tok  ['ui', 'os']
+    surprise             → fabky       2tok  ['fab', 'ky']
+
+SYMBOLS+TOKENS [FRESH]:
+  [voxceleb]  F1=0.4246
+    negative             → mplv        2tok  ['mpl', 'v']
+    neutral              → zbdk        2tok  ['zb', 'dk']
+    positive             → olsl        2tok  ['ols', 'l']
+  [hvb]  F1=0.0642
+    acknowledge          → jbkb        2tok  ['jb', 'kb']
+    answer_agree         → tdme        2tok  ['td', 'me']
+    answer_dis           → uybp        2tok  ['uy', 'bp']
+    answer_general       → jjds        2tok  ['jj', 'ds']
+    apology              → yrqq        2tok  ['yr', 'qq']
+    backchannel          → kdzi        2tok  ['kd', 'zi']
+    disfluency           → lseg        2tok  ['l', 'seg']
+    other                → igxb        2tok  ['ig', 'xb']
+    question_check       → leno        2tok  ['len', 'o']
+    question_general     → noau        2tok  ['no', 'au']
+    question_repeat      → vban        2tok  ['v', 'ban']
+    self                 → glsv        2tok  ['gl', 'sv']
+    statement_close      → tlto        2tok  ['tl', 'to']
+    statement_general    → udpt        2tok  ['ud', 'pt']
+    statement_instruct   → cqew        2tok  ['cq', 'ew']
+    statement_open       → xoli        2tok  ['x', 'oli']
+    statement_problem    → aerti       2tok  ['a', 'erti']
+    thanks               → uvrew       2tok  ['uv', 'rew']
+  [voxpopuli]  F1=0.1401
+    law                  → knijo       2tok  ['kn', 'ijo']
+    norp                 → loks        2tok  ['lo', 'ks']
+    org                  → upgg        2tok  ['up', 'gg']
+    person               → npzee       2tok  ['np', 'zee']
+    place                → ufjo        2tok  ['uf', 'jo']
+    quant                → cwsek       2tok  ['cw', 'sek']
+    when                 → nsqr        2tok  ['ns', 'qr']
+  [meld_emotion]  F1=0.2505
+    anger                → qwos        2tok  ['qw', 'os']
+    disgust              → movmp       2tok  ['mov', 'mp']
+    fear                 → igbn        2tok  ['ig', 'bn']
+    joy                  → wnjj        2tok  ['wn', 'jj']
+    neutral              → zzgm        2tok  ['zz', 'gm']
+    sadness              → nuwf        2tok  ['nu', 'wf']
+    surprise             → lstt        2tok  ['lst', 't']
+
+────────────────────────────────────────────────────────────────────────────────
+EPOCH 5/11  [Phase1-Slots]
+────────────────────────────────────────────────────────────────────────────────
+SCORES:
+  original  :  voxceleb=0.521  hvb=0.0751  voxpopuli=0.1502  meld_emotion=0.3085  → avg=0.2637
+  fixed     :  voxceleb=0.3  hvb=0.0462  voxpopuli=0.151  meld_emotion=0.1579  → avg=0.1638
+  fresh     :  voxceleb=0.1674  hvb=0.0953  voxpopuli=0.1478  meld_emotion=0.0902  → avg=0.1252
+
+SYMBOLS+TOKENS [FIXED]:
+  [voxceleb]  F1=0.3
+    negative             → sutq        2tok  ['sut', 'q']
+    neutral              → vhqv        2tok  ['vh', 'qv']
+    positive             → escbp       2tok  ['esc', 'bp']
+  [hvb]  F1=0.0462
+    acknowledge          → mfby        2tok  ['mf', 'by']
+    answer_agree         → cwdol       2tok  ['cwd', 'ol']
+    answer_dis           → fabky       2tok  ['fab', 'ky']
+    answer_general       → eceu        2tok  ['ece', 'u']
+    apology              → ldca        2tok  ['ld', 'ca']
+    backchannel          → escbp       2tok  ['esc', 'bp']
+    disfluency           → rndd        2tok  ['rnd', 'd']
+    other                → vhqv        2tok  ['vh', 'qv']
+    question_check       → wnvw        2tok  ['wn', 'vw']
+    question_general     → sutq        2tok  ['sut', 'q']
+    question_repeat      → conq        2tok  ['con', 'q']
+    self                 → sxhh        2tok  ['sx', 'hh']
+    statement_close      → jqcq        2tok  ['jq', 'cq']
+    statement_general    → hbmm        2tok  ['hb', 'mm']
+    statement_instruct   → qcqh        2tok  ['qc', 'qh']
+    statement_open       → qxlm        2tok  ['qx', 'lm']
+    statement_problem    → ccts        2tok  ['c', 'cts']
+    thanks               → uios        2tok  ['ui', 'os']
+    ⚠️  TOKEN OVERLAP: question_general ∩ question_repeat = ['q']
+  [voxpopuli]  F1=0.151
+    law                  → qxlm        2tok  ['qx', 'lm']
+    norp                 → vhqv        2tok  ['vh', 'qv']
+    org                  → qwyt        2tok  ['qw', 'yt']
+    person               → sutq        2tok  ['sut', 'q']
+    place                → mfby        2tok  ['mf', 'by']
+    quant                → fabky       2tok  ['fab', 'ky']
+    when                 → eceu        2tok  ['ece', 'u']
+  [meld_emotion]  F1=0.1579
+    anger                → qwyt        2tok  ['qw', 'yt']
+    disgust              → escbp       2tok  ['esc', 'bp']
+    fear                 → uios        2tok  ['ui', 'os']
+    joy                  → sxhh        2tok  ['sx', 'hh']
+    neutral              → qxlm        2tok  ['qx', 'lm']
+    sadness              → ccts        2tok  ['c', 'cts']
+    surprise             → qcqh        2tok  ['qc', 'qh']
+
+SYMBOLS+TOKENS [FRESH]:
+  [voxceleb]  F1=0.1674
+    negative             → rnfp        2tok  ['rn', 'fp']
+    neutral              → dexgl       2tok  ['dex', 'gl']
+    positive             → ewwb        2tok  ['ew', 'wb']
+  [hvb]  F1=0.0953
+    acknowledge          → njdu        2tok  ['nj', 'du']
+    answer_agree         → izns        2tok  ['iz', 'ns']
+    answer_dis           → igjp        2tok  ['ig', 'jp']
+    answer_general       → dydp        2tok  ['dy', 'dp']
+    apology              → cnwu        2tok  ['cn', 'wu']
+    backchannel          → ovrx        2tok  ['ov', 'rx']
+    disfluency           → nbly        2tok  ['nb', 'ly']
+    other                → affw        2tok  ['aff', 'w']
+    question_check       → npba        2tok  ['np', 'ba']
+    question_general     → boxyw       2tok  ['box', 'yw']
+    question_repeat      → mvgs        2tok  ['mv', 'gs']
+    self                 → pzma        2tok  ['pz', 'ma']
+    statement_close      → brpc        2tok  ['br', 'pc']
+    statement_general    → ihns        2tok  ['ih', 'ns']
+    statement_instruct   → twsc        2tok  ['tw', 'sc']
+    statement_open       → milg        2tok  ['mil', 'g']
+    statement_problem    → riima       2tok  ['ri', 'ima']
+    thanks               → bzern       2tok  ['bz', 'ern']
+    ⚠️  TOKEN OVERLAP: answer_agree ∩ statement_general = ['ns']
+  [voxpopuli]  F1=0.1478
+    law                  → qlqd        2tok  ['ql', 'qd']
+    norp                 → ezpr        2tok  ['ez', 'pr']
+    org                  → ecgu        2tok  ['ec', 'gu']
+    person               → zxum        2tok  ['zx', 'um']
+    place                → qusr        2tok  ['q', 'usr']
+    quant                → keth        2tok  ['k', 'eth']
+    when                 → peccb       2tok  ['pe', 'ccb']
+  [meld_emotion]  F1=0.0902
+    anger                → tkcf        2tok  ['tk', 'cf']
+    disgust              → owii        2tok  ['ow', 'ii']
+    fear                 → lmtn        2tok  ['lm', 'tn']
+    joy                  → evbn        2tok  ['ev', 'bn']
+    neutral              → pfvv        2tok  ['pf', 'vv']
+    sadness              → boek        2tok  ['bo', 'ek']
+    surprise             → ezspo       2tok  ['ez', 'spo']
+
+────────────────────────────────────────────────────────────────────────────────
+EPOCH 6/11  [Phase1-Slots]
+────────────────────────────────────────────────────────────────────────────────
+SCORES:
+  original  :  voxceleb=0.521  hvb=0.0751  voxpopuli=0.1502  meld_emotion=0.3085  → avg=0.2637
+  fixed     :  voxceleb=0.2911  hvb=0.061  voxpopuli=0.1353  meld_emotion=0.1639  → avg=0.1628
+  fresh     :  voxceleb=0.2551  hvb=0.0779  voxpopuli=0.1086  meld_emotion=0.0701  → avg=0.1279
+
+SYMBOLS+TOKENS [FIXED]:
+  [voxceleb]  F1=0.2911
+    negative             → vbnp        2tok  ['vb', 'np']
+    neutral              → wnvw        2tok  ['wn', 'vw']
+    positive             → rkvo        2tok  ['rk', 'vo']
+  [hvb]  F1=0.061
+    acknowledge          → sutq        2tok  ['sut', 'q']
+    answer_agree         → mfby        2tok  ['mf', 'by']
+    answer_dis           → qwyt        2tok  ['qw', 'yt']
+    answer_general       → yypi        2tok  ['y', 'ypi']
+    apology              → ccts        2tok  ['c', 'cts']
+    backchannel          → ldca        2tok  ['ld', 'ca']
+    disfluency           → sxhh        2tok  ['sx', 'hh']
+    other                → eceu        2tok  ['ece', 'u']
+    question_check       → gban        2tok  ['g', 'ban']
+    question_general     → fabky       2tok  ['fab', 'ky']
+    question_repeat      → cwdol       2tok  ['cwd', 'ol']
+    self                 → vbnp        2tok  ['vb', 'np']
+    statement_close      → wnvw        2tok  ['wn', 'vw']
+    statement_general    → rndd        2tok  ['rnd', 'd']
+    statement_instruct   → vhqv        2tok  ['vh', 'qv']
+    statement_open       → uios        2tok  ['ui', 'os']
+    statement_problem    → qcqh        2tok  ['qc', 'qh']
+    thanks               → jqcq        2tok  ['jq', 'cq']
+  [voxpopuli]  F1=0.1353
+    law                  → vhqv        2tok  ['vh', 'qv']
+    norp                 → cwdol       2tok  ['cwd', 'ol']
+    org                  → qcqh        2tok  ['qc', 'qh']
+    person               → btcq        2tok  ['btc', 'q']
+    place                → eceu        2tok  ['ece', 'u']
+    quant                → yypi        2tok  ['y', 'ypi']
+    when                 → jqcq        2tok  ['jq', 'cq']
+  [meld_emotion]  F1=0.1639
+    anger                → wnvw        2tok  ['wn', 'vw']
+    disgust              → cwdol       2tok  ['cwd', 'ol']
+    fear                 → sxhh        2tok  ['sx', 'hh']
+    joy                  → sutq        2tok  ['sut', 'q']
+    neutral              → uios        2tok  ['ui', 'os']
+    sadness              → rkvo        2tok  ['rk', 'vo']
+    surprise             → ccts        2tok  ['c', 'cts']
+
+SYMBOLS+TOKENS [FRESH]:
+  [voxceleb]  F1=0.2551
+    negative             → abmv        2tok  ['ab', 'mv']
+    neutral              → frbz        2tok  ['fr', 'bz']
+    positive             → oelu        2tok  ['o', 'elu']
+  [hvb]  F1=0.0779
+    acknowledge          → ffvy        2tok  ['ff', 'vy']
+    answer_agree         → amjj        2tok  ['am', 'jj']
+    answer_dis           → rsdd        2tok  ['rs', 'dd']
+    answer_general       → dzrw        2tok  ['dz', 'rw']
+    apology              → avpr        2tok  ['av', 'pr']
+    backchannel          → zojb        2tok  ['zo', 'jb']
+    disfluency           → ihpg        2tok  ['ih', 'pg']
+    other                → mviez       2tok  ['mv', 'iez']
+    question_check       → nkwr        2tok  ['nk', 'wr']
+    question_general     → pngk        2tok  ['png', 'k']
+    question_repeat      → fsba        2tok  ['fs', 'ba']
+    self                 → xcdiv       2tok  ['xc', 'div']
+    statement_close      → mrid        2tok  ['m', 'rid']
+    statement_general    → eaaj        2tok  ['ea', 'aj']
+    statement_instruct   → kihe        2tok  ['ki', 'he']
+    statement_open       → embe        2tok  ['em', 'be']
+    statement_problem    → fure        2tok  ['f', 'ure']
+    thanks               → isix        2tok  ['is', 'ix']
+  [voxpopuli]  F1=0.1086
+    law                  → azrk        2tok  ['az', 'rk']
+    norp                 → pjnk        2tok  ['pj', 'nk']
+    org                  → silv        2tok  ['sil', 'v']
+    person               → zhwd        2tok  ['zh', 'wd']
+    place                → nehd        2tok  ['ne', 'hd']
+    quant                → huua        2tok  ['hu', 'ua']
+    when                 → dsium       2tok  ['ds', 'ium']
+  [meld_emotion]  F1=0.0701
+    anger                → scpb        2tok  ['sc', 'pb']
+    disgust              → baib        2tok  ['ba', 'ib']
+    fear                 → dxro        2tok  ['dx', 'ro']
+    joy                  → yims        2tok  ['y', 'ims']
+    neutral              → ejnw        2tok  ['ej', 'nw']
+    sadness              → ohor        2tok  ['oh', 'or']
+    surprise             → clkz        2tok  ['clk', 'z']
+
+────────────────────────────────────────────────────────────────────────────────
+EPOCH 7/11  [Phase2-LoRA]
+────────────────────────────────────────────────────────────────────────────────
+SCORES:
+  original  :  voxceleb=0.544  hvb=0.0937  voxpopuli=0.1488  meld_emotion=0.271  → avg=0.2644
+  fixed     :  voxceleb=0.1598  hvb=0.1117  voxpopuli=0.1434  meld_emotion=0.3431  → avg=0.1895
+  fresh     :  voxceleb=0.3903  hvb=0.0618  voxpopuli=0.1401  meld_emotion=0.1328  → avg=0.1813
+
+SYMBOLS+TOKENS [FIXED]:
+  [voxceleb]  F1=0.1598
+    negative             → sxhh        2tok  ['sx', 'hh']
+    neutral              → qwyt        2tok  ['qw', 'yt']
+    positive             → qxlm        2tok  ['qx', 'lm']
+  [hvb]  F1=0.1117
+    acknowledge          → mfby        2tok  ['mf', 'by']
+    answer_agree         → cwdol       2tok  ['cwd', 'ol']
+    answer_dis           → sxhh        2tok  ['sx', 'hh']
+    answer_general       → ldca        2tok  ['ld', 'ca']
+    apology              → qcqh        2tok  ['qc', 'qh']
+    backchannel          → escbp       2tok  ['esc', 'bp']
+    disfluency           → qxlm        2tok  ['qx', 'lm']
+    other                → wnvw        2tok  ['wn', 'vw']
+    question_check       → vbnp        2tok  ['vb', 'np']
+    question_general     → eceu        2tok  ['ece', 'u']
+    question_repeat      → sutq        2tok  ['sut', 'q']
+    self                 → qwyt        2tok  ['qw', 'yt']
+    statement_close      → rndd        2tok  ['rnd', 'd']
+    statement_general    → vhqv        2tok  ['vh', 'qv']
+    statement_instruct   → fabky       2tok  ['fab', 'ky']
+    statement_open       → uios        2tok  ['ui', 'os']
+    statement_problem    → conq        2tok  ['con', 'q']
+    thanks               → jqcq        2tok  ['jq', 'cq']
+    ⚠️  TOKEN OVERLAP: question_repeat ∩ statement_problem = ['q']
+  [voxpopuli]  F1=0.1434
+    law                  → ldca        2tok  ['ld', 'ca']
+    norp                 → wnvw        2tok  ['wn', 'vw']
+    org                  → mfby        2tok  ['mf', 'by']
+    person               → qxlm        2tok  ['qx', 'lm']
+    place                → hbmm        2tok  ['hb', 'mm']
+    quant                → vbnp        2tok  ['vb', 'np']
+    when                 → escbp       2tok  ['esc', 'bp']
+  [meld_emotion]  F1=0.3431
+    anger                → vhqv        2tok  ['vh', 'qv']
+    disgust              → wnvw        2tok  ['wn', 'vw']
+    fear                 → jqcq        2tok  ['jq', 'cq']
+    joy                  → hbmm        2tok  ['hb', 'mm']
+    neutral              → sutq        2tok  ['sut', 'q']
+    sadness              → vbnp        2tok  ['vb', 'np']
+    surprise             → ldca        2tok  ['ld', 'ca']
+
+SYMBOLS+TOKENS [FRESH]:
+  [voxceleb]  F1=0.3903
+    negative             → yydv        2tok  ['yy', 'dv']
+    neutral              → ytgc        2tok  ['yt', 'gc']
+    positive             → hybf        2tok  ['hy', 'bf']
+  [hvb]  F1=0.0618
+    acknowledge          → aimk        2tok  ['aim', 'k']
+    answer_agree         → qbut        2tok  ['q', 'but']
+    answer_dis           → rdnt        2tok  ['rd', 'nt']
+    answer_general       → cxmp        2tok  ['cx', 'mp']
+    apology              → psij        2tok  ['ps', 'ij']
+    backchannel          → sfsm        2tok  ['sf', 'sm']
+    disfluency           → djoc        2tok  ['dj', 'oc']
+    other                → ilkl        2tok  ['il', 'kl']
+    question_check       → dzti        2tok  ['dz', 'ti']
+    question_general     → wljh        2tok  ['wl', 'jh']
+    question_repeat      → qzie        2tok  ['q', 'zie']
+    self                 → wshi        2tok  ['w', 'shi']
+    statement_close      → kfub        2tok  ['kf', 'ub']
+    statement_general    → ples        2tok  ['p', 'les']
+    statement_instruct   → cmdam       2tok  ['cmd', 'am']
+    statement_open       → ogmc        2tok  ['og', 'mc']
+    statement_problem    → ccal        2tok  ['cc', 'al']
+    thanks               → huqli       2tok  ['hu', 'qli']
+    ⚠️  TOKEN OVERLAP: answer_agree ∩ question_repeat = ['q']
+  [voxpopuli]  F1=0.1401
+    law                  → rfrr        2tok  ['rf', 'rr']
+    norp                 → gmcc        2tok  ['gm', 'cc']
+    org                  → deoko       2tok  ['de', 'oko']
+    person               → tgcod       2tok  ['tg', 'cod']
+    place                → rqnb        2tok  ['rq', 'nb']
+    quant                → ihza        2tok  ['ih', 'za']
+    when                 → nbkop       2tok  ['nb', 'kop']
+    ⚠️  TOKEN OVERLAP: place ∩ when = ['nb']
+  [meld_emotion]  F1=0.1328
+    anger                → etxn        2tok  ['et', 'xn']
+    disgust              → pdpg        2tok  ['pd', 'pg']
+    fear                 → bzht        2tok  ['bz', 'ht']
+    joy                  → jsjl        2tok  ['js', 'jl']
+    neutral              → bvjax       2tok  ['bv', 'jax']
+    sadness              → gvak        2tok  ['gv', 'ak']
+    surprise             → kwte        2tok  ['kw', 'te']
+
+────────────────────────────────────────────────────────────────────────────────
+EPOCH 8/11  [Phase2-LoRA]
+────────────────────────────────────────────────────────────────────────────────
+SCORES:
+  original  :  voxceleb=0.4676  hvb=0.0981  voxpopuli=0.1634  meld_emotion=0.1925  → avg=0.2304
+  fixed     :  voxceleb=0.3  hvb=0.0709  voxpopuli=0.1663  meld_emotion=0.3359  → avg=0.2183
+  fresh     :  voxceleb=0.3961  hvb=0.0679  voxpopuli=0.1743  meld_emotion=0.1851  → avg=0.2059
+
+SYMBOLS+TOKENS [FIXED]:
+  [voxceleb]  F1=0.3
+    negative             → qwyt        2tok  ['qw', 'yt']
+    neutral              → jqcq        2tok  ['jq', 'cq']
+    positive             → qcqh        2tok  ['qc', 'qh']
+  [hvb]  F1=0.0709
+    acknowledge          → qwyt        2tok  ['qw', 'yt']
+    answer_agree         → uios        2tok  ['ui', 'os']
+    answer_dis           → wnvw        2tok  ['wn', 'vw']
+    answer_general       → ccts        2tok  ['c', 'cts']
+    apology              → ldca        2tok  ['ld', 'ca']
+    backchannel          → hbmm        2tok  ['hb', 'mm']
+    disfluency           → mfby        2tok  ['mf', 'by']
+    other                → qxlm        2tok  ['qx', 'lm']
+    question_check       → eceu        2tok  ['ece', 'u']
+    question_general     → sutq        2tok  ['sut', 'q']
+    question_repeat      → jqcq        2tok  ['jq', 'cq']
+    self                 → qcqh        2tok  ['qc', 'qh']
+    statement_close      → cwdol       2tok  ['cwd', 'ol']
+    statement_general    → fabky       2tok  ['fab', 'ky']
+    statement_instruct   → conq        2tok  ['con', 'q']
+    statement_open       → rndd        2tok  ['rnd', 'd']
+    statement_problem    → vbnp        2tok  ['vb', 'np']
+    thanks               → escbp       2tok  ['esc', 'bp']
+    ⚠️  TOKEN OVERLAP: question_general ∩ statement_instruct = ['q']
+  [voxpopuli]  F1=0.1663
+    law                  → wnvw        2tok  ['wn', 'vw']
+    norp                 → sutq        2tok  ['sut', 'q']
+    org                  → fabky       2tok  ['fab', 'ky']
+    person               → jqcq        2tok  ['jq', 'cq']
+    place                → escbp       2tok  ['esc', 'bp']
+    quant                → qwyt        2tok  ['qw', 'yt']
+    when                 → ccts        2tok  ['c', 'cts']
+  [meld_emotion]  F1=0.3359
+    anger                → sutq        2tok  ['sut', 'q']
+    disgust              → mfby        2tok  ['mf', 'by']
+    fear                 → cwdol       2tok  ['cwd', 'ol']
+    joy                  → hbmm        2tok  ['hb', 'mm']
+    neutral              → escbp       2tok  ['esc', 'bp']
+    sadness              → qcqh        2tok  ['qc', 'qh']
+    surprise             → qwyt        2tok  ['qw', 'yt']
+
+SYMBOLS+TOKENS [FRESH]:
+  [voxceleb]  F1=0.3961
+    negative             → almi        2tok  ['alm', 'i']
+    neutral              → detw        2tok  ['det', 'w']
+    positive             → ulil        2tok  ['ul', 'il']
+  [hvb]  F1=0.0679
+    acknowledge          → pacpr       2tok  ['pac', 'pr']
+    answer_agree         → oecx        2tok  ['o', 'ecx']
+    answer_dis           → lael        2tok  ['la', 'el']
+    answer_general       → dcml        2tok  ['dc', 'ml']
+    apology              → flpf        2tok  ['fl', 'pf']
+    backchannel          → bdml        2tok  ['bd', 'ml']
+    disfluency           → spdq        2tok  ['sp', 'dq']
+    other                → elzl        2tok  ['el', 'zl']
+    question_check       → tdix        2tok  ['td', 'ix']
+    question_general     → lwzt        2tok  ['lw', 'zt']
+    question_repeat      → fxus        2tok  ['fx', 'us']
+    self                 → lokj        2tok  ['lok', 'j']
+    statement_close      → ljcf        2tok  ['lj', 'cf']
+    statement_general    → drzw        2tok  ['dr', 'zw']
+    statement_instruct   → wijv        2tok  ['wij', 'v']
+    statement_open       → xmlp        2tok  ['xml', 'p']
+    statement_problem    → rqoj        2tok  ['rq', 'oj']
+    thanks               → sjlu        2tok  ['sj', 'lu']
+    ⚠️  TOKEN OVERLAP: answer_dis ∩ other = ['el']
+    ⚠️  TOKEN OVERLAP: answer_general ∩ backchannel = ['ml']
+  [voxpopuli]  F1=0.1743
+    law                  → vrjq        2tok  ['vr', 'jq']
+    norp                 → avus        2tok  ['av', 'us']
+    org                  → rgab        2tok  ['rg', 'ab']
+    person               → deag        2tok  ['de', 'ag']
+    place                → vhkj        2tok  ['vh', 'kj']
+    quant                → stfb        2tok  ['st', 'fb']
+    when                 → hsnc        2tok  ['hs', 'nc']
+  [meld_emotion]  F1=0.1851
+    anger                → sqij        2tok  ['sq', 'ij']
+    disgust              → ignt        2tok  ['ig', 'nt']
+    fear                 → lxja        2tok  ['lx', 'ja']
+    joy                  → ndur        2tok  ['nd', 'ur']
+    neutral              → rcvo        2tok  ['rc', 'vo']
+    sadness              → hehx        2tok  ['he', 'hx']
+    surprise             → hhyl        2tok  ['hh', 'yl']
+
+────────────────────────────────────────────────────────────────────────────────
+EPOCH 9/11  [Phase2-LoRA]
+────────────────────────────────────────────────────────────────────────────────
+SCORES:
+  original  :  voxceleb=0.466  hvb=0.0974  voxpopuli=0.1773  meld_emotion=0.2962  → avg=0.2592
+  fixed     :  voxceleb=0.0196  hvb=0.0636  voxpopuli=0.0942  meld_emotion=0.3791  → avg=0.1391
+  fresh     :  voxceleb=0.3967  hvb=0.0615  voxpopuli=0.1658  meld_emotion=0.2837  → avg=0.2269
+
+SYMBOLS+TOKENS [FIXED]:
+  [voxceleb]  F1=0.0196
+    negative             → cwdol       2tok  ['cwd', 'ol']
+    neutral              → rndd        2tok  ['rnd', 'd']
+    positive             → conq        2tok  ['con', 'q']
+  [hvb]  F1=0.0636
+    acknowledge          → rndd        2tok  ['rnd', 'd']
+    answer_agree         → escbp       2tok  ['esc', 'bp']
+    answer_dis           → vbnp        2tok  ['vb', 'np']
+    answer_general       → sxhh        2tok  ['sx', 'hh']
+    apology              → conq        2tok  ['con', 'q']
+    backchannel          → uios        2tok  ['ui', 'os']
+    disfluency           → qwyt        2tok  ['qw', 'yt']
+    other                → wnvw        2tok  ['wn', 'vw']
+    question_check       → hbmm        2tok  ['hb', 'mm']
+    question_general     → mfby        2tok  ['mf', 'by']
+    question_repeat      → sutq        2tok  ['sut', 'q']
+    self                 → vhqv        2tok  ['vh', 'qv']
+    statement_close      → qxlm        2tok  ['qx', 'lm']
+    statement_general    → fabky       2tok  ['fab', 'ky']
+    statement_instruct   → cwdol       2tok  ['cwd', 'ol']
+    statement_open       → ldca        2tok  ['ld', 'ca']
+    statement_problem    → qcqh        2tok  ['qc', 'qh']
+    thanks               → jqcq        2tok  ['jq', 'cq']
+    ⚠️  TOKEN OVERLAP: apology ∩ question_repeat = ['q']
+  [voxpopuli]  F1=0.0942
+    law                  → ccts        2tok  ['c', 'cts']
+    norp                 → uios        2tok  ['ui', 'os']
+    org                  → qcqh        2tok  ['qc', 'qh']
+    person               → ldca        2tok  ['ld', 'ca']
+    place                → qxlm        2tok  ['qx', 'lm']
+    quant                → escbp       2tok  ['esc', 'bp']
+    when                 → sutq        2tok  ['sut', 'q']
+  [meld_emotion]  F1=0.3791
+    anger                → mfby        2tok  ['mf', 'by']
+    disgust              → ccts        2tok  ['c', 'cts']
+    fear                 → fabky       2tok  ['fab', 'ky']
+    joy                  → wnvw        2tok  ['wn', 'vw']
+    neutral              → uios        2tok  ['ui', 'os']
+    sadness              → jqcq        2tok  ['jq', 'cq']
+    surprise             → escbp       2tok  ['esc', 'bp']
+
+SYMBOLS+TOKENS [FRESH]:
+  [voxceleb]  F1=0.3967
+    negative             → gywm        2tok  ['gy', 'wm']
+    neutral              → nkfo        2tok  ['nk', 'fo']
+    positive             → buwe        2tok  ['bu', 'we']
+  [hvb]  F1=0.0615
+    acknowledge          → acrah       2tok  ['ac', 'rah']
+    answer_agree         → hyxz        2tok  ['hy', 'xz']
+    answer_dis           → myea        2tok  ['my', 'ea']
+    answer_general       → bwdae       2tok  ['bw', 'dae']
+    apology              → pszkh       2tok  ['psz', 'kh']
+    backchannel          → pjnt        2tok  ['pj', 'nt']
+    disfluency           → putwi       2tok  ['put', 'wi']
+    other                → bmma        2tok  ['b', 'mma']
+    question_check       → imxa        2tok  ['im', 'xa']
+    question_general     → cjtz        2tok  ['cj', 'tz']
+    question_repeat      → clnk        2tok  ['cl', 'nk']
+    self                 → gemp        2tok  ['g', 'emp']
+    statement_close      → inpcm       2tok  ['in', 'pcm']
+    statement_general    → wdom        2tok  ['w', 'dom']
+    statement_instruct   → nsov        2tok  ['n', 'sov']
+    statement_open       → hste        2tok  ['h', 'ste']
+    statement_problem    → grww        2tok  ['gr', 'ww']
+    thanks               → svoh        2tok  ['sv', 'oh']
+  [voxpopuli]  F1=0.1658
+    law                  → qtqa        2tok  ['qt', 'qa']
+    norp                 → klix        2tok  ['k', 'lix']
+    org                  → hdlsa       2tok  ['hd', 'lsa']
+    person               → gpbg        2tok  ['gp', 'bg']
+    place                → hidz        2tok  ['hid', 'z']
+    quant                → mwrd        2tok  ['mw', 'rd']
+    when                 → fnys        2tok  ['fn', 'ys']
+  [meld_emotion]  F1=0.2837
+    anger                → lysop       2tok  ['lys', 'op']
+    disgust              → abir        2tok  ['ab', 'ir']
+    fear                 → ausu        2tok  ['aus', 'u']
+    joy                  → coxl        2tok  ['co', 'xl']
+    neutral              → ewaky       2tok  ['ew', 'aky']
+    sadness              → evko        2tok  ['ev', 'ko']
+    surprise             → sugo        2tok  ['s', 'ugo']
+
+────────────────────────────────────────────────────────────────────────────────
+EPOCH 10/11  [Phase2-LoRA]
+────────────────────────────────────────────────────────────────────────────────
+SCORES:
+  original  :  voxceleb=0.462  hvb=0.1186  voxpopuli=0.1853  meld_emotion=0.1736  → avg=0.2349
+  fixed     :  voxceleb=0.4567  hvb=0.051  voxpopuli=0.1652  meld_emotion=0.3611  → avg=0.2585
+  fresh     :  voxceleb=0.346  hvb=0.0722  voxpopuli=0.1248  meld_emotion=0.2223  → avg=0.1913
+
+SYMBOLS+TOKENS [FIXED]:
+  [voxceleb]  F1=0.4567
+    negative             → eceu        2tok  ['ece', 'u']
+    neutral              → qwyt        2tok  ['qw', 'yt']
+    positive             → vhqv        2tok  ['vh', 'qv']
+  [hvb]  F1=0.051
+    acknowledge          → rndd        2tok  ['rnd', 'd']
+    answer_agree         → eceu        2tok  ['ece', 'u']
+    answer_dis           → qxlm        2tok  ['qx', 'lm']
+    answer_general       → vbnp        2tok  ['vb', 'np']
+    apology              → mfby        2tok  ['mf', 'by']
+    backchannel          → qwyt        2tok  ['qw', 'yt']
+    disfluency           → vhqv        2tok  ['vh', 'qv']
+    other                → uios        2tok  ['ui', 'os']
+    question_check       → cwdol       2tok  ['cwd', 'ol']
+    question_general     → sutq        2tok  ['sut', 'q']
+    question_repeat      → conq        2tok  ['con', 'q']
+    self                 → ldca        2tok  ['ld', 'ca']
+    statement_close      → qcqh        2tok  ['qc', 'qh']
+    statement_general    → wnvw        2tok  ['wn', 'vw']
+    statement_instruct   → jqcq        2tok  ['jq', 'cq']
+    statement_open       → hbmm        2tok  ['hb', 'mm']
+    statement_problem    → sxhh        2tok  ['sx', 'hh']
+    thanks               → ccts        2tok  ['c', 'cts']
+    ⚠️  TOKEN OVERLAP: question_general ∩ question_repeat = ['q']
+  [voxpopuli]  F1=0.1652
+    law                  → uios        2tok  ['ui', 'os']
+    norp                 → qcqh        2tok  ['qc', 'qh']
+    org                  → cwdol       2tok  ['cwd', 'ol']
+    person               → ccts        2tok  ['c', 'cts']
+    place                → qxlm        2tok  ['qx', 'lm']
+    quant                → qwyt        2tok  ['qw', 'yt']
+    when                 → conq        2tok  ['con', 'q']
+  [meld_emotion]  F1=0.3611
+    anger                → qxlm        2tok  ['qx', 'lm']
+    disgust              → vhqv        2tok  ['vh', 'qv']
+    fear                 → rndd        2tok  ['rnd', 'd']
+    joy                  → qwyt        2tok  ['qw', 'yt']
+    neutral              → ccts        2tok  ['c', 'cts']
+    sadness              → conq        2tok  ['con', 'q']
+    surprise             → sutq        2tok  ['sut', 'q']
+    ⚠️  TOKEN OVERLAP: sadness ∩ surprise = ['q']
+
+SYMBOLS+TOKENS [FRESH]:
+  [voxceleb]  F1=0.346
+    negative             → snzw        2tok  ['sn', 'zw']
+    neutral              → ajajs       2tok  ['aj', 'ajs']
+    positive             → buwc        2tok  ['bu', 'wc']
+  [hvb]  F1=0.0722
+    acknowledge          → syqm        2tok  ['sy', 'qm']
+    answer_agree         → grkr        2tok  ['gr', 'kr']
+    answer_dis           → mgok        2tok  ['mg', 'ok']
+    answer_general       → agfa        2tok  ['ag', 'fa']
+    apology              → swreg       2tok  ['sw', 'reg']
+    backchannel          → vfuk        2tok  ['vf', 'uk']
+    disfluency           → butz        2tok  ['but', 'z']
+    other                → aose        2tok  ['a', 'ose']
+    question_check       → bulp        2tok  ['b', 'ulp']
+    question_general     → tzura       2tok  ['tz', 'ura']
+    question_repeat      → bhcre       2tok  ['bh', 'cre']
+    self                 → vvun        2tok  ['vv', 'un']
+    statement_close      → gony        2tok  ['g', 'ony']
+    statement_general    → bjhy        2tok  ['bj', 'hy']
+    statement_instruct   → popud       2tok  ['pop', 'ud']
+    statement_open       → pktug       2tok  ['pkt', 'ug']
+    statement_problem    → cqxx        2tok  ['cq', 'xx']
+    thanks               → hgdy        2tok  ['hg', 'dy']
+  [voxpopuli]  F1=0.1248
+    law                  → thhi        2tok  ['th', 'hi']
+    norp                 → wbud        2tok  ['wb', 'ud']
+    org                  → zeft        2tok  ['ze', 'ft']
+    person               → itba        2tok  ['it', 'ba']
+    place                → alepl       2tok  ['ale', 'pl']
+    quant                → qwda        2tok  ['qw', 'da']
+    when                 → fxule       2tok  ['fx', 'ule']
+  [meld_emotion]  F1=0.2223
+    anger                → kjca        2tok  ['kj', 'ca']
+    disgust              → wbij        2tok  ['wb', 'ij']
+    fear                 → mfbr        2tok  ['mf', 'br']
+    joy                  → qappy       2tok  ['q', 'appy']
+    neutral              → eqba        2tok  ['eq', 'ba']
+    sadness              → omvj        2tok  ['om', 'vj']
+    surprise             → tlsht       2tok  ['tls', 'ht']
+
+────────────────────────────────────────────────────────────────────────────────
+EPOCH 11/11  [Phase2-LoRA]
+────────────────────────────────────────────────────────────────────────────────
+SCORES:
+  original  :  voxceleb=0.4611  hvb=0.1008  voxpopuli=0.184  meld_emotion=0.1924  → avg=0.2346
+  fixed     :  voxceleb=0.3142  hvb=0.0594  voxpopuli=0.1116  meld_emotion=0.3567  → avg=0.2105
+  fresh     :  voxceleb=0.3025  hvb=0.0613  voxpopuli=0.1253  meld_emotion=0.238  → avg=0.1818
+
+SYMBOLS+TOKENS [FIXED]:
+  [voxceleb]  F1=0.3142
+    negative             → sutq        2tok  ['sut', 'q']
+    neutral              → ccts        2tok  ['c', 'cts']
+    positive             → cwdol       2tok  ['cwd', 'ol']
+  [hvb]  F1=0.0594
+    acknowledge          → sutq        2tok  ['sut', 'q']
+    answer_agree         → wnvw        2tok  ['wn', 'vw']
+    answer_dis           → vbnp        2tok  ['vb', 'np']
+    answer_general       → qwyt        2tok  ['qw', 'yt']
+    apology              → ccts        2tok  ['c', 'cts']
+    backchannel          → sxhh        2tok  ['sx', 'hh']
+    disfluency           → uios        2tok  ['ui', 'os']
+    other                → mfby        2tok  ['mf', 'by']
+    question_check       → escbp       2tok  ['esc', 'bp']
+    question_general     → rndd        2tok  ['rnd', 'd']
+    question_repeat      → vhqv        2tok  ['vh', 'qv']
+    self                 → cwdol       2tok  ['cwd', 'ol']
+    statement_close      → qcqh        2tok  ['qc', 'qh']
+    statement_general    → qxlm        2tok  ['qx', 'lm']
+    statement_instruct   → hbmm        2tok  ['hb', 'mm']
+    statement_open       → jqcq        2tok  ['jq', 'cq']
+    statement_problem    → ldca        2tok  ['ld', 'ca']
+    thanks               → eceu        2tok  ['ece', 'u']
+  [voxpopuli]  F1=0.1116
+    law                  → fabky       2tok  ['fab', 'ky']
+    norp                 → ccts        2tok  ['c', 'cts']
+    org                  → vbnp        2tok  ['vb', 'np']
+    person               → hbmm        2tok  ['hb', 'mm']
+    place                → qcqh        2tok  ['qc', 'qh']
+    quant                → eceu        2tok  ['ece', 'u']
+    when                 → uios        2tok  ['ui', 'os']
+  [meld_emotion]  F1=0.3567
+    anger                → qcqh        2tok  ['qc', 'qh']
+    disgust              → ldca        2tok  ['ld', 'ca']
+    fear                 → rndd        2tok  ['rnd', 'd']
+    joy                  → uios        2tok  ['ui', 'os']
+    neutral              → sutq        2tok  ['sut', 'q']
+    sadness              → jqcq        2tok  ['jq', 'cq']
+    surprise             → conq        2tok  ['con', 'q']
+    ⚠️  TOKEN OVERLAP: neutral ∩ surprise = ['q']
+
+SYMBOLS+TOKENS [FRESH]:
+  [voxceleb]  F1=0.3025
+    negative             → axesa       2tok  ['axes', 'a']
+    neutral              → rifab       2tok  ['rif', 'ab']
+    positive             → jmeno       2tok  ['j', 'meno']
+  [hvb]  F1=0.0613
+    acknowledge          → wnji        2tok  ['wn', 'ji']
+    answer_agree         → vpus        2tok  ['vp', 'us']
+    answer_dis           → svgor       2tok  ['sv', 'gor']
+    answer_general       → byza        2tok  ['by', 'za']
+    apology              → ynld        2tok  ['yn', 'ld']
+    backchannel          → punr        2tok  ['pun', 'r']
+    disfluency           → rhvf        2tok  ['rh', 'vf']
+    other                → cqwr        2tok  ['cq', 'wr']
+    question_check       → zmgo        2tok  ['zm', 'go']
+    question_general     → yoymm       2tok  ['yo', 'ymm']
+    question_repeat      → odac        2tok  ['od', 'ac']
+    self                 → bjkh        2tok  ['bj', 'kh']
+    statement_close      → lokp        2tok  ['lo', 'kp']
+    statement_general    → agrtp       2tok  ['agr', 'tp']
+    statement_instruct   → bcam        2tok  ['bc', 'am']
+    statement_open       → pjks        2tok  ['pj', 'ks']
+    statement_problem    → dltps       2tok  ['dl', 'tps']
+    thanks               → ylah        2tok  ['yl', 'ah']
+  [voxpopuli]  F1=0.1253
+    law                  → ecwn        2tok  ['ec', 'wn']
+    norp                 → ftjb        2tok  ['ft', 'jb']
+    org                  → sfwe        2tok  ['sf', 'we']
+    person               → pqsh        2tok  ['pq', 'sh']
+    place                → ndes        2tok  ['nd', 'es']
+    quant                → tsjl        2tok  ['ts', 'jl']
+    when                 → rset        2tok  ['r', 'set']
+  [meld_emotion]  F1=0.238
+    anger                → hkovo       2tok  ['hk', 'ovo']
+    disgust              → udzo        2tok  ['ud', 'zo']
+    fear                 → brma        2tok  ['br', 'ma']
+    joy                  → mnux        2tok  ['mn', 'ux']
+    neutral              → zsaa        2tok  ['zs', 'aa']
+    sadness              → txmr        2tok  ['tx', 'mr']
+    surprise             → mlprd       2tok  ['ml', 'prd']
+
+================================================================================
+END
+================================================================================

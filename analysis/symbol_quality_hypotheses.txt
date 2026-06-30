@@ -1,0 +1,196 @@
+================================================================================
+SYMBOL QUALITY HYPOTHESES
+Why do some symbols give better F1 than others in ICL?
+================================================================================
+
+Context
+-------
+We ran D-SPO training (Qwen2-Audio-7B) on meld_emotion only, with cross-task
+validation on voxceleb, hvb, voxpopuli. Symbols are random 4-5 letter strings
+from a filtered vocab pool (500 tokens, 2-token sequences each). F1 scores vary
+wildly across epochs even though the model weights are identical (Phase 1:
+LoRA frozen). The only thing changing is WHICH symbols are assigned to labels.
+
+Key observation that motivates this analysis
+--------------------------------------------
+Epoch 4, voxceleb (3-class: negative/neutral/positive):
+  fixed mode  symbols: hkdk, wowhp, npii   → F1 = 0.053  (terrible)
+  fresh mode  symbols: mplv, zbdk, olsl    → F1 = 0.425  (best in entire run)
+
+Same model weights. Same 200 test samples. Different symbols → 8x F1 difference.
+This means symbol choice matters enormously, independent of training.
+
+What we ruled out
+-----------------
+1. Token count: every symbol in the pool tokenizes to exactly 2 subword tokens.
+   No difference here — can't explain the variance.
+
+2. Within-class token overlap: for most epochs/datasets, no two class symbols
+   share a subword token. Overlap does occur in HVB (18 labels, small pool)
+   and correlates with worse HVB scores, but for voxceleb (3 labels) there
+   are no overlaps — so this doesn't explain the epoch 4 gap.
+
+3. Training loss: Phase 1 LoRA is frozen. The model weights are bit-for-bit
+   identical across epochs 2-6. Loss is irrelevant to cross-task symbol quality.
+
+================================================================================
+HYPOTHESIS 1 — Semantic contamination of first subword token
+================================================================================
+
+Some first subword tokens carry real English meaning. This creates a conflict:
+the model's language model prior wants to complete the word in a natural English
+way, but the ICL task requires generating a specific second token.
+
+Examples from epoch 4 fixed (F1=0.053):
+  wowhp → ['wow', 'hp']   "wow" is a strong English exclamation. After "wow",
+                           the model's prior expects "!", ",", " that" — not "hp".
+                           → second token generation is unreliable.
+  npii  → ['n', 'pii']    'n' is an extremely common standalone token (no, noun
+                           abbreviation, newline). The model may stop at 'n' or
+                           generate something else.
+  hkdk  → ['hk', 'dk']    'hk' alone is borderline (HK = Hong Kong), but
+                           comparably neutral.
+
+Examples from epoch 4 fresh (F1=0.425):
+  mplv  → ['mpl', 'v']    'mpl' has no natural English continuation → model
+                           has no prior to fight the ICL signal.
+  zbdk  → ['zb', 'dk']    'zb' is a dead-end token, no English meaning.
+  olsl  → ['ols', 'l']    'ols' has no strong continuation.
+
+Prediction: symbols whose first subword token is a real/common English word
+(or abbreviation with natural continuations) will score lower than symbols
+whose first subword is "meaningless" to the English LM.
+
+How to test: collect all first subwords across all epochs, look up their
+frequency in a standard corpus or check their base LM probability. Correlate
+with per-symbol F1 across epochs.
+
+================================================================================
+HYPOTHESIS 2 — Base generation probability of the full symbol
+================================================================================
+
+Even without semantic contamination, some 2-token sequences sit in higher-
+probability regions of the model's output distribution. These are generated
+more reliably because the model's base prior assigns them non-negligible
+probability.
+
+A symbol with near-zero base probability (both tokens are rare in the model's
+pretraining) requires the model to overcome a very strong prior just to generate
+it at all. If the model never generates it, that label gets zero recall.
+
+A symbol with moderate base probability is easier to generate → higher recall
+→ better F1, especially for the majority class.
+
+Note: this is not the same as hypothesis 1. A token can have low semantic
+contamination AND high base probability (e.g. a common but meaningless bigram).
+
+How to test: run a forward pass on the base model (no LoRA, neutral prompt like
+"The answer is: ") and measure log-probability of each symbol's 2-token
+sequence. Rank symbols by probability. Correlate with observed F1.
+
+================================================================================
+HYPOTHESIS 3 — Inter-symbol token distance
+================================================================================
+
+Even if each symbol is individually reliable, the model may confuse two symbols
+if their first or second subword tokens are similar in embedding space. The
+model's generation is "soft" — it samples from a distribution — and if two
+class symbols have nearby first tokens, probability mass leaks between classes.
+
+This is different from exact token overlap (hypothesis 2 above). Two symbols
+can share no tokens but still have first tokens that are close in embedding
+space (e.g. 'mpl' and 'mp' or 'mpl' and 'mplx' if they existed).
+
+How to test: compute cosine distance between the embedding vectors of the first
+subword tokens for each pair of class symbols. Correlate minimum pairwise
+distance with F1. Sets with larger minimum distance should score higher.
+
+================================================================================
+HYPOTHESIS 4 — Single-token first position vs. fragmented first position
+================================================================================
+
+When the first "character cluster" of a symbol maps to a single common subword
+token vs. a rare one, the model's confidence on the first generation step varies.
+
+Concretely:
+  'n' → single high-frequency token → model is very confident it can produce 'n',
+        but then has high uncertainty on what follows.
+  'mpl' → low-frequency token → model has lower confidence on step 1, but once
+           it commits to 'mpl', the completion 'v' is more tightly constrained
+           by the ICL signal (no natural continuation to fight against).
+
+The intuition: a high-frequency first token pulls the model's second-token
+distribution toward natural English continuations. A low-frequency first token
+leaves the second-token distribution more open to ICL influence.
+
+How to test: extract the unigram frequency (or log-probability from the base
+model) of each symbol's first subword token. Correlate with F1.
+
+================================================================================
+HYPOTHESIS 5 — HVB-specific: symbol reuse across labels in large label sets
+================================================================================
+
+HVB has 18 labels sharing the same 500-token pool. At epoch 1 fixed, we already
+observe a token overlap: question_general (erhk = ['er','hk']) and
+statement_open (hkdk = ['hk','dk']) share the token 'hk'.
+
+With 18 labels × 2 tokens = 36 subword tokens drawn from a pool where many
+tokens start with the same consonant cluster, overlaps are structurally more
+likely. When two labels share a first subword token, the model's generation of
+that token is ambiguous — it could complete into either class's second token.
+
+This directly predicts poor macro F1 for HVB, which is what we observe
+consistently (0.01–0.12 across all epochs and modes).
+
+Prediction: for any dataset, F1 should decrease as the number of labels
+increases relative to the effective pool diversity (number of distinct first
+subword tokens available).
+
+How to test: enumerate all within-epoch token overlaps for each dataset and
+correlate overlap count with F1 drop.
+
+================================================================================
+WHAT WE WANT TO DO WITH THIS
+================================================================================
+
+Ultimate goal: the model is trained only on meld_emotion but needs to handle
+voxceleb (sentiment), hvb (dialogue acts), voxpopuli (intent) with better-
+than-zero-shot results. Symbol choice is the lever we can control.
+
+If we can validate which hypotheses are true, we can design a symbol selection
+strategy that:
+  1. Avoids first-subword tokens with natural English continuations (H1)
+  2. Selects symbols from the high-base-probability region of the vocab (H2)
+  3. Maximizes minimum pairwise embedding distance between class symbols (H3)
+  4. Avoids single-character first subwords (H4)
+  5. For large label sets: explicitly checks for subword overlap before use (H5)
+
+This replaces random sampling from the pool with a principled search over the
+same pool — no new training needed, just a smarter symbol selection at inference.
+
+The hypothesis is: with better symbols, cross-task ICL improves because the
+model's base instruction-following capability can "click" with the few-shot
+examples when the symbols don't interfere with its LM priors.
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+1. Run base-probability analysis: forward pass on neutral prompt, measure
+   log P(symbol) for every token in the 500-symbol pool.
+
+2. Run embedding distance analysis: extract first-subword embeddings from the
+   model, compute pairwise distances for every epoch's symbol sets.
+
+3. Correlate both measurements against the F1 scores in:
+   041203_qwen_meld_emotion_dspo_symbols.txt
+
+4. If either hypothesis shows strong correlation → design a symbol selection
+   algorithm that optimizes for that property.
+
+5. Run inference with the "designed" symbol set vs. random symbols and compare
+   F1 on all 4 datasets.
+
+================================================================================
+END
+================================================================================
