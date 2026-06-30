@@ -135,7 +135,12 @@ class ValidationManager:
 
                 # 3. Move to device and generate
                 updated_batch = {k: v.to(model.device) if isinstance(v, torch.Tensor) else v for k, v in updated_batch.items()}
-                predictions = model.generate_output(updated_batch)
+                raw = model.generate_output(updated_batch)
+                # Qwen returns (texts, token_log_probs); Flamingo/Salmonn return List[str]
+                if isinstance(raw, tuple):
+                    predictions, token_log_probs = raw
+                else:
+                    predictions, token_log_probs = raw, [None] * len(raw)
 
                 for i, pred in enumerate(predictions):
                     dt_val = batch["dataset_type"][i]
@@ -143,7 +148,16 @@ class ValidationManager:
                     all_results.setdefault(dt_key, [])
                     true_label = batch["completion"][i]
                     conv_pred = self.symbol_manager.convert_symbols_back(pred, mappings=c_map) if not use_original_labels and c_map else pred
-                    all_results[dt_key].append({"text": batch["text"][i], "true_label": true_label, "raw_prediction": pred, "predicted_label": conv_pred.strip(), "dataset_type": dt_key})
+                    lps = token_log_probs[i] if token_log_probs[i] is not None else []
+                    all_results[dt_key].append({
+                        "text": batch["text"][i],
+                        "true_label": true_label,
+                        "raw_prediction": pred,
+                        "token_log_probs": lps,
+                        "symbol_log_prob": round(sum(lps), 4) if lps else None,
+                        "predicted_label": conv_pred.strip(),
+                        "dataset_type": dt_key,
+                    })
         finally:
             progress_bar.close()
 

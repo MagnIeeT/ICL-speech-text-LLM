@@ -41,6 +41,7 @@ class InferenceOrchestrator:
         output_dir: Optional[str] = None,
         validation_modes: Optional[str] = None,
         num_workers: int = 2,
+        symbol_map_file: Optional[str] = None,
     ):
         self.checkpoint_path = checkpoint_path
         self.dataset_type = dataset_type
@@ -51,6 +52,7 @@ class InferenceOrchestrator:
         self.validation_modes = validation_modes
         self.run_name = run_name
         self.num_workers = num_workers
+        self.symbol_map_file = symbol_map_file
 
         self.config = TrainingConfig()
 
@@ -427,10 +429,24 @@ class InferenceOrchestrator:
         logger.info("Predictions saved: %s", predictions_file)
         logger.info("=" * 80)
 
+    def _apply_symbol_map_file(self):
+        """Override current_mappings from a JSON file if --symbol_map_file was given."""
+        if not self.symbol_map_file:
+            return
+        with open(self.symbol_map_file) as f:
+            override = json.load(f)
+        # Merge: file entries win, checkpoint entries fill the rest
+        for ds_name, sym_dict in override.items():
+            self.current_mappings[ds_name] = sym_dict
+        logging.info("Symbol map overridden from %s: %s",
+                     self.symbol_map_file,
+                     {ds: list(v.keys()) for ds, v in override.items()})
+
     def run_complete_inference(self):
 
         checkpoint = self.load_checkpoint_and_config()
         self.setup_model_and_data(checkpoint)
+        self._apply_symbol_map_file()
 
         validation_scores, detailed_metrics, all_predictions = (
             self.run_comprehensive_inference()
@@ -466,6 +482,8 @@ def main():
     parser.add_argument("--run_name", type=str, required=True)
     parser.add_argument("--validation_modes", type=str, default=None,
                         help="Override validation modes from checkpoint (e.g. original,fixed,fresh)")
+    parser.add_argument("--symbol_map_file", type=str, default=None,
+                        help="JSON file with symbol overrides {ds_name: {label: symbol}}; merged over checkpoint mappings")
 
     args = parser.parse_args()
 
@@ -481,6 +499,7 @@ def main():
             output_dir=args.output_dir,
             validation_modes=args.validation_modes,
             num_workers=args.num_workers,
+            symbol_map_file=args.symbol_map_file,
         )
 
         results = orchestrator.run_complete_inference()

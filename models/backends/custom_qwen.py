@@ -220,24 +220,42 @@ class CustomQwen(nn.Module):
                                   placeholder_txt, placeholder_id, hard_txt, hard_vocab_id, n_replaced)
                 input_ids[input_ids == placeholder_id] = hard_vocab_id
 
+        import torch.nn.functional as F
         with torch.cuda.amp.autocast(enabled=self.use_fp16):
-            generated_ids = self.model.generate(
+            result = self.model.generate(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 input_features=input_features,
                 feature_attention_mask=feature_attention_mask,
                 max_new_tokens=20,
-                do_sample = False,
+                do_sample=False,
+                output_scores=True,
+                return_dict_in_generate=True,
             )
+            generated_ids = result.sequences
             if generated_ids.size(1) <= input_ids.size(1):
-                return [""] * input_ids.size(0)
-            generated_ids = generated_ids[:, input_ids.size(1):]
+                return [""] * input_ids.size(0), [[] for _ in range(input_ids.size(0))]
+            new_ids = generated_ids[:, input_ids.size(1):]
+
+            # Per-token log probs for each generated token (free — logits already computed)
+            eos_id = self.input_processor.tokenizer.eos_token_id
+            token_log_probs = []
+            for i in range(new_ids.size(0)):
+                lps = []
+                for step, score in enumerate(result.scores):
+                    tok_id = new_ids[i, step].item()
+                    lp = F.log_softmax(score[i], dim=-1)[tok_id].item()
+                    lps.append(round(lp, 4))
+                    if tok_id == eos_id:
+                        break
+                token_log_probs.append(lps)
+
             outputs = self.input_processor.tokenizer.batch_decode(
-                generated_ids,
+                new_ids,
                 skip_special_tokens=True,
                 clean_up_tokenization_spaces=False,
             )
-            return outputs
+            return outputs, token_log_probs
 
     @classmethod
     def from_config(cls, config):

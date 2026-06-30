@@ -12,14 +12,15 @@ fi
 
 CONDA_ENV="${CONDA_ENV:-qwen}"
 MODEL_TYPE="${MODEL_TYPE:-qwen}"
-DATASET_TYPE="${DATASET_TYPE:-voxceleb}"
+DATASET_TYPE="${DATASET_TYPE:-voxceleb-hvb-voxpopuli-meld_emotion}"
 DEVICE="${DEVICE:-cuda:0}"
-CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
-CHECKPOINT_PATH="${CHECKPOINT_PATH:-}"
-MAX_VAL_SAMPLES="${MAX_VAL_SAMPLES:-0}"
-NUM_EXAMPLES="${NUM_EXAMPLES:-0}"
+CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
+CHECKPOINT_PATH="${CHECKPOINT_PATH:-}"                                            # required: path to .pt checkpoint file
+MAX_VAL_SAMPLES="${MAX_VAL_SAMPLES:-100}"                                         # samples per dataset (0 = full val set)
+NUM_EXAMPLES="${NUM_EXAMPLES:-5}"                                                  # few-shot examples in prompt
 NUM_WORKERS="${NUM_WORKERS:-2}"
 VALIDATION_MODES="${VALIDATION_MODES:-original,fixed,fresh}"
+SYMBOL_MAP_FILE="${SYMBOL_MAP_FILE:-}"                                            # optional: JSON file to override symbol mappings
 OUTPUT_DIR="${OUTPUT_DIR:-${HOME}/training/symbol_training}"
 LOG_DIR="${LOGS_INFERENCE_DIR:-${HOME}/training/symbol_training/logs_inference}/$(date +"%Y-%m-%d")"
 
@@ -57,6 +58,7 @@ printf '%s\n' "Conda Env:       ${CONDA_ENV}"
 printf '%s\n' "Model:           ${MODEL_TYPE}"
 printf '%s\n' "Dataset:         ${DATASET_TYPE}"
 printf '%s\n' "Checkpoint:      ${CHECKPOINT_PATH}"
+printf '%s\n' "Symbol Map:      ${SYMBOL_MAP_FILE:-<from checkpoint>}"
 printf '%s\n' "Samples:         ${SAMPLES_TAG}"
 printf '%s\n' "Run Name:        ${RUN_NAME}"
 printf '%s\n' "Log File:        ${LOG_FILE}"
@@ -75,4 +77,5 @@ python inference.py \
     --output_dir "${OUTPUT_DIR}" \
     --run_name "${RUN_NAME}" \
     --validation_modes "${VALIDATION_MODES}" \
+    $( [[ -n "${SYMBOL_MAP_FILE}" ]] && printf '%s %s' "--symbol_map_file" "${SYMBOL_MAP_FILE}" ) \
     >> "${LOG_FILE}" 2>&1
