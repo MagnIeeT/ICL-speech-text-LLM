@@ -1,0 +1,45 @@
+{
+  "voxceleb": {
+    "negative": "hkdk",
+    "neutral": "wowhp",
+    "positive": "npii"
+  },
+  "hvb": {
+    "acknowledge": "fabky",
+    "answer_agree": "eceu",
+    "answer_dis": "npii",
+    "answer_general": "hkdk",
+    "apology": "wowhp",
+    "backchannel": "qxlm",
+    "disfluency": "mfby",
+    "other": "vhqv",
+    "question_check": "sutq",
+    "question_general": "cwdol",
+    "question_repeat": "sxhh",
+    "self": "hbmm",
+    "statement_close": "qcqh",
+    "statement_general": "rndd",
+    "statement_instruct": "escbp",
+    "statement_open": "conq",
+    "statement_problem": "ldca",
+    "thanks": "vbnp"
+  },
+  "voxpopuli": {
+    "law": "hbmm",
+    "norp": "npii",
+    "org": "vbnp",
+    "person": "rndd",
+    "place": "uios",
+    "quant": "mfby",
+    "when": "sxhh"
+  },
+  "meld_emotion": {
+    "anger": "conq",
+    "disgust": "vbnp",
+    "fear": "escbp",
+    "joy": "wnvw",
+    "neutral": "mfby",
+    "sadness": "uios",
+    "surprise": "fabky"
+  }
+}
