@@ -40,7 +40,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             bnb_4bit_quant_type='nf4'
         )
     else:
-        kwargs['torch_dtype'] = torch.float16
+        kwargs['torch_dtype'] = torch.bfloat16
 
     if use_flash_attn:
         kwargs['attn_implementation'] = 'flash_attention_2'
@@ -64,7 +64,6 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             if os.path.exists(os.path.join(model_path, 'non_lora_trainables.bin')):
                 non_lora_trainables = torch.load(os.path.join(model_path, 'non_lora_trainables.bin'), map_location='cpu')
             else:
-                # this is probably from HF Hub
                 from huggingface_hub import hf_hub_download
                 def load_from_hf(repo_id, filename, subfolder=None):
                     cache_file = hf_hub_download(
@@ -81,8 +80,15 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             from peft import PeftModel
             print('Loading LoRA weights...')
             model = PeftModel.from_pretrained(model, model_path)
-            print('Merging LoRA weights...')
-            model = model.merge_and_unload()
+
+            # Keep LoRA unmerged: inference computation matches training-time validation.
+            # merge_and_unload() changes floating-point op order (two separate matmuls
+            # during training vs one merged matmul), causing ~1-4% AUC/mAP shift in bf16.
+            # PeftModel proxies generate()/get_model()/resize_token_embeddings() to the
+            # underlying LlavaLlamaForCausalLM, so all downstream code still works.
+            model.eval()
+            model = model.cuda()
+
             print('Model is loaded...')
         elif model_base is not None:
             # this may be mm projector only
