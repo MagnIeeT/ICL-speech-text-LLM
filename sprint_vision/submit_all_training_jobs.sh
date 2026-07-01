@@ -10,15 +10,15 @@
 # Pre-requisites (run these first if not done):
 #   1. SCP run_sprint_finetune.sh from local to cluster
 #   2. Generate colon exp4/exp5 JSONs:
-#       cd /home/harinis/LLaVA
+#       cd /home/harinisrireddykandula/LLaVA
 #       for EXP in 4 5; do
 #         python sprint_vision/data/medfmc_to_llava.py \
-#           --medfmc_root /home/harinis/MedFM/data/MedFMC \
+#           --medfmc_root /home/harinisrireddykandula/MedFM/data/MedFMC \
 #           --output_dir  sprint_vision/data \
 #           --tasks colon --shot 10 --exp ${EXP}
 #       done
 #   3. Verify chest exp1–5 JSONs exist:
-#       ls /home/harinis/LLaVA/sprint_vision/data/chest_train_shot10_exp*.json
+#       ls /home/harinisrireddykandula/LLaVA/sprint_vision/data/chest_train_shot10_exp*.json
 #
 # Usage:
 #   bash submit_all_training_jobs.sh
@@ -30,12 +30,12 @@ set -euo pipefail
 DRY_RUN=0
 [[ "${1:-}" == "--dry-run" ]] && DRY_RUN=1
 
-LLAVA_DIR="${LLAVA_DIR:-/home/harinis/LLaVA}"
+LLAVA_DIR="${LLAVA_DIR:-/home/harinisrireddykandula/LLaVA}"
 SPRINT_DIR="${LLAVA_DIR}/sprint_vision"
 SUBMIT="${SPRINT_DIR}/submit_training.sh"
 
 # Node assignment — distribute 20 jobs across two nodes (10 each).
-# Adjust if n10/n11 are unavailable; check with: qstat -n | grep harinis
+# Adjust if n10/n11 are unavailable; check with: qstat -n | grep harinisrireddykandula
 NODES=(n10 n10 n10 n10 n10 n11 n11 n11 n11 n11 n10 n10 n10 n10 n10 n11 n11 n11 n11 n11)
 CUDA_DEVS=(0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
 
@@ -112,10 +112,10 @@ if [ "${DRY_RUN}" -eq 0 ]; then
     done
     echo ""
     echo "Monitor with:"
-    echo "  qstat | grep harinis"
-    echo "  watch -n 30 'qstat | grep harinis'"
+    echo "  qstat | grep harinisrireddykandula"
+    echo "  watch -n 30 'qstat | grep harinisrireddykandula'"
     echo ""
-    echo "Logs in: /home/leapers/weights/harinis/llava/logs/$(date +%Y-%m-%d)/"
-    echo "Checkpoints in: /home/leapers/weights/harinis/llava/checkpoints/"
+    echo "Logs in: /home/harinisrireddykandula/llava/logs//$(date +%Y-%m-%d)/"
+    echo "Checkpoints in: //home/harinisrireddykandula/llava/checkpoints"
     echo "=========================================="
 fi

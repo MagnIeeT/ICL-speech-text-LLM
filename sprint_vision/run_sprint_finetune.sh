@@ -33,11 +33,11 @@
 # ============================================================
 # 1. PATHS  ← UPDATE THESE for your cluster
 # ============================================================
-LLAVA_DIR="${LLAVA_DIR:-/home/harinis/LLaVA}"
+LLAVA_DIR="${LLAVA_DIR:-/home/harinisrireddykandula/LLaVA}"
 PROJECT_DIR="${LLAVA_DIR}/sprint_vision"
-MEDFMC_ROOT="${MEDFMC_ROOT:-/home/harinis/MedFM/data/MedFMC}"
+MEDFMC_ROOT="${MEDFMC_ROOT:-/home/harinisrireddykandula/MedFM/data/MedFMC}"
 
-MODEL_PATH="${MODEL_PATH:-/home/harinis/.cache/huggingface/hub/llava-v1.5-13b}"
+MODEL_PATH="${MODEL_PATH:-/home/harinisrireddykandula/llava-v1.5-13b}"
 
 # ============================================================
 # 2. EXPERIMENT SETTINGS  (override via env vars)
@@ -84,6 +84,11 @@ VALIDATION_MODES="${VALIDATION_MODES:-fixed,original,fresh}"
 # Whether to compute AUC (colon) or mAP+AUC (chest/endo) during validation.
 # Adds ~1-6 extra minutes per epoch. Set to "false" to skip (use macro_F1 only).
 COMPUTE_VAL_AUC_MAP="${COMPUTE_VAL_AUC_MAP:-true}"
+# Batched per-class validation scoring. >1 = left-padded batched P(Yes) (faster
+# val AUC/mAP, logs [BATCH-VERIFY] OK on first sample); 1 = unbatched (default).
+# Exported so the deepspeed child + validation.py see it.
+SPRINT_PROBE_BATCH_SIZE="${SPRINT_PROBE_BATCH_SIZE:-1}"
+export SPRINT_PROBE_BATCH_SIZE
 
 # ── Set EXACTLY ONE of these to control the fine-tuning dataset size ──────────
 #
@@ -163,17 +168,38 @@ else
     fi
 fi
 
-# Checkpoint directory name mirrors DATA_SUFFIX — no silent name/data mismatch.
-# ICL_SHOTS suffix added when > 0 so different ICL-during-training runs don't overwrite each other.
-BASE_OUTPUT_DIR="/home/leapers/weights/harinis/llava"   # mirrors ICI BASE_OUTPUT_DIR
-# RUN_TAG: optional suffix to keep a NEW run from colliding with an existing
-# checkpoint dir (e.g. RUN_TAG=v2). Leave empty to reuse the canonical name.
+# Checkpoint directory naming — ICI-style: every launch gets its own UNIQUE folder,
+# so re-runs (e.g. 789-val vs 100-val) NEVER overwrite each other.
+#   {MMDD_HHMM}_llava-{dataset}-{strategy}-{suffix}[-icl{N}]_val{N}[-{RUN_TAG}]
+# Inference does NOT derive this name — point CHECKPOINT_PATH at the folder you want
+# (submit_inference.sh), exactly as the ICI orchestrator passes its run folder.
+BASE_OUTPUT_DIR="/home/harinisrireddykandula/llava"   # mirrors ICI BASE_OUTPUT_DIR
+# RUN_TAG: optional human label appended to the folder (e.g. RUN_TAG=v2). Uniqueness
+# is already guaranteed by the timestamp; this is just for readability.
 RUN_TAG="${RUN_TAG:-}"
 [ -n "${RUN_TAG}" ] && RUN_TAG="-${RUN_TAG}"
-if [ "${ICL_SHOTS}" -gt 0 ] 2>/dev/null; then
-    OUTPUT_DIR="${BASE_OUTPUT_DIR}/checkpoints/llava-${DATASET}-${STRATEGY}-${DATA_SUFFIX}-icl${ICL_SHOTS}${RUN_TAG}"
+
+# Validation-sample tag — this is the param that silently collided before
+# (789 all-data vs 100 subsample). 0 = use all; empty eval = validation off.
+if [ -z "${EVAL_DATA_PATH}" ]; then
+    VAL_TAG="valoff"
+elif [ "${MAX_VAL_SAMPLES}" = "0" ]; then
+    VAL_TAG="valall"
 else
-    OUTPUT_DIR="${BASE_OUTPUT_DIR}/checkpoints/llava-${DATASET}-${STRATEGY}-${DATA_SUFFIX}${RUN_TAG}"
+    VAL_TAG="val${MAX_VAL_SAMPLES}"
+fi
+
+# Descriptive run name (mirrors DATA_SUFFIX — no silent name/data mismatch).
+# ICL_SHOTS suffix added when > 0 so ICL-during-training runs are self-describing.
+RUN_NAME="llava-${DATASET}-${STRATEGY}-${DATA_SUFFIX}"
+if [ "${ICL_SHOTS}" -gt 0 ] 2>/dev/null; then
+    RUN_NAME="${RUN_NAME}-icl${ICL_SHOTS}"
+fi
+
+# OUTPUT_DIR may be set explicitly in the environment (e.g. to resume a specific
+# run with SPRINT_RESUME=true); otherwise a fresh timestamped folder is generated.
+if [ -z "${OUTPUT_DIR}" ]; then
+    OUTPUT_DIR="${BASE_OUTPUT_DIR}/checkpoints/$(date +%m%d_%H%M)_${RUN_NAME}_${VAL_TAG}${RUN_TAG}"
 fi
 
 # ============================================================
@@ -205,6 +231,7 @@ echo "  LoRA r          : ${LORA_R}"
 echo "  LoRA alpha      : ${LORA_ALPHA}"
 if [ -n "${EVAL_DATA_PATH}" ]; then
     echo "  Val data        : ${EVAL_DATA_PATH} (max ${MAX_VAL_SAMPLES} samples/epoch)"
+    echo "  Val probe batch : ${SPRINT_PROBE_BATCH_SIZE} (>1 = batched per-class scoring)"
 else
     echo "  Val data        : (none — set EVAL_DATA_PATH to enable)"
 fi

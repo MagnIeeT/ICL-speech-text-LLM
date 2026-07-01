@@ -315,3 +315,214 @@ def tie_diagnostics(scores_matrix, labels_matrix, label_names,
         "macro_auc_current": macro_auc_cur, "macro_auc_reference": macro_auc_ref,
         "map_current": mAP_cur, "map_reference": mAP_ref,
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CANONICAL metric aggregators — the SINGLE evaluation implementation shared by
+# BOTH training-time validation (validation.py::SPRInTValidationManager) AND
+# standalone inference (sprint_eval.py). Each takes per-sample result records and
+# returns the metric dict. Moved here so there is exactly one scoring code path
+# (advisor's requirement); the inference output format is unchanged because
+# sprint_eval's _compute_* now delegate to these verbatim.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _auc_0p5_fallback(scores: list, labels: list) -> float:
+    """Tie-averaged ROC-AUC (== sklearn/MedFMC); returns 0.5 for a single-class
+    column (legacy contract of the binary aggregator)."""
+    n_pos = sum(labels)
+    if n_pos == 0 or n_pos == len(labels):
+        return 0.5
+    return auc_avg_rank(scores, labels)
+
+
+def compute_binary_metrics(results: list, auc_token_id=None) -> dict:
+    """Accuracy, AUC, macro F1, sensitivity, specificity for binary tasks (colon).
+
+    Prediction for accuracy/sens/spec is the logit-argmax over the two answer-token
+    logits when both are saved (== MedFMC top-1), else the decoded-text prediction.
+    AUC/mAP (when auc_token_id is set) use the saved positive-class logit. This is
+    the canonical implementation called by both inference and training validation."""
+    total = len(results)
+    if total == 0:
+        return {"total": 0}
+
+    def _pred_for(r):
+        lp, ln = r.get("logit_pos"), r.get("logit_neg")
+        if lp is not None and ln is not None:
+            return "1" if lp > ln else "0"
+        return r["pred"]
+
+    preds = [_pred_for(r) for r in results]
+    gts   = [r["gt"]   for r in results]
+
+    # Self-consistency: logit-argmax vs decoded-text prediction (diagnostic only).
+    _logit_avail = sum(
+        1 for r in results
+        if r.get("logit_pos") is not None and r.get("logit_neg") is not None
+    )
+    _comparable = [
+        r for r in results
+        if r.get("logit_pos") is not None and r.get("logit_neg") is not None
+        and r.get("pred") in ("0", "1")
+    ]
+    if _comparable:
+        _disagree = sum(
+            1 for r in _comparable
+            if ("1" if r["logit_pos"] > r["logit_neg"] else "0") != r["pred"]
+        )
+        _rate = _disagree / len(_comparable)
+        print(
+            f"[SPRINT EVAL] colon self-consistency: logit-argmax vs text-parse "
+            f"disagree {_disagree}/{len(_comparable)} ({_rate*100:.2f}%)  "
+            f"[logits available: {_logit_avail}/{total}]"
+        )
+    else:
+        print(
+            f"[SPRINT EVAL] colon self-consistency: not computed "
+            f"(logits available: {_logit_avail}/{total}; "
+            f"parseable text preds: "
+            f"{sum(1 for r in results if r.get('pred') in ('0', '1'))}/{total}) "
+            f"— accuracy uses "
+            f"{'logit-argmax' if _logit_avail else 'text-parse fallback'}"
+        )
+
+    correct = sum(p == g for p, g in zip(preds, gts))
+    accuracy = correct / total
+
+    tp = sum(p == "1" and g == "1" for p, g in zip(preds, gts))
+    fp = sum(p == "1" and g == "0" for p, g in zip(preds, gts))
+    tn = sum(p == "0" and g == "0" for p, g in zip(preds, gts))
+    fn = sum(p == "0" and g == "1" for p, g in zip(preds, gts))
+
+    sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    specificity = tn / (tn + fp) if (tn + fp) > 0 else 0.0
+    precision   = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    f1_pos = 2 * precision * sensitivity / (precision + sensitivity) if (precision + sensitivity) > 0 else 0.0
+
+    prec_neg = tn / (tn + fn) if (tn + fn) > 0 else 0.0
+    rec_neg  = tn / (tn + fp) if (tn + fp) > 0 else 0.0
+    f1_neg = 2 * prec_neg * rec_neg / (prec_neg + rec_neg) if (prec_neg + rec_neg) > 0 else 0.0
+    macro_f1 = (f1_pos + f1_neg) / 2
+
+    metrics = {
+        "accuracy":            accuracy,
+        "accuracy_aacc":       accuracy,   # binary: per-class-avg accuracy == accuracy
+        "accuracy_exactmatch": accuracy,   # binary: exact-match == accuracy
+        "macro_f1":    macro_f1,
+        "sensitivity": sensitivity,
+        "specificity": specificity,
+        "tp": tp, "fp": fp, "tn": tn, "fn": fn,
+        "total":       total,
+    }
+
+    if auc_token_id is not None:
+        valid_pairs = [
+            (r["logit_pos"], int(r["gt"]))
+            for r in results
+            if r.get("logit_pos") is not None and r["gt"] in ("0", "1")
+        ]
+        if len(valid_pairs) > 10:
+            scores_list = [p[0] for p in valid_pairs]
+            labels_list = [p[1] for p in valid_pairs]
+            auc = _auc_0p5_fallback(scores_list, labels_list)
+            ap_pos = compute_ap(scores_list, labels_list)
+            ap_neg = compute_ap([-s for s in scores_list],
+                                [1 - l for l in labels_list])
+            metrics["auc"]       = auc
+            metrics["macro_auc"] = auc                 # binary: macro_AUC == binary AUC
+            metrics["map"]       = (ap_pos + ap_neg) / 2
+            metrics["ap_pos"]    = ap_pos
+
+    return metrics
+
+
+def compute_multilabel_metrics(results: list, valid_labels: list,
+                               tie_header: str = "INFERENCE ") -> dict:
+    """Exact-match accuracy, aACC, macro F1, and (when per-class scores are present)
+    per-class AUC + mAP for multi-label tasks (chest/endo). Canonical implementation
+    called by both inference and training validation."""
+    total = len(results)
+    if total == 0:
+        return {"total": 0}
+
+    n_labels = len(valid_labels)
+    has_scores = bool(results) and all("scores" in r for r in results)
+
+    if has_scores:
+        y_true        = [r["gt_binary"]   for r in results]
+        y_pred        = [r["pred_binary"] for r in results]
+        scores_matrix = [r["scores"]      for r in results]
+    else:
+        y_true = []
+        y_pred = []
+        for r in results:
+            gt_set   = set(r.get("gt_parsed",   []))
+            pred_set = set(r.get("pred_parsed", []))
+            y_true.append([1 if lbl in gt_set   else 0 for lbl in valid_labels])
+            y_pred.append([1 if lbl in pred_set else 0 for lbl in valid_labels])
+        scores_matrix = None
+
+    exact_match = sum(gt == pd for gt, pd in zip(y_true, y_pred)) / total
+
+    per_label = {}
+    f1_sum  = 0.0
+    acc_sum = 0.0
+    auc_sum = 0.0
+    ap_sum  = 0.0
+    n_auc   = 0
+    n_ap    = 0
+    for j, lbl in enumerate(valid_labels):
+        tp = sum(y_true[i][j] == 1 and y_pred[i][j] == 1 for i in range(total))
+        fp = sum(y_true[i][j] == 0 and y_pred[i][j] == 1 for i in range(total))
+        tn = sum(y_true[i][j] == 0 and y_pred[i][j] == 0 for i in range(total))
+        fn = sum(y_true[i][j] == 1 and y_pred[i][j] == 0 for i in range(total))
+
+        prec = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+        rec  = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        f1   = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
+        acc_j = (tp + tn) / total
+
+        entry = {
+            "f1": round(f1, 4),
+            "accuracy": round(acc_j, 4),
+            "tp": tp, "fp": fp, "tn": tn, "fn": fn,
+        }
+
+        if scores_matrix is not None:
+            col_scores = [scores_matrix[i][j] for i in range(total)]
+            col_labels = [y_true[i][j] for i in range(total)]
+            n_pos = sum(col_labels)
+            if 0 < n_pos < total:
+                auc_j = _auc_0p5_fallback(col_scores, col_labels)
+                ap_j  = compute_ap(col_scores, col_labels)
+                entry["auc"] = round(auc_j, 4)
+                entry["ap"]  = round(ap_j, 4)
+                auc_sum += auc_j
+                ap_sum  += ap_j
+                n_auc += 1
+                n_ap  += 1
+            else:
+                entry["auc"] = None
+                entry["ap"]  = None
+
+        per_label[lbl] = entry
+        f1_sum += f1
+        acc_sum += acc_j
+
+    macro_f1 = f1_sum / n_labels if n_labels > 0 else 0.0
+    aacc = acc_sum / n_labels if n_labels > 0 else 0.0
+
+    out = {
+        "accuracy":            aacc,
+        "accuracy_aacc":       aacc,
+        "accuracy_exactmatch": exact_match,
+        "macro_f1":  macro_f1,
+        "per_label": per_label,
+        "total":     total,
+    }
+
+    if scores_matrix is not None and n_auc > 0:
+        out["macro_auc"] = auc_sum / n_auc
+        out["map"]       = ap_sum  / n_ap
+
+    return out

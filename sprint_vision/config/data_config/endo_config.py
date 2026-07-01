@@ -1,7 +1,7 @@
 from .master_config import DatasetConfig, DatasetName, render_instruction
 
 # Column order confirmed from:
-#   /home/harinis/MedFM/medfmc/datasets/medical_datasets.py  class Endoscopy
+#   /home/harinisrireddykandula/MedFM/medfmc/datasets/medical_datasets.py  class Endoscopy
 ENDO_CATEGORY_ORDER = ["ulcer", "erosion", "polyp", "tumor"]
 assert len(ENDO_CATEGORY_ORDER) == 4
 

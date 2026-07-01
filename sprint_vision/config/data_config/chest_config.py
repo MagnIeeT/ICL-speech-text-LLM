@@ -1,7 +1,7 @@
 from .master_config import DatasetConfig, DatasetName, render_instruction
 
 # Column order confirmed from:
-#   /home/harinis/MedFM/medfmc/datasets/medical_datasets.py  class Chest19
+#   /home/harinisrireddykandula/MedFM/medfmc/datasets/medical_datasets.py  class Chest19
 CHEST_DISEASE_ORDER = [
     "pleural_effusion", "nodule", "pneumonia", "cardiomegaly",
     "hilar_enlargement", "fracture_old", "fibrosis",

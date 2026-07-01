@@ -35,8 +35,11 @@ from utils.evaluation_utils import (
     parse_multi_label,
     compute_all_metrics,
     compute_auc_trapz,
+    auc_avg_rank,
     compute_ap,
     tie_diagnostics,
+    compute_binary_metrics,
+    compute_multilabel_metrics,
 )
 from dataload.medfmc_prompts import build_per_class_prompt, sprint_log, score_probes_pyes
 
@@ -102,12 +105,20 @@ class SPRInTValidationManager:
         path = self._eval_data_path
         if not path or not os.path.exists(path):
             return []
+        self._print(f"Loading val split for {self._dataset_name}: {path}")
         with open(path, "r") as f:
             data = json.load(f)
+        total_in_file = len(data)
+        self._print(f"Loaded {total_in_file} examples from {self._dataset_name} val")
         n = self._max_val_samples
         if n > 0 and len(data) > n:
             rng = random.Random(42)
             data = rng.sample(data, n)
+            self._print(
+                f"[VAL-SUBSAMPLE] random.Random(42).sample → {n} of {total_in_file}"
+                f" (reproduces training validation subset)"
+            )
+        self._print(f"Loaded {self._dataset_name} VAL: {len(data)} samples")
         self._val_data = data
         return data
 
@@ -118,8 +129,7 @@ class SPRInTValidationManager:
         from llava.mm_utils import process_images
         image = Image.open(img_path).convert("RGB")
         tensor = process_images([image], self.image_processor, self.data_args)[0]
-        model_dtype = next(self.model.parameters()).dtype
-        return tensor.unsqueeze(0).to(self.model.device, dtype=model_dtype)
+        return tensor.unsqueeze(0).to(dtype=self.model.dtype, device='cuda')
 
     # ── Text-generation validation (one mode) ─────────────────────────────────
 
@@ -138,7 +148,6 @@ class SPRInTValidationManager:
         max_new  = 64 if self._is_multi_label else 10
         val_data = self._load_val_data()
         results  = []
-        _logged_val = 0   # throttle: log full before/after for the first val item per mode
 
         with torch.no_grad():
             for item in _tqdm(val_data, desc="Evaluating", dynamic_ncols=True):
@@ -162,23 +171,6 @@ class SPRInTValidationManager:
                 human_text = _raw_human
                 if self.symbol_manager is not None and symbols:
                     human_text = self.symbol_manager.apply_to_text(human_text, symbols)
-                if _logged_val < 1:
-                    if _raw_human == human_text:
-                        # No substitution in this mode (e.g. 'original' / regular):
-                        # print the prompt once instead of identical before+after.
-                        sprint_log(
-                            "VAL-TEXT", mode_symbols=symbols or {},
-                            prompt_built_from="cfg.instruction (live def block)",
-                            note="no symbol substitution in this mode (before == after)",
-                            prompt=human_text,
-                        )
-                    else:
-                        sprint_log(
-                            "VAL-TEXT", mode_symbols=symbols or {},
-                            prompt_built_from="cfg.instruction (live def block)",
-                            before=_raw_human, after=human_text,
-                        )
-                    _logged_val += 1
 
                 conv = conv_templates["vicuna_v1"].copy()
                 if DEFAULT_IMAGE_TOKEN not in human_text:
@@ -189,7 +181,7 @@ class SPRInTValidationManager:
 
                 input_ids = tokenizer_image_token(
                     prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt"
-                ).unsqueeze(0).to(self.model.device)
+                ).unsqueeze(0).cuda()
 
                 # PEFT 0.7.1 + LLaVA inputs_embeds path returns only new tokens.
                 # Decode directly — no input prefix in the output tensor.
@@ -240,21 +232,49 @@ class SPRInTValidationManager:
 
     # ── AUC inference (colon binary) ──────────────────────────────────────────
 
-    def _run_colon_auc(self) -> dict:
+    def _run_colon_auc(self, mapping: dict = None, return_details: bool = False):
         """
         Binary AUC for colon: capture token-'1' logit at step 0.
         Zero extra image forward passes beyond the text-gen pass already run.
+
+        mapping:        None (training / 'original' mode) → bare "0"/"1" answer
+                        tokens, raw prompt. A dict ('fixed'/'fresh' symbol modes,
+                        inference only) → answer tokens are the symbols for "0"/"1"
+                        and the human prompt is symbol-substituted, mirroring the
+                        old sprint_eval colon symbol path.
+        return_details: False (training) → returns the small {AUC, macro_auc, mAP,
+                        accuracy_aacc} dict UNCHANGED. True (inference) → returns
+                        (full_metrics, per_sample_records) so sprint_eval can write
+                        the same results JSON. The scoring is identical either way.
         """
         from llava.conversation import conv_templates
         from llava.mm_utils import tokenizer_image_token
         from llava.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN
 
-        tok_ids = self.tokenizer.encode("1", add_special_tokens=False)
-        tok1_id = next((i for i in tok_ids if i != 29871), tok_ids[0])
+        def _first_non_space(text):
+            ids = self.tokenizer.encode(text, add_special_tokens=False)
+            return next((i for i in ids if i != 29871), ids[0] if ids else None)
 
-        scores, labels = [], []
+        # Answer tokens: bare "0"/"1" (original/training) or the symbols mapped to
+        # them (fixed/fresh). Skips the SentencePiece leading-space token (29871).
+        tok1_id = _first_non_space(mapping.get("1", "1") if mapping else "1")
+        tok0_id = _first_non_space(mapping.get("0", "0") if mapping else "0")
+
+        if return_details:
+            print(
+                f"  Answer tokens: neg={tok0_id} '{self.tokenizer.decode([tok0_id])}'  "
+                f"pos={tok1_id} '{self.tokenizer.decode([tok1_id])}'"
+            )
+
+        # Per-sample result records (logit_pos/logit_neg/argmax-pred/gt), then the
+        # SHARED canonical aggregator (utils/evaluation_utils.compute_binary_metrics)
+        # — the SAME code training and inference use (one evaluation implementation).
+        from tqdm.auto import tqdm as _tqdm
+        results = []
         with torch.no_grad():
-            for item in self._load_val_data():
+            _val_data_colon = self._load_val_data()
+            _desc = f"{self._dataset_name} | original | 0-shot"
+            for i, item in enumerate(_tqdm(_val_data_colon, desc=_desc)):
                 img_path = os.path.join(self.data_args.image_folder, item.get("image", ""))
                 try:
                     image_tensor = self._load_image_tensor(img_path)
@@ -262,6 +282,10 @@ class SPRInTValidationManager:
                     continue
 
                 human_text = item["conversations"][0]["value"]
+                # Symbol modes substitute the human prompt exactly as training did
+                # (no-op when mapping is None → byte-identical to the original path).
+                if mapping and self.symbol_manager is not None:
+                    human_text = self.symbol_manager.apply_to_text(human_text, mapping)
                 conv = conv_templates["vicuna_v1"].copy()
                 if DEFAULT_IMAGE_TOKEN not in human_text:
                     human_text = DEFAULT_IMAGE_TOKEN + "\n" + human_text
@@ -271,19 +295,66 @@ class SPRInTValidationManager:
 
                 input_ids = tokenizer_image_token(
                     prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt"
-                ).unsqueeze(0).to(self.model.device)
+                ).unsqueeze(0).cuda()
+
+                if return_details and i < 2:
+                    print("=" * 70)
+                    print(f"[SPRINT EVAL] sample={i} (logit-AUC mode)")
+                    sym_diag = str(mapping) if mapping else "NONE (regular strategy)"
+                    print(f"[SPRINT EVAL] ACTIVE SYMBOL MAPPING: {sym_diag}")
+                    raw_instr = item["conversations"][0]["value"].replace(DEFAULT_IMAGE_TOKEN, "").strip()
+                    print(f"[SPRINT EVAL] HUMAN INSTRUCTION (raw, BEFORE replacement):\n{raw_instr}")
+                    print(f"[SPRINT EVAL] FULL PROMPT SENT TO MODEL (AFTER replacement):\n{human_text}")
+                    gt_show = item["conversations"][1]["value"].strip()
+                    gt_in_mapping = mapping.get(gt_show) if mapping else None
+                    print(f"[SPRINT EVAL] GPT ground truth : {gt_show!r}  |  any GT token in sym_mappings: {gt_in_mapping}")
+                    print("=" * 70)
 
                 out = self.model.generate(
                     inputs=input_ids, images=image_tensor,
                     max_new_tokens=10, do_sample=False,
                     output_scores=True, return_dict_in_generate=True,
                 )
-                scores.append(out.scores[0][0][tok1_id].item())
+                l1 = out.scores[0][0][tok1_id].item()
+                l0 = out.scores[0][0][tok0_id].item()
                 gt = item["conversations"][1]["value"].strip()
-                labels.append(1 if gt == "1" else 0)
+                pred = "1" if l1 > l0 else "0"   # argmax(0,1)
+                gt_norm = "1" if gt == "1" else "0"
+                rec = {
+                    "pred":      pred,
+                    "gt":        gt_norm,
+                    "logit_pos": l1,
+                    "logit_neg": l0,
+                }
+                if return_details:
+                    # Decode the generated text only so the inference JSON keeps its
+                    # raw_output/decoded fields (not consumed by recompute_auc.py; the
+                    # reported accuracy uses logit-argmax via compute_binary_metrics).
+                    raw_text = self.tokenizer.batch_decode(
+                        out.sequences, skip_special_tokens=True
+                    )[0].strip()
+                    decoded = (
+                        self.symbol_manager.convert_symbols_back(raw_text, mappings=mapping)
+                        if (mapping and self.symbol_manager is not None) else raw_text
+                    )
+                    rec.update({
+                        "id":         item.get("id", f"sample_{len(results)}"),
+                        "image":      item.get("image", ""),
+                        "raw_output": raw_text,
+                        "decoded":    decoded,
+                        "correct":    pred == gt_norm,
+                    })
+                results.append(rec)
 
-        auc = compute_auc_trapz(scores, labels)
-        return {"AUC": round(auc, 6) if not math.isnan(auc) else 0.0}
+        m = compute_binary_metrics(results, auc_token_id=1)
+        if return_details:
+            return m, results
+        return {
+            "AUC":           round(m.get("auc", m.get("macro_auc", 0.0)), 6),
+            "macro_auc":     round(m.get("macro_auc", 0.0), 6),
+            "mAP":           round(m.get("map", 0.0), 6),
+            "accuracy_aacc": round(m.get("accuracy_aacc", 0.0), 6),
+        }
 
     # ── Influence ablation (proves defs/symbols move P(Yes)) ──────────────────
 
@@ -298,7 +369,7 @@ class SPRInTValidationManager:
         prompt = conv.get_prompt()
         input_ids = tokenizer_image_token(
             prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt"
-        ).unsqueeze(0).to(self.model.device)
+        ).unsqueeze(0).cuda()
         out = self.model.generate(
             inputs=input_ids, images=image_tensor,
             max_new_tokens=1, do_sample=False,
@@ -360,7 +431,8 @@ class SPRInTValidationManager:
 
     # ── AUC/mAP inference (chest/endo per-class binary queries) ───────────────
 
-    def _run_multilabel_auc_map(self, sym_mappings: dict = None) -> dict:
+    def _run_multilabel_auc_map(self, sym_mappings: dict = None,
+                                return_details: bool = False):
         """
         Per-class binary "Does this show <class>?  Answer Yes or No." queries.
 
@@ -419,16 +491,11 @@ class SPRInTValidationManager:
         all_scores = [[0.0] * n_cls for _ in range(n)]
         all_labels = [[0]   * n_cls for _ in range(n)]
 
-        # Influence ablation on the first val sample (first few classes) — logs
-        # how much the def block / symbols move P(Yes). ~6-9 extra 1-token passes.
-        if val_data:
-            try:
-                self._run_val_influence_ablation(val_data[0], sym_mappings, yes_id, no_id)
-            except Exception as _e:
-                self._print(f"[SPRINT::VAL-ABLATION] skipped ({_e})")
 
+        from tqdm.auto import tqdm as _tqdm
+        _desc = f"{self._dataset_name} | per-class AUC/mAP | 0-shot"
         with torch.no_grad():
-            for i, item in enumerate(val_data):
+            for i, item in enumerate(_tqdm(val_data, desc=_desc)):
                 img_path = os.path.join(self.data_args.image_folder, item.get("image", ""))
                 try:
                     image_tensor = self._load_image_tensor(img_path)
@@ -439,6 +506,27 @@ class SPRInTValidationManager:
                 gt_parts = {p.strip() for p in gt_text.replace(";", ",").split(",") if p.strip()}
                 for j, lbl in enumerate(self._label_names):
                     all_labels[i][j] = 1 if lbl in gt_parts else 0
+
+                # Per-sample diagnostic — first 2 samples: show the first-class probe text
+                if return_details and i < 2:
+                    cls0 = (self._cfg.label_names[0] if self._cfg is not None else self._label_names[0])
+                    lbl0 = self._label_names[0]
+                    if self._cfg is not None and self._cfg.class_definitions:
+                        _p0 = build_per_class_prompt(
+                            cfg=self._cfg, dataset=self._dataset_name, class_name=cls0,
+                            sym_mappings=sym_mappings,
+                            apply_to_text_fn=(self.symbol_manager.apply_to_text
+                                              if self.symbol_manager is not None else None),
+                            image_token=DEFAULT_IMAGE_TOKEN,
+                        )
+                    else:
+                        _p0 = (DEFAULT_IMAGE_TOKEN + "\n"
+                               + f"Does this {modality} show {lbl0.replace('_', ' ')}? Answer Yes or No.")
+                    print("=" * 70)
+                    print(f"[SPRINT EVAL] sample={i} (per-class binary mode, HVB-style probe)")
+                    print(f"[SPRINT EVAL] GT ground truth : {gt_text!r}")
+                    print(f"[SPRINT EVAL] First-class probe (class={cls0!r}):\n{_p0}")
+                    print("=" * 70)
 
                 # Batched per-class scoring (opt-in: SPRINT_PROBE_BATCH_SIZE>1).
                 # Builds every class probe (same prompt logic as below), scores
@@ -461,9 +549,6 @@ class SPRInTValidationManager:
                             _ht = (DEFAULT_IMAGE_TOKEN + "\n"
                                    + f"Does this {modality} show {lbl.replace('_', ' ')}? Answer Yes or No.")
                         _prompts.append(_ht)
-                        if i == 0:
-                            sprint_log("VAL-AUC-PROBE", dataset=self._dataset_name, cls=orig_lbl,
-                                       sym_used=bool(sym_mappings), probe=_ht)
                     _sc = score_probes_pyes(
                         _prompts, self.tokenizer, self.model, image_tensor, None,
                         no_id, yes_id, batch_size=_vbatch, verify=(i == 0),
@@ -493,11 +578,6 @@ class SPRInTValidationManager:
                             DEFAULT_IMAGE_TOKEN + "\n"
                             + f"Does this {modality} show {lbl.replace('_', ' ')}? Answer Yes or No."
                         )
-                    if i == 0:
-                        sprint_log(
-                            "VAL-AUC-PROBE", dataset=self._dataset_name, cls=orig_lbl,
-                            sym_used=bool(sym_mappings), probe=human_text,
-                        )
                     conv = conv_templates["vicuna_v1"].copy()
                     conv.append_message(conv.roles[0], human_text)
                     conv.append_message(conv.roles[1], None)
@@ -505,7 +585,7 @@ class SPRInTValidationManager:
 
                     input_ids = tokenizer_image_token(
                         prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt"
-                    ).unsqueeze(0).to(self.model.device)
+                    ).unsqueeze(0).cuda()
 
                     out = self.model.generate(
                         inputs=input_ids, images=image_tensor,
@@ -520,20 +600,6 @@ class SPRInTValidationManager:
                     exp_yes = math.exp(l_yes - m_val)
                     all_scores[i][j] = exp_yes / (exp_no + exp_yes)
 
-                # Model prediction log (first 3 val samples): what the model
-                # predicts per class vs ground truth, with the P(Yes) scores that
-                # feed AUC/mAP. Lets sir see predictions, not just metrics.
-                if i < 3:
-                    names = (self._cfg.label_names if self._cfg is not None
-                             else self._label_names)
-                    gt_present   = [names[j] for j in range(n_cls) if all_labels[i][j] == 1]
-                    pred_present = [names[j] for j in range(n_cls) if all_scores[i][j] >= 0.5]
-                    p_yes = {names[j]: round(all_scores[i][j], 3) for j in range(n_cls)}
-                    sprint_log(
-                        "VAL-PRED", sample=i, image=item.get("image", ""),
-                        gt_present=gt_present, pred_present=pred_present,
-                        per_class_P_yes=p_yes,
-                    )
 
                 # Free image tensor after all 19 (or N) class queries for this sample.
                 # Flush fragmented reserved-but-unallocated blocks every 10 samples so
@@ -546,31 +612,52 @@ class SPRInTValidationManager:
         if _vbatch > 1:
             self.model.config.tokenizer_padding_side = _saved_pad_side
 
-        auc_per_cls, ap_per_cls = [], []
-        for j in range(n_cls):
-            s_j   = [all_scores[i][j] for i in range(n)]
-            l_j   = [all_labels[i][j] for i in range(n)]
-            auc_j = compute_auc_trapz(s_j, l_j)
-            ap_j  = compute_ap(s_j, l_j)
-            if not math.isnan(auc_j):
-                auc_per_cls.append(auc_j)
-            ap_per_cls.append(ap_j)
-
-        macro_auc = sum(auc_per_cls) / len(auc_per_cls) if auc_per_cls else 0.0
-        mAP       = sum(ap_per_cls)  / len(ap_per_cls)  if ap_per_cls  else 0.0
-
-        # Tie diagnostic: how many P(Yes) ties occur and whether they move the
-        # reported macro_AUC / mAP vs the tie-correct (sklearn-equiv) reference.
-        try:
-            tie_diagnostics(
-                all_scores, all_labels, self._label_names,
-                auc_fn=compute_auc_trapz, ap_fn=compute_ap,
-                print_fn=self._print, header="VALIDATION ",
-            )
-        except Exception as _e:
-            self._print(f"[SPRINT::TIE-DIAG] skipped ({_e})")
-
-        return {"macro_auc": round(macro_auc, 6), "mAP": round(mAP, 6)}
+        # Per-sample result records (P(Yes) scores + 0.5-threshold preds + GT),
+        # then the SHARED canonical aggregator
+        # (utils/evaluation_utils.compute_multilabel_metrics) — the SAME code
+        # training and inference use (one evaluation implementation). It also runs
+        # the tie diagnostic internally (header "VALIDATION ").
+        # scores + gt_binary are the only fields recompute_auc.py reads; the rest
+        # (id/image/pred_parsed/gt_parsed/pred/correct) are added under
+        # return_details so the inference JSON keeps its existing keys. compute_*
+        # only reads scores/gt_binary/pred_binary, so the extra keys never affect
+        # the metric values (training output is unchanged).
+        results = []
+        for i in range(n):
+            pred_binary = [1 if all_scores[i][j] >= 0.5 else 0 for j in range(n_cls)]
+            rec = {
+                "scores":      all_scores[i],
+                "gt_binary":   all_labels[i],
+                "pred_binary": pred_binary,
+            }
+            if return_details:
+                _item = val_data[i] if i < len(val_data) else {}
+                pred_parsed = [self._label_names[j] for j in range(n_cls) if pred_binary[j] == 1]
+                gt_parsed   = [self._label_names[j] for j in range(n_cls) if all_labels[i][j] == 1]
+                rec.update({
+                    "id":          _item.get("id", f"sample_{i}"),
+                    "image":       _item.get("image", ""),
+                    "pred_parsed": pred_parsed,
+                    "gt_parsed":   gt_parsed,
+                    "pred":        ", ".join(pred_parsed) if pred_parsed else "none",
+                    "correct":     pred_binary == all_labels[i],
+                })
+                if i < 3:
+                    p_yes = {self._label_names[j]: round(all_scores[i][j], 3) for j in range(n_cls)}
+                    sprint_log(
+                        "INFER-PRED", sample=i, image=_item.get("image", ""),
+                        gt_present=sorted(gt_parsed), pred_present=sorted(pred_parsed),
+                        per_class_P_yes=p_yes,
+                    )
+            results.append(rec)
+        m = compute_multilabel_metrics(results, self._label_names, tie_header="VALIDATION ")
+        if return_details:
+            return m, results
+        return {
+            "macro_auc":     round(m.get("macro_auc", 0.0), 6),
+            "mAP":           round(m.get("map", 0.0), 6),
+            "accuracy_aacc": round(m.get("accuracy_aacc", 0.0), 6),
+        }
 
     # ── Per-epoch orchestration ───────────────────────────────────────────────
 
@@ -762,6 +849,72 @@ class SPRInTValidationManager:
             },
             "auc_map": auc_map_results,
         }
+
+    # ── Inference entry point (thin; mirrors ICI inference.py) ────────────────
+
+    def run_inference(self, *, modes, mode_mappings, strategy=None):
+        """
+        Single evaluation entry point for standalone inference (0-shot).
+
+        Mirrors ICI's inference.py: sprint_eval.py loads the model/checkpoint,
+        builds this manager (with eval_data_path = the test split and
+        max_val_samples = 0 for the full split), calls run_inference(), and writes
+        the results JSON. ALL scoring runs through the SAME training methods —
+        _run_colon_auc (colon) and _run_multilabel_auc_map (chest/endo) — that
+        run_comprehensive_validation uses; this method only adds the per-mode loop
+        and collects their per-sample records (return_details=True). There is no
+        separate inference scorer.
+
+        Returns:
+            all_modes = {mode: {"metrics": {...}, "results": [...], "mapping": {...}}}
+
+        consumed verbatim by sprint_eval._save_multimode_results (unchanged JSON).
+        """
+        self.model.eval()
+
+        # ── Symbol mapping diagnostic (mirrors old sprint_eval1.py) ──────────
+        print("=" * 70)
+        print(f"[SPRINT EVAL] === SYMBOL MAPPING DIAGNOSTIC ===")
+        print(f"[SPRINT EVAL] Dataset   : {self._dataset_name}")
+        if strategy:
+            print(f"[SPRINT EVAL] Strategy  : {strategy}")
+        for _m in modes:
+            _mp = mode_mappings.get(_m)
+            if _mp:
+                print(f"[SPRINT EVAL] mode={_m} sym_mappings : {str(_mp)[:120]}")
+            else:
+                print(f"[SPRINT EVAL] mode={_m} sym_mappings : NONE (regular / dynamic strategy — original labels used)")
+        _infer_mode = "per-class binary probe" if self._is_multi_label else "standard logit-AUC"
+        print(f"[SPRINT EVAL] Inference mode: {_infer_mode}")
+        print("=" * 70)
+
+        all_modes = {}
+        for _mode in modes:
+            _map = mode_mappings.get(_mode)
+            if _mode in ("fixed", "fresh") and not _map:
+                print(f"WARNING: mode '{_mode}' requested but mapping is empty "
+                      f"(no trained symbols available) — skipping.")
+                continue
+
+            print("\n" + "=" * 70)
+            print(f"[SPRINT EVAL] === EVALUATION MODE: {_mode} ===")
+
+            if self._is_multi_label:
+                # original → no probe symbols; fixed/fresh → symbol-substituted probe.
+                metrics, records = self._run_multilabel_auc_map(
+                    sym_mappings=(_map or {}), return_details=True
+                )
+            else:
+                # colon: original → bare 0/1 tokens; fixed/fresh → symbol tokens + prompt.
+                metrics, records = self._run_colon_auc(
+                    mapping=_map, return_details=True
+                )
+
+            all_modes[_mode] = {"metrics": metrics, "results": records,
+                                "mapping": _map or {}}
+
+        self.model.train()
+        return all_modes
 
     # ── End-of-training summaries ─────────────────────────────────────────────
 

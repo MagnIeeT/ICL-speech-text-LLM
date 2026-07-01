@@ -5,16 +5,16 @@ Usage
 -----
 Shot-based — MedFMC pre-defined single split (train_20.txt only):
     python medfmc_to_llava.py \
-        --medfmc_root /home/harinis/MedFM/data/MedFMC \
-        --output_dir  /home/harinis/LLaVA/sprint_vision/data \
+        --medfmc_root /home/harinisrireddykandula/MedFM/data/MedFMC \
+        --output_dir  /home/harinisrireddykandula/LLaVA/sprint_vision/data \
         --tasks       colon,chest,endo \
         --shot        20
     → writes: colon_train_shot20.json, colon_test.json, ...
 
 Shot-based — MedFMC repeated-experiment splits (1/5/10-shot, exp 1–5):
     python medfmc_to_llava.py \
-        --medfmc_root /home/harinis/MedFM/data/MedFMC \
-        --output_dir  /home/harinis/LLaVA/sprint_vision/data \
+        --medfmc_root /home/harinisrireddykandula/MedFM/data/MedFMC \
+        --output_dir  /home/harinisrireddykandula/LLaVA/sprint_vision/data \
         --tasks       colon \
         --shot 10 --exp 1
     → reads: colon_10-shot_train_exp1.txt
@@ -24,16 +24,16 @@ Shot-based — MedFMC repeated-experiment splits (1/5/10-shot, exp 1–5):
 
 Percentage-based training subset (P% of trainval.txt, stratified by label):
     python medfmc_to_llava.py \
-        --medfmc_root /home/harinis/MedFM/data/MedFMC \
-        --output_dir  /home/harinis/LLaVA/sprint_vision/data \
+        --medfmc_root /home/harinisrireddykandula/MedFM/data/MedFMC \
+        --output_dir  /home/harinisrireddykandula/LLaVA/sprint_vision/data \
         --tasks       colon,chest,endo \
         --train_percent 100
     → writes: colon_train_percent100.json, colon_test.json, ...
 
 Random N-shot (repeat experiment — matches MedFMC paper §4):
     python medfmc_to_llava.py \
-        --medfmc_root /home/harinis/MedFM/data/MedFMC \
-        --output_dir  /home/harinis/LLaVA/sprint_vision/data \
+        --medfmc_root /home/harinisrireddykandula/MedFM/data/MedFMC \
+        --output_dir  /home/harinisrireddykandula/LLaVA/sprint_vision/data \
         --tasks       colon \
         --n_shot 10 --seed 1
     → writes: colon_train_rshot10_seed1.json, colon_test.json
@@ -59,7 +59,7 @@ Dataset types
               "13333_2021.11_0003_55200268.png 0 0 0 0"
               → filename + 4 binary values as SPACE-SEPARATED fields.
 
-    Class names from /home/harinis/MedFM/medfmc/datasets/medical_datasets.py
+    Class names from /home/harinisrireddykandula/MedFM/medfmc/datasets/medical_datasets.py
     (Chest19 and Endoscopy classes, confirmed 2026-05-26).
 
     Ground-truth stored as comma-separated category names:
@@ -476,6 +476,26 @@ def main():
             seed=args.seed,
         )
         total += n
+
+        # ── Validation JSON (MedFMC repeated-experiment val split) ────────────────
+        # run_sprint_finetune.sh expects {task}_val_shot{N}_exp{K}.json for per-epoch
+        # validation. The val split .txt ships with the official release; convert it
+        # so SPRInTValidationCallback has data (otherwise validation is skipped).
+        if args.exp is not None:
+            val_txt  = os.path.join(task_dir, f"{task}_{args.shot}-shot_val_exp{args.exp}.txt")
+            val_json = os.path.join(args.output_dir, f"{task}_val_shot{args.shot}_exp{args.exp}.json")
+            if os.path.exists(val_txt):
+                n = convert_to_llava(
+                    task_name=f"{task}_val",
+                    task=task,
+                    input_txt=val_txt,
+                    img_rel_prefix=img_rel_prefix,
+                    output_json=val_json,
+                )
+                total += n
+            else:
+                print(f"  ⚠️  Val split not found: {val_txt}")
+                print(f"      → per-epoch validation will be SKIPPED for this run.")
 
         n = convert_to_llava(
             task_name=f"{task}_test",

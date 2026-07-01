@@ -11,6 +11,7 @@ imported here at call time (deferred) to avoid a circular import at module load.
 
 import os
 import sys
+import math
 import shutil
 
 import transformers
@@ -43,7 +44,11 @@ class SPRInTSymbolEpochCallback(transformers.TrainerCallback):
         self.symbol_manager = symbol_manager
 
     def on_epoch_begin(self, args, state, control, **kwargs):
-        epoch = int(state.epoch) if state.epoch is not None else 0
+        # round(), NOT int(): HF's state.epoch is a float accumulator that can sit a
+        # hair below the integer at the epoch boundary (e.g. 2.9999), so int() floors
+        # epoch 3 → 2, overwriting that history slot and dropping a key. round() maps
+        # 2.9999 → 3 so every epoch gets its own distinct symbol set (keys 0..N-1).
+        epoch = round(state.epoch) if state.epoch is not None else 0
         self.symbol_manager.get_symbols_for_epoch(epoch, force_new_symbols=True)
         if args.local_rank in (-1, 0):
             _rank0_print(
@@ -176,6 +181,7 @@ class SPRInTValidationCallback(transformers.TrainerCallback):
         self._best_score    = -1.0
         self._best_epoch    = None
         self._is_new_best   = False
+        self._warned_no_val = False
 
         # Load dataset config to determine label vocabulary, multi-label flag, and primary metric.
         try:
@@ -225,6 +231,52 @@ class SPRInTValidationCallback(transformers.TrainerCallback):
             cfg              = _cfg,
         )
 
+        # ── Cross-task validation monitors (Change 2) ─────────────────────────
+        # ALSO validate on the OTHER MedFMC datasets each epoch (read-only).
+        # best-epoch / checkpoint-best stay driven by the TRAINED dataset ONLY.
+        # Default ON; disable with SPRINT_CROSS_TASK_VAL=false. A dataset whose
+        # val JSON is absent is skipped (logged), never crashes training.
+        self._monitor_managers = {}
+        self._monitor_history  = {}
+        _cross_on = os.environ.get("SPRINT_CROSS_TASK_VAL", "true").strip().lower() in ("1", "true", "yes")
+        _primary_eval = getattr(training_args, "eval_data_path", None)
+        if _cross_on and _primary_eval:
+            try:
+                from config.data_config import get_dataset_config as _get_cfg2
+            except Exception as _e:
+                _get_cfg2 = None
+                _rank0_print(f"[SPRInT Monitor] config import failed ({_e}); cross-task validation disabled.")
+            for _d in [x for x in ("colon", "chest", "endo") if x != dataset_name]:
+                if _get_cfg2 is None:
+                    break
+                try:
+                    _dcfg = _get_cfg2(_d)
+                except Exception as _e:
+                    _rank0_print(f"[SPRInT Monitor:{_d}] config load failed ({_e}); skipping.")
+                    continue
+                # Sibling val JSON: same dir + shot/exp, dataset token swapped.
+                _bn    = os.path.basename(_primary_eval).replace(f"{dataset_name}_", f"{_d}_", 1)
+                _dpath = os.path.join(os.path.dirname(_primary_eval), _bn)
+                _dprim = "mAP" if _d == "chest" else ("macro_auc" if _d == "endo" else "accuracy")
+                self._monitor_managers[_d] = SPRInTValidationManager(
+                    model            = model,
+                    tokenizer        = tokenizer,
+                    image_processor  = image_processor,
+                    data_args        = data_args,
+                    symbol_manager   = None,          # cross-task → original labels only
+                    label_names      = [l.lower() for l in _dcfg.label_names],
+                    is_multi_label   = _dcfg.is_multi_label,
+                    dataset_name     = _d,
+                    primary_metric   = _dprim,
+                    validation_modes = "original",    # no symbol modes cross-task
+                    max_val_samples  = getattr(training_args, "max_val_samples", 100),
+                    eval_data_path   = _dpath,
+                    print_fn         = _rank0_print,
+                    cfg              = _dcfg,
+                )
+                self._monitor_history[_d] = []
+                _rank0_print(f"[SPRInT Monitor:{_d}] registered (read-only) — val JSON: {_dpath}")
+
     # ── Loss tracking ─────────────────────────────────────────────────────────
 
     def on_epoch_begin(self, args, state, control, **kwargs):
@@ -240,6 +292,19 @@ class SPRInTValidationCallback(transformers.TrainerCallback):
         if args.local_rank not in (-1, 0):
             return
         if not self._val_manager._load_val_data():
+            if not self._warned_no_val:
+                self._warned_no_val = True
+                _ep = getattr(self.training_args, "eval_data_path", None)
+                _rank0_print(
+                    f"\n{'!'*80}\n"
+                    f"[SPRInT Val] ⚠️  VALIDATION SKIPPED — no eval data found.\n"
+                    f"             eval_data_path = {_ep}\n"
+                    f"             The file is missing/empty, so NO metrics and NO best-epoch\n"
+                    f"             summary will be produced. Generate the val JSON (run\n"
+                    f"             medfmc_to_llava.py --shot N --exp K) or set EVAL_DATA_PATH\n"
+                    f"             to an existing JSON (e.g. {{task}}_test.json).\n"
+                    f"{'!'*80}\n"
+                )
             return
 
         self._epoch_counter += 1
@@ -295,6 +360,33 @@ class SPRInTValidationCallback(transformers.TrainerCallback):
                 f"{best_metric_name}={self._best_score:.4f})"
             )
 
+        # ── Cross-task monitors (read-only; NEVER affect best epoch) ──────────
+        for _d, _mgr in self._monitor_managers.items():
+            try:
+                if not _mgr._load_val_data():
+                    _rank0_print(
+                        f"[SPRInT Monitor:{_d}] ⚠️  SKIPPED — no val data at "
+                        f"{_mgr._eval_data_path}.  Generate it with: "
+                        f"medfmc_to_llava.py --tasks {_d} --shot <N> --exp <K>"
+                    )
+                    continue
+                _rank0_print(
+                    f"\n{'#'*80}\n[CROSS-TASK MONITOR] dataset={_d}  epoch={epoch}"
+                    f"  (read-only — does NOT affect best epoch / checkpoint-best)\n{'#'*80}"
+                )
+                _m_entry = _mgr.run_comprehensive_validation(
+                    epoch           = epoch,
+                    total_epochs    = total_epochs,
+                    mode_symbols    = {"original": {}},
+                    strategy        = f"monitor_{_d}",
+                    output_dir      = args.output_dir,
+                    step_losses     = [],
+                    compute_auc_map = getattr(self.training_args, "compute_val_auc_map", True),
+                )
+                self._monitor_history[_d].append(_m_entry)
+            except Exception as _e:
+                _rank0_print(f"[SPRInT Monitor:{_d}] ERROR (skipped; training unaffected): {_e}")
+
     # ── Best-checkpoint copy ──────────────────────────────────────────────────
     # on_save fires AFTER HF Trainer writes checkpoint-{step} to disk.
     # on_epoch_end (above) sets _is_new_best; we copy here where the file exists.
@@ -341,3 +433,53 @@ class SPRInTValidationCallback(transformers.TrainerCallback):
             best_epoch     = self._best_epoch,
             best_score     = self._best_score,
         )
+        self._print_cross_dataset_summary()
+
+    def _print_cross_dataset_summary(self):
+        """End-of-training table: ALL metrics (macro_f1, exact-acc, aACC, mAP, AUC)
+        for the trained dataset + every cross-task monitor, per epoch. The best
+        epoch (selected on the trained dataset) is starred. Read-only summary —
+        colon/endo rows are cross-task transfer numbers, not their own task scores."""
+        if not self._monitor_history:
+            return
+
+        def _f(x):
+            return f"{x:.4f}" if isinstance(x, (int, float)) and not math.isnan(x) else "  n/a"
+
+        prim_ds = self._val_manager._dataset_name
+        series  = [(prim_ds, self._epoch_history)]
+        series += [(_d, _h) for _d, _h in self._monitor_history.items()]
+
+        _rank0_print(f"\n{'='*104}")
+        _rank0_print("CROSS-DATASET VALIDATION SUMMARY  (all metrics · all epochs · original mode)")
+        _rank0_print(
+            f"best epoch (selected on {prim_ds} / {self._primary_metric}): "
+            f"{self._best_epoch}  (score={self._best_score:.4f})"
+        )
+        _rank0_print(
+            "colon/endo rows below are CROSS-TASK transfer (chest-trained model), "
+            "not own-task scores."
+        )
+        _rank0_print(f"{'='*104}")
+        _rank0_print(
+            f"{'Dataset':<10} {'Epoch':<6} {'macro_f1':<10} {'acc_exact':<11} "
+            f"{'acc_aACC':<10} {'mAP':<10} {'AUC':<10} {'Best?':<6}"
+        )
+        _rank0_print(f"{'-'*104}")
+        for ds, hist in series:
+            for e in hist:
+                am   = e.get("auc_map", {}) or {}
+                o    = e.get("modes", {}).get("original", {})
+                ep   = e.get("epoch")
+                auc  = am.get("macro_auc", am.get("AUC", float("nan")))
+                star = "★" if (ds == prim_ds and ep == self._best_epoch) else ""
+                _rank0_print(
+                    f"{ds:<10} {str(ep):<6} "
+                    f"{_f(o.get('macro_f1', float('nan'))):<10} "
+                    f"{_f(o.get('accuracy', float('nan'))):<11} "
+                    f"{_f(am.get('accuracy_aacc', float('nan'))):<10} "
+                    f"{_f(am.get('mAP', float('nan'))):<10} "
+                    f"{_f(auc):<10} {star:<6}"
+                )
+            _rank0_print(f"{'-'*104}")
+        _rank0_print(f"{'='*104}\n")

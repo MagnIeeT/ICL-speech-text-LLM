@@ -15,10 +15,10 @@ class Config:
     MODE     = "inference"
 
     # --- 2. PATHS ---
-    LLAVA_DIR   = os.environ.get("LLAVA_DIR",    "/home/harinis/LLaVA")
+    LLAVA_DIR   = os.environ.get("LLAVA_DIR",    "/home/harinisrireddykandula/LLaVA")
     PROJECT_DIR = os.environ.get("PROJECT_DIR",  os.path.dirname(os.path.abspath(__file__)))
-    IMAGE_ROOT  = os.environ.get("MEDFMC_ROOT",  "/home/harinis/MedFM/data/MedFMC")
-    MODEL_BASE  = os.environ.get("MODEL_BASE",   "/home/harinis/.cache/huggingface/hub/llava-v1.5-13b")
+    IMAGE_ROOT  = os.environ.get("MEDFMC_ROOT",  "/home/harinisrireddykandula/MedFM/data/MedFMC")
+    MODEL_BASE  = os.environ.get("MODEL_BASE",   "/home/harinisrireddykandula/.cache/huggingface/hub/llava-v1.5-13b")
 
     # Fine-tuned checkpoint (LoRA adapter dir). None → base model.
     CHECKPOINT_PATH = None
@@ -34,6 +34,22 @@ class Config:
     # (with the default 3, sample 0 is a diagnose sample → unbatched → no verify).
     PROBE_BATCH_SIZE = int(os.environ.get("PROBE_BATCH_SIZE", "1"))
     DIAGNOSE_SAMPLES = int(os.environ.get("DIAGNOSE_SAMPLES", "3"))
+
+    # Eval modes (mirrors training's VALIDATION_MODES). Comma-separated subset of
+    # original,fixed,fresh. Empty → sprint_eval.py default (all three for symbol
+    # strategies, 'original' only for regular/rft). fixed/fresh are no-ops for
+    # regular/rft (no symbol mapping exists).
+    EVAL_MODES = os.environ.get("EVAL_MODES", "").strip()
+
+    # --- 5. VALIDATION-SET EVAL (additive; default OFF → unchanged test behavior) ---
+    # USE_VALIDATION=true → evaluate on {dataset}_val_shot{VAL_SHOT}_exp{VAL_EXP}.json
+    # instead of {dataset}_test.json. MAX_VAL_SAMPLES>0 reproduces the training-time
+    # seeded subset (random.Random(42)); 0 = full validation split. The test pipeline
+    # is completely untouched whenever USE_VALIDATION is false.
+    USE_VALIDATION  = os.environ.get("USE_VALIDATION", "false").strip().lower() in ("1", "true", "yes")
+    VAL_SHOT        = os.environ.get("VAL_SHOT", "10").strip()
+    VAL_EXP         = os.environ.get("VAL_EXP", "1").strip()
+    MAX_VAL_SAMPLES = int(os.environ.get("MAX_VAL_SAMPLES", "0") or "0")
 
 
 # ==========================================
@@ -96,6 +112,19 @@ def run_inference(dataset: str, strategy: str, num_samples: int = 0, icl_shots: 
     test_json  = f"{Config.PROJECT_DIR}/data/{dataset}_test.json"
     train_json = f"{Config.PROJECT_DIR}/data/{dataset}_train_percent100.json"
 
+    # Additive validation switch (default OFF = test JSON, byte-identical to before).
+    if Config.USE_VALIDATION:
+        eval_json   = (f"{Config.PROJECT_DIR}/data/"
+                       f"{dataset}_val_shot{Config.VAL_SHOT}_exp{Config.VAL_EXP}.json")
+        split_label = "val"
+        print(f"USE_VALIDATION=true → VALIDATION split: {eval_json}")
+        if Config.MAX_VAL_SAMPLES > 0:
+            print(f"  MAX_VAL_SAMPLES={Config.MAX_VAL_SAMPLES} → seeded random.Random(42) "
+                  f"subset (matches training-time validation)")
+    else:
+        eval_json   = test_json
+        split_label = "test"
+
     cmd = ["python", f"{Config.PROJECT_DIR}/sprint_eval.py"]
 
     if Config.CHECKPOINT_PATH:
@@ -107,35 +136,54 @@ def run_inference(dataset: str, strategy: str, num_samples: int = 0, icl_shots: 
 
     cmd += [
         "--image-folder",  Config.IMAGE_ROOT,
-        "--question-file", test_json,
+        "--question-file", eval_json,
         "--dataset",       dataset,
         "--strategy",      strategy,
         "--num-samples",   str(num_samples),
         "--icl-shots",     str(icl_shots),
+        "--split",         split_label,
         # Opt-in batched per-class scoring (default 1 = unbatched, unchanged).
         "--probe-batch-size", str(Config.PROBE_BATCH_SIZE),
         "--diagnose-samples", str(Config.DIAGNOSE_SAMPLES),
     ]
+    # Reproduce the EXACT training validation subset only when explicitly requested.
+    if Config.USE_VALIDATION and Config.MAX_VAL_SAMPLES > 0:
+        cmd += ["--val-subsample", str(Config.MAX_VAL_SAMPLES)]
+
+    # Forward eval-mode choice only when set; empty → sprint_eval.py default.
+    if Config.EVAL_MODES:
+        cmd += ["--modes", Config.EVAL_MODES]
 
     if icl_shots > 0:
         cmd += ["--train-file", train_json]
 
     # Record time just before run so we can find the JSON written by sprint_eval.py
     t_before = time.time()
-    subprocess.run(cmd)
+    _ret = subprocess.run(cmd)
 
     print(f"\nDone: {dataset} at {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
-    # Find the results JSON just written (most recent file matching the pattern)
+    # Guard: if sprint_eval.py crashed (e.g. missing val JSON), it wrote NO results.
+    # Do NOT fall back to an older file — that would silently report STALE numbers
+    # from a previous run (a real bug that printed fake metrics on a crash). Surface
+    # the failure clearly and return empty so _print_final_summary shows n/a.
+    if _ret.returncode != 0:
+        print(f"⚠️  [{dataset}] sprint_eval.py FAILED (exit {_ret.returncode}) — "
+              f"NO metrics produced. Not reporting any stale result.")
+        return {}
+
+    # Find ONLY the results JSON written by THIS run (mtime >= t_before). No fallback.
     results_dir = os.path.join(Config.LLAVA_DIR, "logs", "json")
     pattern = os.path.join(results_dir, f"results_{dataset}_{strategy}_{icl_shots}shot_*.json")
     matches = [f for f in glob.glob(pattern) if os.path.getmtime(f) >= t_before]
     if not matches:
-        # Fallback: just pick the newest file matching the pattern
-        matches = sorted(glob.glob(pattern), key=os.path.getmtime)
+        print(f"⚠️  [{dataset}] no fresh results JSON found after run "
+              f"(expected {pattern}). Reporting empty — refusing to use any older file.")
+        return {}
 
     if matches:
         newest = max(matches, key=os.path.getmtime)
+        print(f"[{dataset}] results JSON: {os.path.basename(newest)}")
         data = _json.load(open(newest))
         return data.get("metrics", {})
 
@@ -200,7 +248,11 @@ def _print_final_summary(all_metrics: dict, strategy: str, checkpoint: str, icl_
         if "map" in m:
             print(f"  mAP            : {m['map']:.4f}")
         print(f"  macro_F1       : {m.get('macro_f1', 0):.4f}")
-        print(f"  accuracy       : {m.get('accuracy', 0):.4f}")
+        # accuracy headline means different things per task type (colon = exact/standard,
+        # chest/endo = aACC), so print BOTH explicitly-labeled keys. Compare ACROSS
+        # datasets on aACC (one consistent definition); cite exact only for colon.
+        print(f"  accuracy_aACC  : {m.get('accuracy_aacc', m.get('accuracy', 0)):.4f}  (cross-dataset comparable)")
+        print(f"  accuracy_exact : {m.get('accuracy_exactmatch', m.get('accuracy', 0)):.4f}  (colon=official; chest/endo~0)")
         if "sensitivity" in m:
             print(f"  sensitivity    : {m['sensitivity']:.4f}")
         if "specificity" in m:
@@ -220,7 +272,8 @@ def _print_final_summary(all_metrics: dict, strategy: str, checkpoint: str, icl_
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="SPRInT Vision Orchestrator")
     parser.add_argument("--mode",            type=str, choices=["train", "inference"],
-                        default=Config.MODE)
+                      
+                       default=Config.MODE)
     parser.add_argument("--datasets",        type=str, default=None,
                         help="Hyphen-separated datasets: 'colon-chest-endo'. "
                              "Overrides --dataset when set.")

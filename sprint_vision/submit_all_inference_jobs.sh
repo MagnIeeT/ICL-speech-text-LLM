@@ -31,18 +31,18 @@ icl_shots="${icl_shots:-0}"            # 0 | 1 | 5
 model_type="${model_type:-llava-v1.5-13b}"
 num_samples="${num_samples:-0}"        # 0 = ALL
 
-LLAVA_DIR="${LLAVA_DIR:-/home/harinis/LLaVA}"
+LLAVA_DIR="${LLAVA_DIR:-/home/harinisrireddykandula/LLaVA}"
 SPRINT_DIR="${LLAVA_DIR}/sprint_vision"
 SUBMIT="${SPRINT_DIR}/submit_inference.sh"
 
 # Single checkpoint used for ALL 3 datasets (train on one, infer on all)
-CHECKPOINT_PATH="${CHECKPOINT_PATH:-/home/leapers/weights/harinis/llava/checkpoints/llava-chest-regular-shot10_exp1}"
+CHECKPOINT_PATH="${CHECKPOINT_PATH:-/home/harinisrireddykandula/llava/checkpoints/llava-chest-regular-shot10_exp1}"
 
 # Datasets to run (order matters for node/CUDA assignment below)
 DATASETS=(colon chest endo)
 
 # Node/GPU assignment — one entry per dataset in DATASETS order.
-# Adjust to match available cluster resources (check: qstat -n | grep harinis).
+# Adjust to match available cluster resources (check: qstat -n | grep harinisrireddykandula).
 HOSTNAMES=(n6    n6    n6  )
 CUDA_DEVS=(0     1     2   )
 
@@ -107,9 +107,9 @@ if [ "${DRY_RUN}" -eq 0 ]; then
     done
     echo ""
     echo "Monitor with:"
-    echo "  qstat | grep harinis"
-    echo "  watch -n 30 'qstat | grep harinis'"
+    echo "  qstat | grep harinisrireddykandula"
+    echo "  watch -n 30 'qstat | grep harinisrireddykandula'"
     echo ""
-    echo "Logs in: /home/leapers/weights/harinis/llava/logs/$(date +%Y-%m-%d)/"
+    echo "Logs in: /home/harinisrireddykandula/llava/logs//$(date +%Y-%m-%d)/"
     echo "=========================================="
 fi

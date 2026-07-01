@@ -16,26 +16,37 @@ set -e
 # ========================================
 # Configuration — edit these values
 # ========================================
-datasets=colon-chest-endo       # hyphen-separated: "chest" or "colon-chest-endo"
-strategy=ed_ft         # regular | two_token | ed_ft | id_ft | lf_ft
+datasets="${datasets:-colon-chest-endo}"  # hyphen-separated: "chest" or "colon-chest-endo"
+strategy="${strategy:-regular}"           # regular | two_token | ed_ft | id_ft | lf_ft
 model_type="${model_type:-llava-v1.5-13b}"
 
-num_samples=0         # 0 = ALL samples
-icl_shots=0
+num_samples="${num_samples:-0}"           # 0 = ALL samples
+icl_shots="${icl_shots:-0}"
 
-hostname=n6
-cuda_device=2
+# Inference scoring (opt-in; defaults reproduce the old unbatched path).
+probe_batch_size="${probe_batch_size:-1}" # >1 enables batched per-class scoring (chest/endo)
+diagnose_samples="${diagnose_samples:-3}" # set 0 so [BATCH-VERIFY] fires on sample 0 when batching
+
+# Eval modes (like VALIDATION_MODES in training). Comma-separated subset of
+# original,fixed,fresh. Empty = sprint_eval.py default (symbol strategies →
+# original,fixed,fresh ; regular/rft → original only). fixed/fresh are no-ops
+# for regular/rft. Examples: eval_modes=fixed  |  eval_modes=original,fixed,fresh
+eval_modes="${eval_modes:-}"
+
+hostname="${hostname:-n6}"
+cuda_device="${cuda_device:-0}"
 
 # Fine-tuned checkpoint (LoRA adapter dir) — same checkpoint used for all datasets
-CHECKPOINT_PATH=/home/leapers/weights/harinis/llava/checkpoints/llava-chest-ed_ft-shot10_exp1/checkpoint-best
+CHECKPOINT_PATH="${CHECKPOINT_PATH:-/home/harinisrireddykandula/llava/checkpoints/llava-chest-regular-shot10_exp1}"
+
 # Set to a job ID (e.g. "12093.eehpc") to wait for that job first.
-hold_job_id=
+hold_job_id="${hold_job_id:-}"
 
 # ========================================
 # Paths
 # ========================================
-LLAVA_DIR="${LLAVA_DIR:-/home/harinis/LLaVA}"
-MODEL_BASE="${MODEL_BASE:-/home/harinis/.cache/huggingface/hub/llava-v1.5-13b}"
+LLAVA_DIR="${LLAVA_DIR:-/home/harinisrireddykandula/LLaVA}"
+MODEL_BASE="${MODEL_BASE:-/home/harinisrireddykandula/.cache/huggingface/hub/llava-v1.5-13b}"
 output_dir="${LLAVA_DIR}/logs"
 orchestrator_path="${LLAVA_DIR}/sprint_vision/vision_orchestrator.py"
 
@@ -102,7 +113,15 @@ echo "Job started at: \$(date)"
 echo "Running on host: \$(hostname)"
 echo "Datasets: ${datasets}  Strategy: ${strategy}  Shots: ${icl_shots}"
 echo "Checkpoint: ${CHECKPOINT_PATH}"
+echo "Probe batch size: ${probe_batch_size}  Diagnose samples: ${diagnose_samples}"
+echo "Eval modes: ${eval_modes:-<default>}"
 echo "=========================================="
+
+# Opt-in batched per-class scoring — read by vision_orchestrator.py Config.
+export PROBE_BATCH_SIZE="${probe_batch_size}"
+export DIAGNOSE_SAMPLES="${diagnose_samples}"
+# Eval-mode choice — read by vision_orchestrator.py Config.EVAL_MODES → --modes.
+export EVAL_MODES="${eval_modes}"
 
 eval "\$(conda shell.bash hook)"
 conda activate llava
