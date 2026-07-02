@@ -315,7 +315,7 @@ class SymbolTrainingOrchestrator:
         elif self.config.symbol_config.swap_labels:
             p_mappings = c_mappings = self._get_swap_mappings(ds_name_str, relevant_labels, epoch, batch_idx)
         else:
-            force_new = (self.config.symbol_config.update_strategy == SymbolUpdateStrategy.PER_INSTANCE) or (batch_idx == 0)
+            force_new = self.config.symbol_config.update_strategy == SymbolUpdateStrategy.PER_INSTANCE
             all_ds_mappings = self.symbol_manager.get_symbols_for_epoch(epoch, force_new_symbols=force_new)
             p_mappings = c_mappings = all_ds_mappings.get(ds_name_str) or all_ds_mappings.get("") or {}
             if batch_idx < 2:

@@ -62,7 +62,7 @@ class SalmonProcessor(ModelProcessor):
             "num_examples": len(examples_speech),
         }
 
-    def tokenize_batch(self, prompts: List[str], completions: Optional[List[str]] = None) -> Dict[str, torch.Tensor]:
+    def tokenize_batch(self, prompts: List[str], completions: Optional[List[str]] = None, padding_side: str = "right") -> Dict[str, torch.Tensor]:
         """
         Unified tokenization for Salmonn (Llama-based). 
         """

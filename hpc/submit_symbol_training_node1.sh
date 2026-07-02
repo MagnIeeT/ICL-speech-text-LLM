@@ -29,14 +29,14 @@ NUM_WORKERS="${NUM_WORKERS:-2}"                                                 
 # --- Data ---
 DATASET_TYPE="${DATASET_TYPE:-meld_emotion}"                                      # training dataset(s), dash-separated
 VAL_DATASET_TYPE="${VAL_DATASET_TYPE:-voxceleb-hvb-voxpopuli-meld_emotion}"      # validation dataset(s), dash-separated
-MAX_SAMPLES="${MAX_SAMPLES:-10}"                                                  # max training samples (0 = full dataset)
+MAX_SAMPLES="${MAX_SAMPLES:-0}"                                                  # max training samples (0 = full dataset)
 INPUT_MODE="${INPUT_MODE:-speech_only}"                                           # query modality: speech_only | text_only
 FEWSHOT_MODE="${FEWSHOT_MODE:-text}"                                              # few-shot example modality: text | speech
 NUM_EXAMPLES="${NUM_EXAMPLES:-0}"                                                 # few-shot examples in training prompt (0 = zero-shot)
 VAL_NUM_EXAMPLES="${VAL_NUM_EXAMPLES:-0}"                                         # few-shot examples in validation prompt
 
 # --- Training ---
-LORA_EPOCHS="${LORA_EPOCHS:-1}"                                                  # number of training epochs
+LORA_EPOCHS="${LORA_EPOCHS:-10}"                                                  # number of training epochs
 LORA_LR="${LORA_LR:-1e-5}"                                                       # LoRA adapter learning rate
 BATCH_SIZE="${BATCH_SIZE:-1}"                                                     # per-step training batch size
 VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-1}"                                             # per-step validation batch size
@@ -64,9 +64,9 @@ DSPO_ROTATION_INTERVAL="${DSPO_ROTATION_INTERVAL:-200}"                         
 DSPO_PHASE2_ROTATION="${DSPO_PHASE2_ROTATION:-0}"                               # Phase 2 symbol refresh: -1=fixed, 0=per epoch, 1=per instance, >1=every N steps
 
 # Fixed/dynamic symbols
-NO_SYMBOLS="${NO_SYMBOLS:-true}"                                                 # true = disable symbol replacement, use raw labels (must be false for DPO)
-DYNAMIC_SYMBOLS="${DYNAMIC_SYMBOLS:-false}"                                       # true = regenerate symbol mapping each epoch
-SYMBOL_UPDATE_STRATEGY="${SYMBOL_UPDATE_STRATEGY:-per_instance}"                    # when dynamic symbols refresh: per_epoch | per_instance
+NO_SYMBOLS="${NO_SYMBOLS:-false}"                                                 # true = disable symbol replacement, use raw labels (must be false for DPO)
+DYNAMIC_SYMBOLS="${DYNAMIC_SYMBOLS:-true}"                                       # true = regenerate symbol mapping each epoch
+SYMBOL_UPDATE_STRATEGY="${SYMBOL_UPDATE_STRATEGY:-per_epoch}"                    # when dynamic symbols refresh: per_epoch | per_instance
 SWAP_LABELS="${SWAP_LABELS:-false}"                                               # true = randomly shuffle label↔symbol assignments each epoch
 SYMBOL_DIFFICULTY="${SYMBOL_DIFFICULTY:-hard}"                                  # training symbol difficulty: easy | hard | random
 VAL_SYMBOL_DIFFICULTY="${VAL_SYMBOL_DIFFICULTY:-easy}"                            # fresh validation symbol difficulty: easy | hard | random
@@ -80,9 +80,9 @@ elif [[ "${DIFF_SYMBOL_ENABLED}" == "true" ]]; then
 elif [[ "${NO_SYMBOLS}" == "true" ]]; then
     _MODE="nosym"
 elif [[ "${DYNAMIC_SYMBOLS}" == "true" ]]; then
-    _MODE="dyn_${SYMBOL_UPDATE_STRATEGY}"
+    [[ "${SYMBOL_UPDATE_STRATEGY}" == "per_instance" ]] && _MODE="dpi" || _MODE="dpe"
 else
-    _MODE="fixed"
+    _MODE="fix"
 fi
 [[ "${SWAP_LABELS}" == "true" ]] && _MODE="${_MODE}_swap_${SYMBOL_UPDATE_STRATEGY}"
 
