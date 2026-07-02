@@ -150,6 +150,84 @@ How to test: enumerate all within-epoch token overlaps for each dataset and
 correlate overlap count with F1 drop.
 
 ================================================================================
+EMPIRICAL RESULTS (inference runs, 2026-07-01, Phase 0 checkpoint)
+================================================================================
+
+All runs: epoch 1 Phase0-LoRA checkpoint, 100 test samples per dataset,
+ep3/ep4 fixed and fresh symbol sets from the 041203 D-SPO training run.
+
+--- H1/H4 CONFIRMED ---
+
+Voxceleb (3-class) ep4 comparison — same model weights, only symbols differ:
+  ep4_fixed  symbols: hkdk['hk','dk'], wowhp['wow','hp'], npii['n','pii']   F1=0.000
+  ep4_fresh  symbols: mplv['mpl','v'], zbdk['zb','dk'],  olsl['ols','l']    F1=0.558
+
+ep4_fixed prediction distribution (100 samples): {'nppi': 100}  ← total collapse
+ep4_fresh prediction distribution: diverse across mplv/zbdk/olsl
+
+Mechanism confirmed: 'n' (first token of npii) is ultra-high-frequency. Model
+generates 'n' for every input, then fails at second token ('pii' → 'ppi').
+'wow' (first token of wowhp) has strong English semantic pull (exclamation),
+second token 'hp' has near-zero probability after 'wow'.
+Result: model always predicts 'nppi' (a garbled version of npii) — 100/100.
+
+ep4_fresh first tokens ('mpl', 'zb', 'ols') have no semantic pull and are
+low-frequency dead-ends. Model follows ICL signal instead → 0.558 F1.
+
+--- H2 CONFIRMED ---
+
+Base log-probability of full symbol sequence ("The answer is: " → tok1 → tok2),
+computed from Qwen2-Audio-7B base model (no LoRA, no audio):
+
+  ep4_fixed voxceleb: avg_base_lp = -42.36   F1 = 0.053
+  ep4_fresh voxceleb: avg_base_lp = -33.77   F1 = 0.558
+
+ep4_fixed symbols are ~3000x less likely under the base model (e^8.6 difference).
+The ICL signal must overcome a very strong prior that says "never generate these
+token sequences" — fails completely.
+
+Pearson correlation across all 11 epochs:
+  voxceleb [fixed]  r(F1, avg_base_lp) = +0.553   ← strong
+  voxceleb [fresh]  r(F1, avg_base_lp) = +0.409   ← moderate
+  meld     [fresh]  r(F1, avg_base_lp) = +0.435   ← moderate
+
+H1/H4 and H2 interaction: 'npii' fails on BOTH axes simultaneously.
+  P('n') is very high → H4 first-token dominance causes collapse
+  P('pii'|'n') is near-zero → H2 total sequence probability is terrible
+  These reinforce each other: high P(tok1) alone is harmful when P(tok2|tok1) ≈ 0.
+
+Ideal symbol: moderate P(tok1) [avoids H4] + high P(tok2|tok1) [supports H2]
+  → total sequence probability is good, no single-token dominance.
+
+--- H3 NOT CONFIRMED ---
+
+Pearson r(F1, min_embedding_distance) across all datasets and modes:
+  voxceleb [fixed]:  -0.047  (near zero)
+  voxceleb [fresh]:  +0.162  (weak)
+  All others:        weak and inconsistent in sign
+
+Embedding distance between class symbols does not predict F1.
+
+--- H5 CONFIRMED (HVB large label set) ---
+
+HVB consistently low F1 (0.01–0.12) across all epochs and modes.
+18 labels sharing the same 500-token pool → structural token overlap.
+Unusual finding: r(F1, min_base_lp) = -0.658 for HVB [fixed] — OPPOSITE sign
+to voxceleb. For large label sets, higher minimum symbol probability may cause
+one dominant symbol to crowd out all others, reducing macro F1.
+
+--- ep3 vs ep4 meld (fixed) — same model, different symbols ---
+
+ep3_fixed meld: F1=0.141  prediction distribution: ubwj×90, ldca×5, npi×3 ...
+ep4_fixed meld: F1=0.179  prediction distribution: wnvw×46, mfby×22, escbp×15 ...
+
+ep3 nearly collapses to one symbol (ubwj, 90%) — H4 again, one dominant first
+token. 6/7 emotion classes get zero recall → macro F1 suffers despite 42%
+accuracy (ubwj = neutral = majority class).
+ep4 spreads across 4 symbols → more classes represented → better macro F1.
+Confirmed by base_lp: ep3_fixed meld avg_base_lp=-40.62 vs ep4_fixed meld -38.00.
+
+================================================================================
 WHAT WE WANT TO DO WITH THIS
 ================================================================================
 

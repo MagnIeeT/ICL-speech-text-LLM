@@ -29,14 +29,14 @@ NUM_WORKERS="${NUM_WORKERS:-2}"                                                 
 # --- Data ---
 DATASET_TYPE="${DATASET_TYPE:-meld_emotion}"                                      # training dataset(s), dash-separated
 VAL_DATASET_TYPE="${VAL_DATASET_TYPE:-voxceleb-hvb-voxpopuli-meld_emotion}"      # validation dataset(s), dash-separated
-MAX_SAMPLES="${MAX_SAMPLES:-0}"                                                  # max training samples (0 = full dataset)
+MAX_SAMPLES="${MAX_SAMPLES:-10}"                                                  # max training samples (0 = full dataset)
 INPUT_MODE="${INPUT_MODE:-speech_only}"                                           # query modality: speech_only | text_only
 FEWSHOT_MODE="${FEWSHOT_MODE:-text}"                                              # few-shot example modality: text | speech
 NUM_EXAMPLES="${NUM_EXAMPLES:-0}"                                                 # few-shot examples in training prompt (0 = zero-shot)
 VAL_NUM_EXAMPLES="${VAL_NUM_EXAMPLES:-0}"                                         # few-shot examples in validation prompt
 
 # --- Training ---
-LORA_EPOCHS="${LORA_EPOCHS:-10}"                                                  # number of training epochs
+LORA_EPOCHS="${LORA_EPOCHS:-1}"                                                  # number of training epochs
 LORA_LR="${LORA_LR:-1e-5}"                                                       # LoRA adapter learning rate
 BATCH_SIZE="${BATCH_SIZE:-1}"                                                     # per-step training batch size
 VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-1}"                                             # per-step validation batch size
@@ -51,11 +51,11 @@ USE_DPO="${USE_DPO:-false}"                                                     
 DPO_BETA="${DPO_BETA:-0.1}"                                                       # DPO temperature β: higher = stronger preference margin
 
 # D-SPO: differentiable slot routing (set DIFF_SYMBOL_ENABLED=true to activate)
-DIFF_SYMBOL_ENABLED="${DIFF_SYMBOL_ENABLED:-true}"                               # true = enable D-SPO differentiable slot routing
+DIFF_SYMBOL_ENABLED="${DIFF_SYMBOL_ENABLED:-false}"                               # true = enable D-SPO differentiable slot routing
 DSPO_ROUTER_LR="${DSPO_ROUTER_LR:-1e-2}"                                         # D-SPO router (slot preference matrix) learning rate
 DSPO_TAU_ANNEAL_RATE="${DSPO_TAU_ANNEAL_RATE:-0.0001}"                          # D-SPO Gumbel temperature decay rate per step
 DSPO_SLOT_ONLY="${DSPO_SLOT_ONLY:-false}"                                         # true = freeze LoRA, train only slot matrix (also needs DIFF_SYMBOL_ENABLED=true)
-DSPO_PHASE0_EPOCHS="${DSPO_PHASE0_EPOCHS:-1}"                                    # >0: LoRA-only warmup on original labels before D-SPO starts
+DSPO_PHASE0_EPOCHS="${DSPO_PHASE0_EPOCHS:-0}"                                    # >0: LoRA-only warmup on original labels before D-SPO starts
 DSPO_PHASE1_PATIENCE="${DSPO_PHASE1_PATIENCE:-3}"                                # >0: auto-switch from slot-only Phase 1 to LoRA Phase 2 when conf_mean plateaus for this many epochs
 DSPO_PHASE1_EPOCHS="${DSPO_PHASE1_EPOCHS:-5}"                                    # >0: hard cap on Phase 1 epochs — switches to Phase 2 even if patience not triggered
 DSPO_NUM_SLOTS="${DSPO_NUM_SLOTS:-20}"                                            # D-SPO total slot pool size (>= num training labels; extra slots used when rotation enabled)
@@ -64,7 +64,7 @@ DSPO_ROTATION_INTERVAL="${DSPO_ROTATION_INTERVAL:-200}"                         
 DSPO_PHASE2_ROTATION="${DSPO_PHASE2_ROTATION:-0}"                               # Phase 2 symbol refresh: -1=fixed, 0=per epoch, 1=per instance, >1=every N steps
 
 # Fixed/dynamic symbols
-NO_SYMBOLS="${NO_SYMBOLS:-false}"                                                 # true = disable symbol replacement, use raw labels (must be false for DPO)
+NO_SYMBOLS="${NO_SYMBOLS:-true}"                                                 # true = disable symbol replacement, use raw labels (must be false for DPO)
 DYNAMIC_SYMBOLS="${DYNAMIC_SYMBOLS:-false}"                                       # true = regenerate symbol mapping each epoch
 SYMBOL_UPDATE_STRATEGY="${SYMBOL_UPDATE_STRATEGY:-per_instance}"                    # when dynamic symbols refresh: per_epoch | per_instance
 SWAP_LABELS="${SWAP_LABELS:-false}"                                               # true = randomly shuffle label↔symbol assignments each epoch
@@ -82,7 +82,17 @@ else
     _MODE="fixed"
 fi
 [[ "${SWAP_LABELS}" == "true" ]] && _MODE="${_MODE}_swap_${SYMBOL_UPDATE_STRATEGY}"
-RUN_NAME="${RUN_NAME:-$(date +"%H%M%S")_${MODEL_TYPE}_${DATASET_TYPE}_${_MODE}}"
+
+SHORT_MODEL_TYPE="${MODEL_TYPE//qwen/qa}"
+SHORT_MODEL_TYPE="${SHORT_MODEL_TYPE//salmonn/sl}"
+SHORT_MODEL_TYPE="${SHORT_MODEL_TYPE//flamingo/af}"
+
+SHORT_DATASET_TYPE="${DATASET_TYPE//voxceleb/vb}"
+SHORT_DATASET_TYPE="${SHORT_DATASET_TYPE//hvb/h}"
+SHORT_DATASET_TYPE="${SHORT_DATASET_TYPE//meld_emotion/me}"
+SHORT_DATASET_TYPE="${SHORT_DATASET_TYPE//voxpopuli/vp}"
+
+RUN_NAME="${RUN_NAME:-$(date +"%H%M%S")_${SHORT_MODEL_TYPE}_${SHORT_DATASET_TYPE}_${_MODE}}"
 
 if [[ -x "${HOME}/miniconda3/bin/conda" ]]; then
     eval "$("${HOME}/miniconda3/bin/conda" shell.bash hook)"

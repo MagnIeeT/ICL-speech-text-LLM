@@ -64,8 +64,11 @@ def load_datasets_for_config(config: TrainingConfig, inference_mode: bool = Fals
             logger.error("Failed to load dataset %s: %s", dataset_name, exc)
             continue
 
-    val_dataset_str = config.data_config.val_dataset_type
-    val_dataset_names = val_dataset_str.split("-") if "-" in val_dataset_str else [val_dataset_str]
+    if not inference_mode:
+        val_dataset_str = config.data_config.val_dataset_type or ""
+        val_dataset_names = val_dataset_str.split("-") if "-" in val_dataset_str else ([val_dataset_str] if val_dataset_str else [])
+    else:
+        val_dataset_names = []
 
     for dataset_name in val_dataset_names:
         dataset_type = DatasetType(dataset_name)

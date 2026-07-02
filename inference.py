@@ -78,24 +78,17 @@ class InferenceOrchestrator:
         self._slot_symbol_map = None
 
     def _setup_logging(self):
-        logs_dir = self.config.get_logs_dir()
-        os.makedirs(logs_dir, exist_ok=True)
-
-        log_file = os.path.join(logs_dir, f"{self.run_name}.log")
-
+        # Shell script captures stdout via nohup redirect to logs_inference/.
+        # Only use StreamHandler here — no FileHandler — to avoid a duplicate
+        # log file appearing in the training logs/ directory.
         for handler in logging.root.handlers[:]:
             logging.root.removeHandler(handler)
 
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s - %(levelname)s - %(message)s",
-            handlers=[
-                logging.StreamHandler(),
-                logging.FileHandler(log_file),
-            ],
+            handlers=[logging.StreamHandler()],
         )
-
-        logging.info("Logging setup complete: %s", log_file)
 
     def load_checkpoint_and_config(self):
         try:
@@ -408,7 +401,7 @@ class InferenceOrchestrator:
 
         metrics_file = os.path.join(
             metrics_dir,
-            f"{self.run_name}_metrics.json",
+            f"{self.run_name}_m.json",
         )
 
         with open(metrics_file, "w") as handle:
@@ -423,7 +416,7 @@ class InferenceOrchestrator:
 
         predictions_file = os.path.join(
             metrics_dir,
-            f"{self.run_name}_predictions.json",
+            f"{self.run_name}_p.json",
         )
 
         with open(predictions_file, "w") as handle:
