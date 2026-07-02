@@ -43,7 +43,7 @@ def setup_environment():
     salmonn_path = os.getenv("SALMONN_SOURCE_PATH")
     if salmonn_path and os.path.exists(salmonn_path):
         if salmonn_path not in sys.path:
-            sys.path.insert(0, salmonn_path)
+            sys.path.append(salmonn_path)  # append, not insert — avoids shadowing project's config/ package
             logging.debug(f"Added SALMONN_SOURCE_PATH {salmonn_path} to sys.path")
 
 def get_env_path(key, default=None):
