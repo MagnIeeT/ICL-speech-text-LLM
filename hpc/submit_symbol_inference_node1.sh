@@ -14,7 +14,7 @@ CONDA_ENV="${CONDA_ENV:-qwen}"
 MODEL_TYPE="${MODEL_TYPE:-qwen}"
 DATASET_TYPE="${DATASET_TYPE:-voxceleb-hvb-voxpopuli-meld_emotion}"
 DEVICE="${DEVICE:-cuda:0}"
-CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-2}"
+CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
 # Checkpoint from 041203_qwen_meld_emotion_dspo run (epoch 1, Phase0-LoRA)
 # Swap to any other .pt file to test a different checkpoint
 #${HOME}/training/symbol_training/checkpoints/173148_qwen_meld_emotion_dspo/lora_epoch1_phase0.pt
@@ -30,8 +30,8 @@ SPLIT="${SPLIT:-test}"                                                          
 #   analysis/symbol_maps/ep3_fresh.json   (voxceleb F1=0.024, meld F1=0.334)
 #   analysis/symbol_maps/ep4_fixed.json   (voxceleb F1=0.053, meld F1=0.275)
 #   analysis/symbol_maps/ep4_fresh.json   (voxceleb F1=0.425, meld F1=0.251) ← best
-# 
-SYMBOL_MAP_FILE="${SYMBOL_MAP_FILE:-${PROJECT_ROOT}/analysis/symbol_maps/ep4_fixed.json}"
+# ${PROJECT_ROOT}/analysis/symbol_maps/ep4_fresh.json
+SYMBOL_MAP_FILE="${SYMBOL_MAP_FILE:-${PROJECT_ROOT}/analysis/symbol_maps/ep4_fresh.json}"
 OUTPUT_DIR="${OUTPUT_DIR:-${HOME}/training/symbol_training}"
 METRICS_DIR="${METRICS_BASE:-${HOME}/training/symbol_training/metrics}/$(date +"%Y-%m-%d")"  # metrics output (dated subfolder)
 LOG_DIR="${LOGS_INFERENCE_DIR:-${HOME}/training/symbol_training/logs_inference}/$(date +"%Y-%m-%d")"

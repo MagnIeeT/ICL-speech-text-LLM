@@ -141,6 +141,9 @@ def main():
             no_symbols=config.symbol_config.no_symbols,
             swap_labels=config.symbol_config.swap_labels,
             labels_per_dataset=extract_dataset_labels_dict(config),
+            symbol_difficulty=config.symbol_config.symbol_difficulty,
+            val_symbol_difficulty=config.symbol_config.val_symbol_difficulty,
+            num_symbol_mappings=config.symbol_config.num_symbol_mappings,
         )
 
         train_datasets, val_datasets = load_datasets_for_config(config)

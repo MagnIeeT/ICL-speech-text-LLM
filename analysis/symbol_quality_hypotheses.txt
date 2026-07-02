@@ -228,6 +228,67 @@ ep4 spreads across 4 symbols → more classes represented → better macro F1.
 Confirmed by base_lp: ep3_fixed meld avg_base_lp=-40.62 vs ep4_fixed meld -38.00.
 
 ================================================================================
+PRETRAINED MODEL RESULTS (2026-07-02, no LoRA, no checkpoint)
+================================================================================
+
+Ran inference with ep4_fixed, ep4_fresh, and original labels on the base
+Qwen2-Audio-7B-Instruct model (no fine-tuning, no LoRA).
+
+  dataset        original   ep4_fixed   ep4_fresh
+  voxceleb         0.383      0.017       0.128
+  hvb              0.000      0.006       0.006
+  voxpopuli        0.027      0.010       0.031
+  meld_emotion     0.119      0.067       0.081
+
+--- Key findings ---
+
+1. Original labels win overall on the pretrained model — opposite of the LoRA
+   checkpoint results (where ep4_fresh beat original 0.558 vs 0.501 on voxceleb).
+
+2. H1/H4 collapse confirmed on pretrained (ep4_fixed voxceleb 0.017):
+   predictions are mostly garbage ('nppi' ×6, 'wowhp' ×3 out of 100).
+   This is a BASE MODEL PRIOR issue — independent of any training.
+
+3. ep4_fresh also underperforms original on pretrained (0.128 vs 0.383).
+   Reason: without LoRA the model does not reliably follow symbol format
+   instructions. Meld predictions mix symbols ('Igbn') with English words
+   ('Neutral', 'Angry') — half the outputs ignore the assigned symbol format.
+
+4. HVB F1=0.000 for original labels: model acts as a chatbot
+   ("Hello! How can I assist you today?") — no task grounding without fine-tuning.
+
+--- Critical conclusion: Idea 1 requires fine-tuning as a prerequisite ---
+
+Idea 1 (easy symbols > original labels) only holds AFTER LoRA fine-tuning.
+The Phase 0 LoRA does two things simultaneously:
+  a) Teaches the model to follow symbol format instructions (output the assigned
+     token rather than falling back to English)
+  b) Learns audio → category mapping from meld training data
+
+Without (a), even perfectly chosen symbols fail because the model won't output
+them consistently. Without (b), there is no audio understanding to transfer.
+
+The pretrained experiment confirms that symbol quality effects (H1/H2/H4) only
+manifest once the model is instruction-following correctly. The base model's
+failure to follow format is the dominant source of error, drowning out any
+symbol quality signal.
+
+--- Implication for Idea 2 ---
+
+Idea 2 (train with hard symbols → better audio representations → better
+cross-task transfer) still requires LoRA. The experimental design is:
+
+  Training:   LoRA on meld with hard symbols (low H2, safe H4)
+  Inference:  evaluate with easy symbols (high H2, safe H4)
+
+The LoRA learns format-following (from the task structure) and audio features
+(from discriminating between hard symbols). At inference, easy symbols lower
+the generation barrier. Both effects compound.
+
+The pretrained baseline was useful to rule out Idea 1 as a zero-shot trick —
+it is not. Fine-tuning is always required.
+
+================================================================================
 WHAT WE WANT TO DO WITH THIS
 ================================================================================
 
@@ -235,39 +296,31 @@ Ultimate goal: the model is trained only on meld_emotion but needs to handle
 voxceleb (sentiment), hvb (dialogue acts), voxpopuli (intent) with better-
 than-zero-shot results. Symbol choice is the lever we can control.
 
-If we can validate which hypotheses are true, we can design a symbol selection
-strategy that:
-  1. Avoids first-subword tokens with natural English continuations (H1)
-  2. Selects symbols from the high-base-probability region of the vocab (H2)
-  3. Maximizes minimum pairwise embedding distance between class symbols (H3)
-  4. Avoids single-character first subwords (H4)
-  5. For large label sets: explicitly checks for subword overlap before use (H5)
+Validated symbol selection strategy (based on confirmed hypotheses):
+  1. Filter out H1/H4 risks: lp_tok1 >= -2.0 (dominant first token → collapse)
+  2. Easy mode: select symbols with lp_total >= -36.0 (reliable generation)
+  3. Hard mode: select symbols with lp_total <= -40.0 AND lp_tok1 < -2.0
+  4. For large label sets (HVB): explicitly verify no subword token overlap (H5)
+  H3 (embedding distance) dropped — not supported empirically.
 
-This replaces random sampling from the pool with a principled search over the
-same pool — no new training needed, just a smarter symbol selection at inference.
-
-The hypothesis is: with better symbols, cross-task ICL improves because the
-model's base instruction-following capability can "click" with the few-shot
-examples when the symbols don't interfere with its LM priors.
+Experiment sequence:
+  A. Run score_vocab.py → vocab_h2_scores.json (one-time, commit output)
+  B. Wire SymbolManager to use easy/hard flag at symbol selection time
+  C. Train LoRA on meld with hard symbols → checkpoint_hard
+  D. Evaluate checkpoint_hard with easy symbols → compare vs Phase 0 baseline
+  E. If Idea 2 holds: checkpoint_hard + easy symbols > Phase 0 + easy symbols
+     on cross-task datasets (voxceleb, hvb, voxpopuli)
 
 ================================================================================
 NEXT STEPS
 ================================================================================
 
-1. Run base-probability analysis: forward pass on neutral prompt, measure
-   log P(symbol) for every token in the 500-symbol pool.
-
-2. Run embedding distance analysis: extract first-subword embeddings from the
-   model, compute pairwise distances for every epoch's symbol sets.
-
-3. Correlate both measurements against the F1 scores in:
-   041203_qwen_meld_emotion_dspo_symbols.txt
-
-4. If either hypothesis shows strong correlation → design a symbol selection
-   algorithm that optimizes for that property.
-
-5. Run inference with the "designed" symbol set vs. random symbols and compare
-   F1 on all 4 datasets.
+1. [DONE] score_vocab.py written — run once on GPU to generate vocab_h2_scores.json
+2. Wire SymbolManager: add symbol_difficulty flag (easy/hard/random), load
+   vocab_h2_scores.json at init, filter pool before sampling
+3. Run training with hard symbols on meld (Idea 2 experiment)
+4. Run inference: hard-trained model × {easy symbols, original labels}
+5. Compare cross-task F1 vs Phase 0 baseline
 
 ================================================================================
 END

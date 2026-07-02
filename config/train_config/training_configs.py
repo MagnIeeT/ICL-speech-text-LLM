@@ -53,6 +53,13 @@ class SymbolConfig:
     seed: Optional[int] = None
     validation_modes: str = "fixed,original,fresh"
     swap_labels: bool = False
+    # Difficulty of symbols used during training: easy | hard | random
+    symbol_difficulty: str = "random"
+    # Difficulty of symbols used for fresh validation mode: easy | hard | random
+    val_symbol_difficulty: str = "easy"
+    # Number of symbol mappings pre-generated at init for dynamic modes
+    # Per epoch: pool[epoch % M], per instance: random.choice(pool)
+    num_symbol_mappings: int = 20
 
 
 @dataclass
@@ -210,8 +217,11 @@ class TrainingConfig:
             no_symbols=getattr(args, "no_symbols", False),
             update_strategy=SymbolUpdateStrategy(getattr(args, "symbol_update_strategy", "per_epoch")),
             symbol_token_size=2,
-              validation_modes=getattr(args, "validation_modes", "fixed,original,fresh"),
-              swap_labels=getattr(args, "swap_labels", False),
+            validation_modes=getattr(args, "validation_modes", "fixed,original,fresh"),
+            swap_labels=getattr(args, "swap_labels", False),
+            symbol_difficulty=getattr(args, "symbol_difficulty", "random"),
+            val_symbol_difficulty=getattr(args, "val_symbol_difficulty", "easy"),
+            num_symbol_mappings=getattr(args, "num_symbol_mappings", 20),
         )
         if symbol_config.no_symbols:
             symbol_config.dynamic_symbols = False
@@ -323,6 +333,26 @@ def parse_training_args() -> argparse.Namespace:
         type=str,
         default="per_epoch",
         choices=["per_epoch", "per_instance"],
+    )
+    parser.add_argument(
+        "--symbol_difficulty",
+        type=str,
+        default="random",
+        choices=["easy", "hard", "random"],
+        help="Difficulty of symbols used during training (easy=high H2, hard=low H2, random=current behaviour)",
+    )
+    parser.add_argument(
+        "--val_symbol_difficulty",
+        type=str,
+        default="easy",
+        choices=["easy", "hard", "random"],
+        help="Difficulty of symbols used for fresh validation mode",
+    )
+    parser.add_argument(
+        "--num_symbol_mappings",
+        type=int,
+        default=20,
+        help="Number of symbol mappings pre-generated at init for dynamic modes (per_epoch: pool[epoch%%M], per_instance: random.choice(pool))",
     )
 
     parser.add_argument("--input_mode", type=str, default="speech_only", choices=["speech_only", "text_only"], help="Query input modality")

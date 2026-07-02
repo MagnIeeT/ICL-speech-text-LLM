@@ -68,6 +68,9 @@ NO_SYMBOLS="${NO_SYMBOLS:-true}"                                                
 DYNAMIC_SYMBOLS="${DYNAMIC_SYMBOLS:-false}"                                       # true = regenerate symbol mapping each epoch
 SYMBOL_UPDATE_STRATEGY="${SYMBOL_UPDATE_STRATEGY:-per_instance}"                    # when dynamic symbols refresh: per_epoch | per_instance
 SWAP_LABELS="${SWAP_LABELS:-false}"                                               # true = randomly shuffle label↔symbol assignments each epoch
+SYMBOL_DIFFICULTY="${SYMBOL_DIFFICULTY:-hard}"                                  # training symbol difficulty: easy | hard | random
+VAL_SYMBOL_DIFFICULTY="${VAL_SYMBOL_DIFFICULTY:-easy}"                            # fresh validation symbol difficulty: easy | hard | random
+NUM_SYMBOL_MAPPINGS="${NUM_SYMBOL_MAPPINGS:-20}"                                  # M pre-generated mappings: per_epoch uses pool[epoch%M], per_instance uses random.choice(pool)
 
 if [[ "${USE_DPO}" == "true" ]]; then
     _MODE="symdpo"
@@ -172,6 +175,9 @@ python train.py \
     --dspo_rotation_interval "${DSPO_ROTATION_INTERVAL}" \
     --dspo_phase2_rotation "${DSPO_PHASE2_ROTATION}" \
     $( [[ "${SWAP_LABELS}" == "true" ]] && printf '%s' "--swap_labels" ) \
+    --symbol_difficulty "${SYMBOL_DIFFICULTY}" \
+    --val_symbol_difficulty "${VAL_SYMBOL_DIFFICULTY}" \
+    --num_symbol_mappings "${NUM_SYMBOL_MAPPINGS}" \
     $( [[ "${USE_DPO}" == "true" ]] && printf '%s' "--use_dpo" ) \
     $( [[ "${USE_DPO}" == "true" ]] && printf '%s' "--dpo_beta ${DPO_BETA}" ) \
     --input_mode "${INPUT_MODE}" \

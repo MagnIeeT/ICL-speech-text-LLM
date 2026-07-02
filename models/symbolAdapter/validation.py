@@ -65,8 +65,11 @@ class ValidationManager:
             symbol_mappings_to_use = {}
             mode_name = "Original"
         elif use_dynamic_symbols:
-            symbol_mappings_to_use = self.symbol_manager._generate_symbol_mappings(force=True)
-            mode_name = "Fresh-Symbols"
+            diff = self.symbol_manager.val_symbol_difficulty
+            symbol_mappings_to_use = self.symbol_manager._generate_symbol_mappings(
+                force=True, difficulty=diff
+            )
+            mode_name = f"Fresh-Symbols({diff})"
         else:
             # symbol_map comes pre-built from trainer (_build_current_symbol_map); fallback for non-trainer callers
             symbol_mappings_to_use = symbol_map if symbol_map is not None else self.symbol_manager.get_symbols_for_epoch(epoch)
