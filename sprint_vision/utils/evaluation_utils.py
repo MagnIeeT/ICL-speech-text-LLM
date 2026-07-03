@@ -407,7 +407,6 @@ def compute_binary_metrics(results: list, auc_token_id=None) -> dict:
     metrics = {
         "accuracy":            accuracy,
         "accuracy_aacc":       accuracy,   # binary: per-class-avg accuracy == accuracy
-        "accuracy_exactmatch": accuracy,   # binary: exact-match == accuracy
         "macro_f1":    macro_f1,
         "sensitivity": sensitivity,
         "specificity": specificity,
@@ -462,8 +461,6 @@ def compute_multilabel_metrics(results: list, valid_labels: list,
             y_pred.append([1 if lbl in pred_set else 0 for lbl in valid_labels])
         scores_matrix = None
 
-    exact_match = sum(gt == pd for gt, pd in zip(y_true, y_pred)) / total
-
     per_label = {}
     f1_sum  = 0.0
     acc_sum = 0.0
@@ -515,7 +512,6 @@ def compute_multilabel_metrics(results: list, valid_labels: list,
     out = {
         "accuracy":            aacc,
         "accuracy_aacc":       aacc,
-        "accuracy_exactmatch": exact_match,
         "macro_f1":  macro_f1,
         "per_label": per_label,
         "total":     total,

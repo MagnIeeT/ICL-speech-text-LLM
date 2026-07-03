@@ -68,13 +68,13 @@ diagnose_samples=0  # set 0 so [BATCH-VERIFY] fires on sample 0 when batching
 USE_VALIDATION=true
 MAX_VAL_SAMPLES=100
 val_shot=10
-val_exp=2
+val_exp=1
 
 # Eval modes (comma-separated subset of original,fixed,fresh). Empty = sprint_eval
 # default (symbol strategies → original,fixed,fresh ; regular/rft → original only).
 eval_modes=original
 # Fine-tuned checkpoint (LoRA adapter dir) — same checkpoint used for all datasets
-CHECKPOINT_PATH=/home/harinisrireddykandula/llava/checkpoints/0701_1115_llava-colon-regular-shot10_exp2_val100/checkpoint-best
+CHECKPOINT_PATH=/home/harinisrireddykandula/llava/checkpoints/0701_1711_llava-colon-regular-shot10_exp1_val100/checkpoint-best
 # Set to a job ID (e.g. "12093.eehpc") to wait for that job first.
 hold_job_id=
 

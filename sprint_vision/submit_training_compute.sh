@@ -84,7 +84,7 @@ RUN_TAG="${RUN_TAG:-}"
 #   TRAINING_SHOTS + SHOT_EXP   → MedFMC repeated-experiment split (paper protocol)
 #   RANDOM_SHOT + SHOT_SEED     → custom random N-shot sampling
 TRAINING_SHOTS=10 # e.g. 10  (use with SHOT_EXP for paper protocol)
-SHOT_EXP=2             # experiment index 1-5
+SHOT_EXP=1             # experiment index 1-5
 RANDOM_SHOT="${RANDOM_SHOT:-}"        # empty = not in random-shot mode
 SHOT_SEED="${SHOT_SEED:-1}"           # RNG seed for random-shot sampling
 if [ -z "${RANDOM_SHOT}" ] && [ -z "${TRAINING_SHOTS}" ]; then

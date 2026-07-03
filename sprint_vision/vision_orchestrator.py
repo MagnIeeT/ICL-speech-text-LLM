@@ -248,11 +248,9 @@ def _print_final_summary(all_metrics: dict, strategy: str, checkpoint: str, icl_
         if "map" in m:
             print(f"  mAP            : {m['map']:.4f}")
         print(f"  macro_F1       : {m.get('macro_f1', 0):.4f}")
-        # accuracy headline means different things per task type (colon = exact/standard,
-        # chest/endo = aACC), so print BOTH explicitly-labeled keys. Compare ACROSS
-        # datasets on aACC (one consistent definition); cite exact only for colon.
+        # accuracy_aACC: colon = logit-argmax top-1 (MedFMC official); chest/endo =
+        # average per-class accuracy. One consistent definition across datasets.
         print(f"  accuracy_aACC  : {m.get('accuracy_aacc', m.get('accuracy', 0)):.4f}  (cross-dataset comparable)")
-        print(f"  accuracy_exact : {m.get('accuracy_exactmatch', m.get('accuracy', 0)):.4f}  (colon=official; chest/endo~0)")
         if "sensitivity" in m:
             print(f"  sensitivity    : {m['sensitivity']:.4f}")
         if "specificity" in m:

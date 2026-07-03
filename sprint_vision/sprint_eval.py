@@ -49,7 +49,7 @@ from config.data_config import get_dataset_config, DatasetName
 VALID_DATASETS = [e.value for e in DatasetName]
 
 # MedFMC paper save_best / primary metric per task (mirrors sprint_callbacks.py).
-_PRIMARY_METRIC = {"chest": "mAP", "endo": "macro_auc"}   # else colon → "accuracy"
+_PRIMARY_METRIC = {"chest": "mAP", "endo": "macro_auc", "colon": "accuracy_aacc"}  # logit-argmax == MedFMC top-1
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -370,7 +370,17 @@ def eval_model(args):
         model=model,
         tokenizer=tokenizer,
         image_processor=image_processor,
-        data_args=SimpleNamespace(image_folder=args.image_folder),
+        # image_aspect_ratio MUST be propagated so process_images() takes the SAME
+        # expand2square('pad') path training used (train.py:1232 writes 'pad' into
+        # model.config). Without it, getattr(data_args,'image_aspect_ratio',None)==None
+        # → CLIP resize+center-crop instead of pad → different pixels → different
+        # visual features → logit drift → train-val vs inference metric gap. The
+        # legacy ICL path already passes model.config (sprint_eval.py:_legacy path);
+        # this makes the unified 0-shot path match it exactly.
+        data_args=SimpleNamespace(
+            image_folder=args.image_folder,
+            image_aspect_ratio=getattr(model.config, "image_aspect_ratio", "pad"),
+        ),
         symbol_manager=symbol_manager,
         label_names=valid_labels_lower,
         is_multi_label=is_multi_label,

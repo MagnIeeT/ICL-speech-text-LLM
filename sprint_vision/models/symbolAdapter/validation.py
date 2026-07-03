@@ -856,14 +856,25 @@ class SPRInTValidationManager:
         """
         Single evaluation entry point for standalone inference (0-shot).
 
-        Mirrors ICI's inference.py: sprint_eval.py loads the model/checkpoint,
-        builds this manager (with eval_data_path = the test split and
-        max_val_samples = 0 for the full split), calls run_inference(), and writes
-        the results JSON. ALL scoring runs through the SAME training methods —
-        _run_colon_auc (colon) and _run_multilabel_auc_map (chest/endo) — that
-        run_comprehensive_validation uses; this method only adds the per-mode loop
-        and collects their per-sample records (return_details=True). There is no
-        separate inference scorer.
+        Mirrors ICI's inference.py, which calls the SAME run_comprehensive_validation
+        method training uses (inference.py:298), so every metric — text-gen AND
+        logit-based — is computed by identical code in both phases. To match that
+        contract exactly, this method runs BOTH sub-passes training runs, per mode:
+
+          1. _run_val_mode(symbols)          → macro_f1  (text-generation)
+          2. _run_colon_auc / _run_multilabel_auc_map(..., return_details=True)
+                                             → AUC/mAP/accuracy_aacc + per-sample records
+
+        and MERGES them so the reported dict carries the text-gen macro_f1
+        (== the training cross-dataset table's `macro_f1` column) AND the probe
+        AUC/mAP/accuracy_aacc (== the table's `mAP`/`AUC`/`acc_aACC` columns).
+        Before this unification, inference reported macro_f1 from the PROBE path
+        (0.5-threshold) instead of text-gen, which is why endo macro_f1 read 0.24 at
+        inference but 0.00 in training — different code, same name. Now both come
+        from _run_val_mode, so they match by construction.
+
+        Set SPRINT_INFER_TEXTGEN=false to skip pass 1 (probe-only, faster; macro_f1
+        then falls back to the probe path — the old behaviour).
 
         Returns:
             all_modes = {mode: {"metrics": {...}, "results": [...], "mapping": {...}}}
@@ -871,6 +882,9 @@ class SPRInTValidationManager:
         consumed verbatim by sprint_eval._save_multimode_results (unchanged JSON).
         """
         self.model.eval()
+
+        _run_textgen = os.environ.get("SPRINT_INFER_TEXTGEN", "true").strip().lower() \
+            in ("1", "true", "yes")
 
         # ── Symbol mapping diagnostic (mirrors old sprint_eval1.py) ──────────
         print("=" * 70)
@@ -899,6 +913,12 @@ class SPRInTValidationManager:
             print("\n" + "=" * 70)
             print(f"[SPRINT EVAL] === EVALUATION MODE: {_mode} ===")
 
+            # ── Pass 1: text-generation (SAME call training makes in
+            #    run_comprehensive_validation) → macro_f1, accuracy. Skipped only
+            #    when SPRINT_INFER_TEXTGEN=false (probe-only legacy behaviour).
+            textgen = self._run_val_mode(_map or {}) if _run_textgen else None
+
+            # ── Pass 2: primary logit metrics + per-sample records (unchanged).
             if self._is_multi_label:
                 # original → no probe symbols; fixed/fresh → symbol-substituted probe.
                 metrics, records = self._run_multilabel_auc_map(
@@ -908,6 +928,21 @@ class SPRInTValidationManager:
                 # colon: original → bare 0/1 tokens; fixed/fresh → symbol tokens + prompt.
                 metrics, records = self._run_colon_auc(
                     mapping=_map, return_details=True
+                )
+
+            # ── Merge: text-gen macro_f1 OVERRIDES the probe's, so the inference
+            #    JSON reports the SAME macro_f1 as the training cross-dataset table
+            #    (both from _run_val_mode). accuracy_aacc / AUC / mAP stay from the
+            #    probe (both training & inference already share that path). No merge
+            #    when text-gen is disabled → probe values kept.
+            if textgen is not None:
+                metrics = dict(metrics)
+                metrics["macro_f1"] = textgen["macro_f1"]   # == training table macro_f1 (text-gen)
+                # accuracy_aacc left untouched (probe logit-argmax == table acc_aACC)
+                print(
+                    f"[SPRINT EVAL] mode={_mode}: text-gen macro_f1="
+                    f"{textgen['macro_f1']:.4f}"
+                    f"  |  probe acc_aACC={metrics.get('accuracy_aacc', 0.0):.4f}"
                 )
 
             all_modes[_mode] = {"metrics": metrics, "results": records,

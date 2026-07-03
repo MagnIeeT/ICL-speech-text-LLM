@@ -175,13 +175,14 @@ class SPRInTValidationCallback(transformers.TrainerCallback):
     def __init__(self, model, tokenizer, image_processor, data_args, training_args, symbol_manager):
         self.training_args  = training_args
         self.symbol_manager = symbol_manager
-        self._step_losses   = []
-        self._epoch_counter = 0
-        self._epoch_history = []
-        self._best_score    = -1.0
-        self._best_epoch    = None
-        self._is_new_best   = False
-        self._warned_no_val = False
+        self._step_losses          = []
+        self._epoch_counter        = 0
+        self._epoch_history        = []
+        self._best_score           = -1.0
+        self._best_secondary_score = -1.0   # AUC tiebreaker when primary scores tie
+        self._best_epoch           = None
+        self._is_new_best          = False
+        self._warned_no_val        = False
 
         # Load dataset config to determine label vocabulary, multi-label flag, and primary metric.
         try:
@@ -206,12 +207,18 @@ class SPRInTValidationCallback(transformers.TrainerCallback):
         #   chest.py:     metric='mAP',          save_best='auto'
         #   colon.py:     metric='accuracy',      save_best='auto'  (topk=1)
         #   endoscopy.py: metric='AUC_multilabel',save_best='auto'  (= macro_auc in our code)
+        # Colon: MedFMC uses accuracy (topk=1 = argmax of softmax logits).
+        # In our code two accuracy metrics exist:
+        #   modes["original"]["accuracy"]  → text-generation string match (acc_exact, noisy)
+        #   auc_map["accuracy_aacc"]       → logit-argmax (l1>l0), same as MedFMC top-1
+        # We use "accuracy_aacc" (logit path) as it matches the official metric exactly.
+        # AUC is the tiebreaker when two epochs have equal accuracy_aacc.
         if dataset_name == "chest":
             self._primary_metric = "mAP"
         elif dataset_name == "endo":
-            self._primary_metric = "macro_auc"   # AUC_multilabel in paper
-        else:                                     # colon
-            self._primary_metric = "accuracy"
+            self._primary_metric = "macro_auc"       # AUC_multilabel in paper
+        else:                                         # colon
+            self._primary_metric = "accuracy_aacc"   # logit-argmax == MedFMC top-1
         self._validation_modes = getattr(training_args, "validation_modes", "fixed,original,fresh")
 
         self._val_manager = SPRInTValidationManager(
@@ -257,7 +264,7 @@ class SPRInTValidationCallback(transformers.TrainerCallback):
                 # Sibling val JSON: same dir + shot/exp, dataset token swapped.
                 _bn    = os.path.basename(_primary_eval).replace(f"{dataset_name}_", f"{_d}_", 1)
                 _dpath = os.path.join(os.path.dirname(_primary_eval), _bn)
-                _dprim = "mAP" if _d == "chest" else ("macro_auc" if _d == "endo" else "accuracy")
+                _dprim = "mAP" if _d == "chest" else ("macro_auc" if _d == "endo" else "accuracy_aacc")
                 self._monitor_managers[_d] = SPRInTValidationManager(
                     model            = model,
                     tokenizer        = tokenizer,
@@ -335,7 +342,13 @@ class SPRInTValidationCallback(transformers.TrainerCallback):
 
         # Best-epoch tracking — metric per MedFMC paper save_best criteria
         auc_map = entry.get("auc_map", {})
-        if self._primary_metric == "accuracy":
+        if self._primary_metric == "accuracy_aacc":
+            # Logit-argmax accuracy from auc_map — matches MedFMC top-1 (argmax softmax).
+            # Falls back to text-gen accuracy only when auc_map was not computed.
+            combined_score   = (auc_map.get("accuracy_aacc") or
+                                 entry["modes"].get("original", {}).get("accuracy", 0.0))
+            best_metric_name = "acc_aACC"
+        elif self._primary_metric == "accuracy":
             combined_score   = entry["modes"].get("original", {}).get("accuracy", 0.0)
             best_metric_name = "accuracy"
         elif auc_map:
@@ -346,12 +359,28 @@ class SPRInTValidationCallback(transformers.TrainerCallback):
             combined_score   = entry["modes"].get("original", {}).get("macro_f1", 0.0)
             best_metric_name = "macro_f1"
 
+        # AUC tiebreaker: when primary scores are exactly equal (colon accuracy),
+        # the epoch with higher AUC wins.
+        current_auc = auc_map.get("AUC", auc_map.get("macro_auc", 0.0)) if auc_map else 0.0
+
         if combined_score > self._best_score:
-            self._best_score  = combined_score
-            self._best_epoch  = epoch
-            self._is_new_best = True
+            self._best_score           = combined_score
+            self._best_secondary_score = current_auc
+            self._best_epoch           = epoch
+            self._is_new_best          = True
             _rank0_print(
                 f"★  New best: epoch {epoch}/{total_epochs}  {best_metric_name}={combined_score:.4f}"
+            )
+        elif (combined_score == self._best_score
+              and self._primary_metric in ("accuracy", "accuracy_aacc")
+              and current_auc > self._best_secondary_score):
+            # Tie on accuracy — AUC tiebreaker
+            self._best_secondary_score = current_auc
+            self._best_epoch           = epoch
+            self._is_new_best          = True
+            _rank0_print(
+                f"★  New best (AUC tiebreaker): epoch {epoch}/{total_epochs}  "
+                f"{best_metric_name}={combined_score:.4f}  AUC={current_auc:.4f}"
             )
         else:
             self._is_new_best = False
@@ -462,7 +491,7 @@ class SPRInTValidationCallback(transformers.TrainerCallback):
         )
         _rank0_print(f"{'='*104}")
         _rank0_print(
-            f"{'Dataset':<10} {'Epoch':<6} {'macro_f1':<10} {'acc_exact':<11} "
+            f"{'Dataset':<10} {'Epoch':<6} {'macro_f1':<10} "
             f"{'acc_aACC':<10} {'mAP':<10} {'AUC':<10} {'Best?':<6}"
         )
         _rank0_print(f"{'-'*104}")
@@ -476,7 +505,6 @@ class SPRInTValidationCallback(transformers.TrainerCallback):
                 _rank0_print(
                     f"{ds:<10} {str(ep):<6} "
                     f"{_f(o.get('macro_f1', float('nan'))):<10} "
-                    f"{_f(o.get('accuracy', float('nan'))):<11} "
                     f"{_f(am.get('accuracy_aacc', float('nan'))):<10} "
                     f"{_f(am.get('mAP', float('nan'))):<10} "
                     f"{_f(auc):<10} {star:<6}"
