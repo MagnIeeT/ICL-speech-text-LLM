@@ -32,21 +32,25 @@ def _load_scored_pool(path: str = _DEFAULT_SCORES_PATH) -> Optional[Dict]:
     with open(path) as f:
         data = json.load(f)
     _SCORED_POOL_CACHE = data
-    thresholds = data["meta"]["thresholds"]
-    symbols = data["symbols"]
-    safe = {s: v for s, v in symbols.items() if not v["h4_risk"]}
-    easy = [s for s, v in safe.items() if v["lp_total"] >= thresholds["easy_lp_total_min"]]
-    hard = [s for s, v in safe.items() if v["lp_total"] <= thresholds["hard_lp_total_max"]]
     logging.info(
-        "Loaded vocab_h2_scores: %d total, %d easy (lp_total>=%.1f), %d hard (lp_total<=%.1f)",
-        len(symbols), len(easy), thresholds["easy_lp_total_min"],
-        len(hard), thresholds["hard_lp_total_max"],
+        "Loaded vocab_h2_scores: hard_pool=%d, easy_pool=%d (first-token deduplicated)",
+        len(data.get("hard_pool", [])), len(data.get("easy_pool", [])),
     )
     return _SCORED_POOL_CACHE
 
 
 def _get_difficulty_pool(difficulty: str, scores: Dict) -> List[str]:
-    """Return the pre-sorted symbol list for the requested difficulty tier."""
+    """Return the deduplicated symbol list for the requested difficulty tier.
+
+    Uses pre-built hard_pool / easy_pool keys (one symbol per unique first BPE token)
+    to avoid first-token collisions between label symbols during training.
+    Falls back to threshold filtering if the keys are absent (legacy json).
+    """
+    if difficulty == "easy" and "easy_pool" in scores:
+        return list(scores["easy_pool"])
+    if difficulty == "hard" and "hard_pool" in scores:
+        return list(scores["hard_pool"])
+    # legacy fallback: re-filter by thresholds (no dedup)
     thresholds = scores["meta"]["thresholds"]
     safe = {s: v for s, v in scores["symbols"].items() if not v["h4_risk"]}
     if difficulty == "easy":
