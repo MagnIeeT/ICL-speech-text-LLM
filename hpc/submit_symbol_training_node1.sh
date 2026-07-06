@@ -11,7 +11,7 @@ if [[ -f "${PROJECT_ROOT}/.env" ]]; then
 fi
 
 # --- Model ---
-MODEL_TYPE="${MODEL_TYPE:-qwen}"                                                  # model backend: qwen | salmonn | flamingo
+MODEL_TYPE="${MODEL_TYPE:-flamingo}"                                                  # model backend: qwen | salmonn | flamingo
 
 # --- Infrastructure ---
 # Auto-select conda env based on MODEL_TYPE unless explicitly overridden.
@@ -20,7 +20,7 @@ _DEFAULT_CONDA_ENV="qwen"
 if [[ "${MODEL_TYPE}" == "flamingo" ]]; then _DEFAULT_CONDA_ENV="flamingo"; fi
 CONDA_ENV="${CONDA_ENV:-${_DEFAULT_CONDA_ENV}}"                                   # conda environment (auto: qwen→qwen env, flamingo→flamingo env)
 DEVICE="${DEVICE:-cuda:0}"                                                        # torch device for training
-CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-4}"                                 # which GPU(s) the process can see
+CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"                                 # which GPU(s) the process can see
 OUTPUT_DIR="${OUTPUT_DIR:-${HOME}/training/symbol_training}"                      # root output directory
 CHECKPOINT_DIR="${CHECKPOINT_BASE:-${HOME}/training/symbol_training/checkpoints}/$(date +"%Y-%m-%d")"  # checkpoint directory (dated subfolder)
 LOG_DIR="${LOGS_DIR:-${HOME}/training/logs}/$(date +"%Y-%m-%d")"                 # log directory (dated subfolder)
@@ -43,7 +43,7 @@ VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-1}"                                           
 GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-8}"                  # effective batch = BATCH_SIZE × this
 WARMUP_STEPS="${WARMUP_STEPS:-100}"                                               # LR scheduler warmup steps
 VALIDATE_BEFORE_TRAINING="${VALIDATE_BEFORE_TRAINING:-false}"                     # true = run validation pass before epoch 1 (baseline score)
-VALIDATION_MODES="${VALIDATION_MODES:-original,fresh}"                     # which symbol modes to validate: original,fixed,fresh
+VALIDATION_MODES="${VALIDATION_MODES:-original,fixed,fresh}"                     # which symbol modes to validate: original,fixed,fresh
 
 # --- Symbol mode (pick ONE of the blocks below) ---
 # SymDPO: DPO loss over chosen/rejected symbol pairs (requires NO_SYMBOLS=false)
@@ -64,9 +64,9 @@ DSPO_ROTATION_INTERVAL="${DSPO_ROTATION_INTERVAL:-200}"                         
 DSPO_PHASE2_ROTATION="${DSPO_PHASE2_ROTATION:-0}"                               # Phase 2 symbol refresh: -1=fixed, 0=per epoch, 1=per instance, >1=every N steps
 
 # Fixed/dynamic symbols
-NO_SYMBOLS="${NO_SYMBOLS:-true}"                                                 # true = disable symbol replacement, use raw labels (must be false for DPO)
+NO_SYMBOLS="${NO_SYMBOLS:-false}"                                                 # true = disable symbol replacement, use raw labels (must be false for DPO)
 DYNAMIC_SYMBOLS="${DYNAMIC_SYMBOLS:-false}"                                       # true = regenerate symbol mapping each epoch
-SYMBOL_UPDATE_STRATEGY="${SYMBOL_UPDATE_STRATEGY:-per_instance}"                    # when dynamic symbols refresh: per_epoch | per_instance
+SYMBOL_UPDATE_STRATEGY="${SYMBOL_UPDATE_STRATEGY:-per_epoch}"                    # when dynamic symbols refresh: per_epoch | per_instance
 SWAP_LABELS="${SWAP_LABELS:-false}"                                               # true = randomly shuffle label↔symbol assignments each epoch
 SYMBOL_DIFFICULTY="${SYMBOL_DIFFICULTY:-hard}"                                  # training symbol difficulty: easy | hard | random
 VAL_SYMBOL_DIFFICULTY="${VAL_SYMBOL_DIFFICULTY:-easy}"                            # fresh validation symbol difficulty: easy | hard | random
@@ -83,6 +83,13 @@ elif [[ "${DYNAMIC_SYMBOLS}" == "true" ]]; then
     [[ "${SYMBOL_UPDATE_STRATEGY}" == "per_instance" ]] && _MODE="dpi" || _MODE="dpe"
 else
     _MODE="fix"
+fi
+if [[ "${NO_SYMBOLS}" != "true" ]]; then
+    case "${SYMBOL_DIFFICULTY}" in
+        hard)   _MODE="${_MODE}_ha" ;;
+        easy)   _MODE="${_MODE}_ea" ;;
+        random) _MODE="${_MODE}_ra" ;;
+    esac
 fi
 [[ "${SWAP_LABELS}" == "true" ]] && _MODE="${_MODE}_swap_${SYMBOL_UPDATE_STRATEGY}"
 
