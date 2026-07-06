@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class SalmonProcessor(ModelProcessor):
     """Processor for SALMONN model. Handles audio features and modular tokenization."""
 
-    def __init__(self, tokenizer, max_length: int = 128, symbol_manager=None):
+    def __init__(self, tokenizer, max_length: int = 512, symbol_manager=None):
         super().__init__(symbol_manager=symbol_manager)
         from transformers import WhisperFeatureExtractor
 
@@ -112,8 +112,19 @@ class SalmonProcessor(ModelProcessor):
         # If not tokenized, collect lists
         if "input_ids" not in batch_items[0]:
             batch: Dict[str, Any] = {}
+            has_valid_speech = all(item.get("spectrogram") is not None for item in batch_items)
+            if has_valid_speech:
+                batch["wav_lengths"] = torch.tensor([item["wav_length"] for item in batch_items])
+                raw_wavs = [item["raw_wav"] for item in batch_items]
+                batch["raw_wav"] = pad_sequence(raw_wavs, batch_first=True, padding_value=0)
+                batch["padding_mask"] = torch.arange(batch["raw_wav"].size(1)).unsqueeze(0) >= batch["wav_lengths"].unsqueeze(1)
+                batch["spectrogram"] = torch.stack([item["spectrogram"] for item in batch_items])
+            skip_keys = {"spectrogram", "raw_wav", "padding_mask", "wav_length", "wav_lengths", "num_examples"}
             for key in batch_items[0].keys():
+                if key in skip_keys:
+                    continue
                 batch[key] = [item.get(key) for item in batch_items]
+            batch["num_examples"] = torch.tensor([item.get("num_examples", 0) for item in batch_items])
             return batch
 
         # If tokenized, pad and stack
