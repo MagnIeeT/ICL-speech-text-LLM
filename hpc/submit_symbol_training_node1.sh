@@ -1,101 +1,106 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ============================================================
+# Symbol Adapter Training - New Cluster Submit Script
+# ============================================================
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-
 cd "${PROJECT_ROOT}"
 
+# ------------------------------------------------------------
+# Load environment
+# ------------------------------------------------------------
 if [[ -f "${PROJECT_ROOT}/.env" ]]; then
-    set -a; source "${PROJECT_ROOT}/.env"; set +a
+    set -a
+    source "${PROJECT_ROOT}/.env"
+    set +a
 fi
 
-# --- Model ---
-MODEL_TYPE="${MODEL_TYPE:-qwen}"                                                  # model backend: qwen | salmonn | flamingo
+# ------------------------------------------------------------
+# Job Configuration (edit these)
+# ------------------------------------------------------------
+MODEL_TYPE="${MODEL_TYPE:-qwen}"                     # qwen | salmonn | flamingo
+DATASET_TYPE="${DATASET_TYPE:-voxceleb}"
+VAL_DATASET_TYPE="${VAL_DATASET_TYPE:-voxceleb}"
 
-# --- Infrastructure ---
-# Auto-select conda env based on MODEL_TYPE unless explicitly overridden.
-# qwen/salmonn need transformers==4.45.2; flamingo needs transformers>=5.0.
-_DEFAULT_CONDA_ENV="qwen"
-if [[ "${MODEL_TYPE}" == "flamingo" ]]; then _DEFAULT_CONDA_ENV="flamingo"; fi
-CONDA_ENV="${CONDA_ENV:-${_DEFAULT_CONDA_ENV}}"                                   # conda environment (auto: qwen→qwen env, flamingo→flamingo env)
-DEVICE="${DEVICE:-cuda:0}"                                                        # torch device for training
-CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-4}"                                 # which GPU(s) the process can see
-OUTPUT_DIR="${OUTPUT_DIR:-${HOME}/training/symbol_training}"                      # root output directory
-CHECKPOINT_DIR="${CHECKPOINT_BASE:-${HOME}/training/symbol_training/checkpoints}/$(date +"%Y-%m-%d")"  # checkpoint directory (dated subfolder)
-LOG_DIR="${LOGS_DIR:-${HOME}/training/logs}/$(date +"%Y-%m-%d")"                 # log directory (dated subfolder)
-NUM_WORKERS="${NUM_WORKERS:-2}"                                                   # dataloader worker processes
+NO_SYMBOLS="${NO_SYMBOLS:-false}"
+DYNAMIC_SYMBOLS="${DYNAMIC_SYMBOLS:-false}"
+DIFF_SYMBOL_ENABLED="${DIFF_SYMBOL_ENABLED:-false}"
+SWAP_LABELS="${SWAP_LABELS:-false}"
+USE_DPO="${USE_DPO:-false}"
 
-# --- Data ---
-DATASET_TYPE="${DATASET_TYPE:-meld_emotion}"                                      # training dataset(s), dash-separated
-VAL_DATASET_TYPE="${VAL_DATASET_TYPE:-voxceleb-hvb-voxpopuli-meld_emotion}"      # validation dataset(s), dash-separated
-MAX_SAMPLES="${MAX_SAMPLES:-0}"                                                  # max training samples (0 = full dataset)
-INPUT_MODE="${INPUT_MODE:-speech_only}"                                           # query modality: speech_only | text_only
-FEWSHOT_MODE="${FEWSHOT_MODE:-text}"                                              # few-shot example modality: text | speech
-NUM_EXAMPLES="${NUM_EXAMPLES:-0}"                                                 # few-shot examples in training prompt (0 = zero-shot)
-VAL_NUM_EXAMPLES="${VAL_NUM_EXAMPLES:-0}"                                         # few-shot examples in validation prompt
+SYMBOL_UPDATE_STRATEGY="${SYMBOL_UPDATE_STRATEGY:-per_epoch}"
+VALIDATION_MODES="${VALIDATION_MODES:-fixed,original,fresh}"
 
-# --- Training ---
-LORA_EPOCHS="${LORA_EPOCHS:-10}"                                                  # number of training epochs
-LORA_LR="${LORA_LR:-1e-5}"                                                       # LoRA adapter learning rate
-BATCH_SIZE="${BATCH_SIZE:-1}"                                                     # per-step training batch size
-VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-1}"                                             # per-step validation batch size
-GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-8}"                  # effective batch = BATCH_SIZE × this
-WARMUP_STEPS="${WARMUP_STEPS:-100}"                                               # LR scheduler warmup steps
-VALIDATE_BEFORE_TRAINING="${VALIDATE_BEFORE_TRAINING:-false}"                     # true = run validation pass before epoch 1 (baseline score)
-VALIDATION_MODES="${VALIDATION_MODES:-original,fresh}"                     # which symbol modes to validate: original,fixed,fresh
+LORA_LR="${LORA_LR:-1e-5}"
+LORA_EPOCHS="${LORA_EPOCHS:-2}"
+BATCH_SIZE="${BATCH_SIZE:-1}"
+VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-1}"
+GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-8}"
+MAX_SAMPLES="${MAX_SAMPLES:-10}"
+DEVICE="${DEVICE:-cuda:0}"
+CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 
-# --- Symbol mode (pick ONE of the blocks below) ---
-# SymDPO: DPO loss over chosen/rejected symbol pairs (requires NO_SYMBOLS=false)
-USE_DPO="${USE_DPO:-false}"                                                        # true = use SymDPO trainer
-DPO_BETA="${DPO_BETA:-0.1}"                                                       # DPO temperature β: higher = stronger preference margin
+NUM_WORKERS="${NUM_WORKERS:-2}"
+WARMUP_STEPS="${WARMUP_STEPS:-100}"
 
-# D-SPO: differentiable slot routing (set DIFF_SYMBOL_ENABLED=true to activate)
-DIFF_SYMBOL_ENABLED="${DIFF_SYMBOL_ENABLED:-false}"                               # true = enable D-SPO differentiable slot routing
-DSPO_ROUTER_LR="${DSPO_ROUTER_LR:-1e-2}"                                         # D-SPO router (slot preference matrix) learning rate
-DSPO_TAU_ANNEAL_RATE="${DSPO_TAU_ANNEAL_RATE:-0.0001}"                          # D-SPO Gumbel temperature decay rate per step
-DSPO_SLOT_ONLY="${DSPO_SLOT_ONLY:-false}"                                         # true = freeze LoRA, train only slot matrix (also needs DIFF_SYMBOL_ENABLED=true)
-DSPO_PHASE0_EPOCHS="${DSPO_PHASE0_EPOCHS:-0}"                                    # >0: LoRA-only warmup on original labels before D-SPO starts
-DSPO_PHASE1_PATIENCE="${DSPO_PHASE1_PATIENCE:-3}"                                # >0: auto-switch from slot-only Phase 1 to LoRA Phase 2 when conf_mean plateaus for this many epochs
-DSPO_PHASE1_EPOCHS="${DSPO_PHASE1_EPOCHS:-5}"                                    # >0: hard cap on Phase 1 epochs — switches to Phase 2 even if patience not triggered
-DSPO_NUM_SLOTS="${DSPO_NUM_SLOTS:-20}"                                            # D-SPO total slot pool size (>= num training labels; extra slots used when rotation enabled)
-DSPO_SLOT_VOCAB_SIZE="${DSPO_SLOT_VOCAB_SIZE:-25}"                               # D-SPO private vocab tokens per slot (K)
-DSPO_ROTATION_INTERVAL="${DSPO_ROTATION_INTERVAL:-200}"                           # Phase 1 slot rotation: -1=fixed, 0=per epoch, >0=every N steps
-DSPO_PHASE2_ROTATION="${DSPO_PHASE2_ROTATION:-0}"                               # Phase 2 symbol refresh: -1=fixed, 0=per epoch, 1=per instance, >1=every N steps
+INPUT_MODE="${INPUT_MODE:-speech_only}"
+FEWSHOT_MODE="${FEWSHOT_MODE:-text}"
+NUM_EXAMPLES="${NUM_EXAMPLES:-5}"
+VAL_NUM_EXAMPLES="${VAL_NUM_EXAMPLES:-5}"
 
-# Fixed/dynamic symbols
-NO_SYMBOLS="${NO_SYMBOLS:-true}"                                                 # true = disable symbol replacement, use raw labels (must be false for DPO)
-DYNAMIC_SYMBOLS="${DYNAMIC_SYMBOLS:-false}"                                       # true = regenerate symbol mapping each epoch
-SYMBOL_UPDATE_STRATEGY="${SYMBOL_UPDATE_STRATEGY:-per_instance}"                    # when dynamic symbols refresh: per_epoch | per_instance
-SWAP_LABELS="${SWAP_LABELS:-false}"                                               # true = randomly shuffle label↔symbol assignments each epoch
-SYMBOL_DIFFICULTY="${SYMBOL_DIFFICULTY:-hard}"                                  # training symbol difficulty: easy | hard | random
-VAL_SYMBOL_DIFFICULTY="${VAL_SYMBOL_DIFFICULTY:-easy}"                            # fresh validation symbol difficulty: easy | hard | random
-NUM_SYMBOL_MAPPINGS="${NUM_SYMBOL_MAPPINGS:-20}"                                  # M pre-generated mappings: per_epoch uses pool[epoch%M], per_instance uses random.choice(pool)
+SYMBOL_DIFFICULTY="${SYMBOL_DIFFICULTY:-random}"
+VAL_SYMBOL_DIFFICULTY="${VAL_SYMBOL_DIFFICULTY:-easy}"
+NUM_SYMBOL_MAPPINGS="${NUM_SYMBOL_MAPPINGS:-20}"
 
-if [[ "${USE_DPO}" == "true" ]]; then
-    _MODE="symdpo"
-elif [[ "${DIFF_SYMBOL_ENABLED}" == "true" ]]; then
-    _MODE="dspo"
-    [[ "${DSPO_SLOT_ONLY}" == "true" ]] && _MODE="dspo_slotonly"
-elif [[ "${NO_SYMBOLS}" == "true" ]]; then
-    _MODE="nosym"
-elif [[ "${DYNAMIC_SYMBOLS}" == "true" ]]; then
-    [[ "${SYMBOL_UPDATE_STRATEGY}" == "per_instance" ]] && _MODE="dpi" || _MODE="dpe"
+DSPO_ROUTER_LR="${DSPO_ROUTER_LR:-1e-2}"
+DSPO_TAU_ANNEAL_RATE="${DSPO_TAU_ANNEAL_RATE:-0.0001}"
+DSPO_SLOT_ONLY="${DSPO_SLOT_ONLY:-false}"
+DSPO_PHASE0_EPOCHS="${DSPO_PHASE0_EPOCHS:-0}"
+DSPO_PHASE1_PATIENCE="${DSPO_PHASE1_PATIENCE:-0}"
+DSPO_PHASE1_EPOCHS="${DSPO_PHASE1_EPOCHS:-0}"
+DSPO_NUM_SLOTS="${DSPO_NUM_SLOTS:-25}"
+DSPO_SLOT_VOCAB_SIZE="${DSPO_SLOT_VOCAB_SIZE:-100}"
+DSPO_ROTATION_INTERVAL="${DSPO_ROTATION_INTERVAL:--1}"
+DSPO_PHASE2_ROTATION="${DSPO_PHASE2_ROTATION:--1}"
+
+DPO_BETA="${DPO_BETA:-0.1}"
+
+# ------------------------------------------------------------
+# Directories
+# ------------------------------------------------------------
+OUTPUT_DIR="${BASE_OUTPUT_DIR}/symbol_training"
+CHECKPOINT_DIR="${CHECKPOINT_DIR}"
+METRICS_DIR="${METRICS_DIR}"
+LOG_DIR="${LOGS_DIR}/$(date +"%Y-%m-%d")"
+
+mkdir -p "${OUTPUT_DIR}" "${CHECKPOINT_DIR}" "${METRICS_DIR}" "${LOG_DIR}"
+
+# ------------------------------------------------------------
+# Run name
+# ------------------------------------------------------------
+MODE="fixed"
+[[ "${NO_SYMBOLS}" == "true" ]] && MODE="baseline"
+[[ "${DYNAMIC_SYMBOLS}" == "true" ]] && MODE="${SYMBOL_UPDATE_STRATEGY}"
+[[ "${DIFF_SYMBOL_ENABLED}" == "true" ]] && MODE="dspo"
+[[ "${USE_DPO}" == "true" ]] && MODE="symdpo"
+[[ "${SWAP_LABELS}" == "true" ]] && MODE="${MODE}_swap"
+
+RUN_NAME="${RUN_NAME:-$(date +"%d%m_%H%M")_${MODEL_TYPE}_${DATASET_TYPE}_${MODE}}"
+LOG_FILE="${LOG_DIR}/${RUN_NAME}.log"
+
+# ------------------------------------------------------------
+# Conda
+# ------------------------------------------------------------
+if [[ "${MODEL_TYPE}" == "flamingo" ]]; then
+    CONDA_ENV="flamingo"
+elif [[ "${MODEL_TYPE}" == "qwen" ]]; then
+    CONDA_ENV="qwen"
 else
-    _MODE="fix"
+    CONDA_ENV="salmonn2"
 fi
-[[ "${SWAP_LABELS}" == "true" ]] && _MODE="${_MODE}_swap_${SYMBOL_UPDATE_STRATEGY}"
-
-SHORT_MODEL_TYPE="${MODEL_TYPE//qwen/qa}"
-SHORT_MODEL_TYPE="${SHORT_MODEL_TYPE//salmonn/sl}"
-SHORT_MODEL_TYPE="${SHORT_MODEL_TYPE//flamingo/af}"
-
-SHORT_DATASET_TYPE="${DATASET_TYPE//voxceleb/vb}"
-SHORT_DATASET_TYPE="${SHORT_DATASET_TYPE//hvb/h}"
-SHORT_DATASET_TYPE="${SHORT_DATASET_TYPE//meld_emotion/me}"
-SHORT_DATASET_TYPE="${SHORT_DATASET_TYPE//voxpopuli/vp}"
-
-RUN_NAME="${RUN_NAME:-$(date +"%H%M%S")_${SHORT_MODEL_TYPE}_${SHORT_DATASET_TYPE}_${_MODE}}"
 
 if [[ -x "${HOME}/miniconda3/bin/conda" ]]; then
     eval "$("${HOME}/miniconda3/bin/conda" shell.bash hook)"
@@ -103,43 +108,32 @@ else
     eval "$(/usr/bin/conda shell.bash hook)"
 fi
 
-# Avoid conda activate failing under 'set -u' if MKL_INTERFACE_LAYER is unset
 export MKL_INTERFACE_LAYER="${MKL_INTERFACE_LAYER:-}"
-
 conda activate "${CONDA_ENV}"
 
-# Prefer conda's libstdc++ over the system one
 export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
-
-# Avoid tokenizers parallelism warnings after fork
-export TOKENIZERS_PARALLELISM="false"
-# Force line-buffered output when redirected to a file
+export TOKENIZERS_PARALLELISM=false
 export PYTHONUNBUFFERED=1
-
-mkdir -p "${LOG_DIR}" "${OUTPUT_DIR}" "${CHECKPOINT_DIR}"
-LOG_FILE="${LOG_DIR}/${RUN_NAME}.log"
+export CUDA_VISIBLE_DEVICES
+export HF_HOME
+export TRANSFORMERS_CACHE
 
 if [[ "${_NOHUP_LAUNCHED:-0}" != "1" ]]; then
-    export _NOHUP_LAUNCHED=1 RUN_NAME
+    export _NOHUP_LAUNCHED=1
     nohup "$0" >> "${LOG_FILE}" 2>&1 &
-    printf 'Training launched in background (PID: %s)\n' "$!"
-    printf 'Follow logs: tail -f "%s"\n' "${LOG_FILE}"
+    echo "Training launched."
+    echo "PID: $!"
+    echo "Logs: tail -f ${LOG_FILE}"
     exit 0
 fi
 
-printf '%s\n' "============================================================"
-printf '%s\n' "Starting Symbol Training on node1"
-printf '%s\n' "Project Root: ${PROJECT_ROOT}"
-printf '%s\n' "Conda Env:    ${CONDA_ENV}"
-printf '%s\n' "Model:        ${MODEL_TYPE}"
-printf '%s\n' "Dataset:      ${DATASET_TYPE}"
-printf '%s\n' "Val Dataset:  ${VAL_DATASET_TYPE}"
-printf '%s\n' "Run Name:     ${RUN_NAME}"
-printf '%s\n' "Checkpoint:   ${CHECKPOINT_DIR}/${RUN_NAME}"
-printf '%s\n' "Log File:     ${LOG_FILE}"
-printf '%s\n' "============================================================"
-
-export CUDA_VISIBLE_DEVICES
+echo "=================================================="
+echo "Run Name : ${RUN_NAME}"
+echo "Model    : ${MODEL_TYPE}"
+echo "Dataset  : ${DATASET_TYPE}"
+echo "Conda    : ${CONDA_ENV}"
+echo "GPU      : ${CUDA_VISIBLE_DEVICES}"
+echo "=================================================="
 
 python train.py \
     --model_type "${MODEL_TYPE}" \
@@ -158,15 +152,18 @@ python train.py \
     --warmup_steps "${WARMUP_STEPS}" \
     --output_dir "${OUTPUT_DIR}" \
     --checkpoint_dir "${CHECKPOINT_DIR}" \
+    --metrics_dir "${METRICS_DIR}" \
+    --logs_dir "${LOG_DIR}" \
     --run_name "${RUN_NAME}" \
     --validation_modes "${VALIDATION_MODES}" \
     --symbol_update_strategy "${SYMBOL_UPDATE_STRATEGY}" \
-    $( [[ "${NO_SYMBOLS}" == "true" ]] && printf '%s' "--no_symbols" ) \
-    $( [[ "${DYNAMIC_SYMBOLS}" == "true" ]] && printf '%s' "--dynamic_symbols" ) \
-    $( [[ "${DIFF_SYMBOL_ENABLED}" == "true" ]] && printf '%s' "--diff_symbol_enabled" ) \
+    --symbol_difficulty "${SYMBOL_DIFFICULTY}" \
+    --val_symbol_difficulty "${VAL_SYMBOL_DIFFICULTY}" \
+    --num_symbol_mappings "${NUM_SYMBOL_MAPPINGS}" \
+    --input_mode "${INPUT_MODE}" \
+    --fewshot_mode "${FEWSHOT_MODE}" \
     --dspo_router_lr "${DSPO_ROUTER_LR}" \
     --dspo_tau_anneal_rate "${DSPO_TAU_ANNEAL_RATE}" \
-    $( [[ "${DSPO_SLOT_ONLY}" == "true" ]] && printf '%s' "--dspo_slot_only" ) \
     --dspo_phase0_epochs "${DSPO_PHASE0_EPOCHS}" \
     --dspo_phase1_patience "${DSPO_PHASE1_PATIENCE}" \
     --dspo_phase1_epochs "${DSPO_PHASE1_EPOCHS}" \
@@ -174,13 +171,13 @@ python train.py \
     --dspo_slot_vocab_size "${DSPO_SLOT_VOCAB_SIZE}" \
     --dspo_rotation_interval "${DSPO_ROTATION_INTERVAL}" \
     --dspo_phase2_rotation "${DSPO_PHASE2_ROTATION}" \
-    $( [[ "${SWAP_LABELS}" == "true" ]] && printf '%s' "--swap_labels" ) \
-    --symbol_difficulty "${SYMBOL_DIFFICULTY}" \
-    --val_symbol_difficulty "${VAL_SYMBOL_DIFFICULTY}" \
-    --num_symbol_mappings "${NUM_SYMBOL_MAPPINGS}" \
-    $( [[ "${USE_DPO}" == "true" ]] && printf '%s' "--use_dpo" ) \
-    $( [[ "${USE_DPO}" == "true" ]] && printf '%s' "--dpo_beta ${DPO_BETA}" ) \
-    --input_mode "${INPUT_MODE}" \
-    --fewshot_mode "${FEWSHOT_MODE}" \
-    $( [[ "${VALIDATE_BEFORE_TRAINING}" == "false" ]] && printf '%s' "--no_validate_before_training" ) \
+    $( [[ "${NO_SYMBOLS}" == "true" ]] && echo --no_symbols ) \
+    $( [[ "${DYNAMIC_SYMBOLS}" == "true" ]] && echo --dynamic_symbols ) \
+    $( [[ "${DIFF_SYMBOL_ENABLED}" == "true" ]] && echo --diff_symbol_enabled ) \
+    $( [[ "${DSPO_SLOT_ONLY}" == "true" ]] && echo --dspo_slot_only ) \
+    $( [[ "${SWAP_LABELS}" == "true" ]] && echo --swap_labels ) \
+    $( [[ "${USE_DPO}" == "true" ]] && echo --use_dpo ) \
+    $( [[ "${USE_DPO}" == "true" ]] && echo --dpo_beta "${DPO_BETA}" ) \
     >> "${LOG_FILE}" 2>&1
+
+echo "Training finished."
