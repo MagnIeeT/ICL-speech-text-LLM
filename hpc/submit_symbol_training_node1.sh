@@ -11,7 +11,7 @@ if [[ -f "${PROJECT_ROOT}/.env" ]]; then
 fi
 
 # --- Model ---
-MODEL_TYPE="${MODEL_TYPE:-flamingo}"                                                  # model backend: qwen | salmonn | flamingo
+MODEL_TYPE="${MODEL_TYPE:-qwen}"                                                  # model backend: qwen | salmonn | flamingo
 
 # --- Infrastructure ---
 # Auto-select conda env based on MODEL_TYPE unless explicitly overridden.
@@ -24,11 +24,11 @@ CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"                               
 OUTPUT_DIR="${OUTPUT_DIR:-${HOME}/training/symbol_training}"                      # root output directory
 CHECKPOINT_DIR="${CHECKPOINT_BASE:-${HOME}/training/symbol_training/checkpoints}/$(date +"%Y-%m-%d")"  # checkpoint directory (dated subfolder)
 LOG_DIR="${LOGS_DIR:-${HOME}/training/logs}/$(date +"%Y-%m-%d")"                 # log directory (dated subfolder)
-NUM_WORKERS="${NUM_WORKERS:-2}"                                                   # dataloader worker processes
+NUM_WORKERS="${NUM_WORKERS:-1}"                                                   # dataloader worker processes
 
 # --- Data ---
-DATASET_TYPE="${DATASET_TYPE:-meld_emotion}"                                      # training dataset(s), dash-separated
-VAL_DATASET_TYPE="${VAL_DATASET_TYPE:-voxceleb-hvb-voxpopuli-meld_emotion}"      # validation dataset(s), dash-separated
+DATASET_TYPE="${DATASET_TYPE:-hvb}"                                      # training dataset(s), dash-separated
+VAL_DATASET_TYPE="${VAL_DATASET_TYPE:-hvb-voxpopuli-cremad-ravdess_song}"      # validation dataset(s), dash-separated
 MAX_SAMPLES="${MAX_SAMPLES:-0}"                                                  # max training samples (0 = full dataset)
 INPUT_MODE="${INPUT_MODE:-speech_only}"                                           # query modality: speech_only | text_only
 FEWSHOT_MODE="${FEWSHOT_MODE:-text}"                                              # few-shot example modality: text | speech
