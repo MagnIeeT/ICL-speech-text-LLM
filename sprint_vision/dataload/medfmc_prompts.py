@@ -241,6 +241,135 @@ def score_probes_pyes(
         return bat
 
     return _score(batch_size)
+def score_class_probes_kvcache(
+    cfg,
+    dataset: str,
+    label_names_orig,
+    tokenizer,
+    model,
+    image_tensor,
+    image_size,
+    token_id_neg,
+    token_id_pos,
+    sym_mappings: Optional[Dict[str, str]] = None,
+    apply_to_text_fn: Optional[Callable[[str, Dict[str, str]], str]] = None,
+    image_token: str = "<image>",
+    conv_template: str = "vicuna_v1",
+    first_image: bool = False,
+):
+    """
+    KV-prefix-cached version of the per-class Yes/No probe.
+
+    Runs ONE forward pass over the shared prefix (image + definitions block)
+    with use_cache=True, then reuses that cache for every class's short
+    trailing question -- instead of recomputing the whole ~1000-token prefix
+    N times. P(Yes) is mathematically identical to score_probes_pyes; only
+    HOW it's computed changes.
+
+    Safety: for each class, verifies (via exact token-id comparison) that the
+    prefix/tail split matches what full re-tokenization would give. If it
+    doesn't match for a given class, falls back to the exact slow recompute
+    for THAT class only -- never guesses.
+    """
+    import torch
+    from llava.constants import IMAGE_TOKEN_INDEX
+    from llava.conversation import conv_templates
+    from llava.mm_utils import tokenizer_image_token
+
+    device = model.device
+    modality = get_modality(dataset)
+    block = render_def_block(cfg.instruction_intro, cfg.label_names, cfg.class_definitions)
+    prefix_text = f"{image_token}\n{block}\n\n"
+    if sym_mappings and apply_to_text_fn is not None:
+        prefix_text = apply_to_text_fn(prefix_text, sym_mappings)
+
+    # Wrapped with prefix ONLY (no question) -- used only to find the exact
+    # character split point below, never tokenized directly.
+    conv_prefix_only = conv_templates[conv_template].copy()
+    conv_prefix_only.append_message(conv_prefix_only.roles[0], prefix_text)
+    conv_prefix_only.append_message(conv_prefix_only.roles[1], None)
+    s_prefix_only = conv_prefix_only.get_prompt()
+
+    def _build_full(class_name):
+        question = (
+            f"Focusing only on {class_name}: "
+            f"does this {modality} show {class_name}? Answer Yes or No."
+        )
+        if sym_mappings and apply_to_text_fn is not None:
+            question = apply_to_text_fn(question, sym_mappings)
+        human = prefix_text + question
+        conv = conv_templates[conv_template].copy()
+        conv.append_message(conv.roles[0], human)
+        conv.append_message(conv.roles[1], None)
+        return conv.get_prompt()
+
+    # Find the character split point using the FIRST class -- it's the same
+    # split for every class since prefix_text never changes.
+    s_full_first = _build_full(label_names_orig[0])
+    split = 0
+    max_common = min(len(s_prefix_only), len(s_full_first))
+    while split < max_common and s_prefix_only[split] == s_full_first[split]:
+        split += 1
+
+    prefix_string = s_full_first[:split]
+    prefix_ids = tokenizer_image_token(
+        prefix_string, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt"
+    )
+    n_pref = prefix_ids.shape[0]
+    if first_image:
+        print(f"[KV-CACHE] prefix_ids : {n_pref}", flush=True)
+
+    # ---- ONE forward pass over the shared prefix (this is the whole point) ----
+    with torch.inference_mode():
+        prefix_out = model(
+            input_ids=prefix_ids.unsqueeze(0).to(device),
+            images=image_tensor,
+            use_cache=True,
+        )
+    past = prefix_out.past_key_values
+
+    scores = []
+    for cls_idx, class_name in enumerate(label_names_orig):
+        s_full = _build_full(class_name)
+        full_ids = tokenizer_image_token(
+            s_full, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt"
+        )
+        if first_image and cls_idx == 0:
+            print(f"[KV-CACHE] full_ids   : {full_ids.shape[0]}", flush=True)
+
+        # Safety check -- if this ever fails, fall back to the slow, exact path
+        # for this one class instead of guessing.
+        if full_ids.shape[0] <= n_pref or not torch.equal(full_ids[:n_pref], prefix_ids):
+            gen_kwargs = dict(
+                images=image_tensor, do_sample=False, max_new_tokens=1,
+                use_cache=True, return_dict_in_generate=True, output_scores=True,
+            )
+            if image_size is not None:
+                gen_kwargs["image_sizes"] = [image_size]
+            with torch.inference_mode():
+                out = model.generate(inputs=full_ids.unsqueeze(0).to(device), **gen_kwargs)
+            step0 = out.scores[0][0]
+            pair = torch.stack([step0[token_id_neg], step0[token_id_pos]])
+            scores.append(torch.nn.functional.softmax(pair, dim=0)[1].item())
+            continue
+
+        tail_ids = full_ids[n_pref:]
+        if first_image and cls_idx == 0:
+            print(f"[KV-CACHE] tail_ids   : {tail_ids.shape[0]}", flush=True)
+        attn_mask = torch.ones((1, n_pref + tail_ids.shape[0]), dtype=torch.long, device=device)
+
+        with torch.inference_mode():
+            tail_out = model(
+                input_ids=tail_ids.unsqueeze(0).to(device),
+                past_key_values=past,
+                attention_mask=attn_mask,
+                use_cache=True,
+            )
+        logits = tail_out.logits[0, -1, :]
+        pair = torch.stack([logits[token_id_neg], logits[token_id_pos]])
+        scores.append(torch.nn.functional.softmax(pair, dim=0)[1].item())
+
+    return scores
 
 
 def sprint_log(stage: str, **fields) -> None:

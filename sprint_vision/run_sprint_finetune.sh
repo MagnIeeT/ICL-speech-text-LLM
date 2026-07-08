@@ -90,6 +90,9 @@ COMPUTE_VAL_AUC_MAP="${COMPUTE_VAL_AUC_MAP:-true}"
 SPRINT_PROBE_BATCH_SIZE="${SPRINT_PROBE_BATCH_SIZE:-1}"
 export SPRINT_PROBE_BATCH_SIZE
 
+SPRINT_KV_CACHE="${SPRINT_KV_CACHE:-false}"
+export SPRINT_KV_CACHE
+
 # ── Set EXACTLY ONE of these to control the fine-tuning dataset size ──────────
 #
 # TRAINING_SHOTS: fixed MedFMC few-shot split.
@@ -333,8 +336,8 @@ deepspeed ${DS_INCLUDE} --master_port ${MASTER_PORT} llava/train/train_mem.py \
     --bf16 True \
     --output_dir "${OUTPUT_DIR}" \
     --num_train_epochs "${NUM_TRAIN_EPOCHS}" \
-    --per_device_train_batch_size 1 \
-    --gradient_accumulation_steps 8 \
+    --per_device_train_batch_size 4 \
+    --gradient_accumulation_steps 2 \
     --learning_rate 2e-4 \
     --weight_decay 0.01 \
     --warmup_ratio 0.03 \

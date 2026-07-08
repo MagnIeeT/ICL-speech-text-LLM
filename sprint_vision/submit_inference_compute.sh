@@ -50,7 +50,7 @@ fi
 # 1. Job Configuration (edit / override via env)
 # ------------------------------------------------------------
 datasets=colon-chest-endo  # hyphen-separated: "chest" or "colon-chest-endo"
-strategy=regular            # regular | two_token | ed_ft | id_ft | lf_ft
+strategy=two_token            # regular | two_token | ed_ft | id_ft | lf_ft
 model_type="${model_type:-llava-v1.5-13b}"
 
 num_samples="${num_samples:-0}"            # 0 = ALL samples
@@ -68,13 +68,13 @@ diagnose_samples=0  # set 0 so [BATCH-VERIFY] fires on sample 0 when batching
 USE_VALIDATION=true
 MAX_VAL_SAMPLES=100
 val_shot=10
-val_exp=1
+val_exp=2
 
 # Eval modes (comma-separated subset of original,fixed,fresh). Empty = sprint_eval
 # default (symbol strategies → original,fixed,fresh ; regular/rft → original only).
 eval_modes=original
 # Fine-tuned checkpoint (LoRA adapter dir) — same checkpoint used for all datasets
-CHECKPOINT_PATH=/home/harinisrireddykandula/llava/checkpoints/0701_1711_llava-colon-regular-shot10_exp1_val100/checkpoint-best
+CHECKPOINT_PATH=
 # Set to a job ID (e.g. "12093.eehpc") to wait for that job first.
 hold_job_id=
 
@@ -85,7 +85,7 @@ queue_name="${queue_name:-GPU_only}"        # EE GPU queue (others: workq, CPU_o
 hostname=compute                   # EMPTY = let 'compute' pick the node; set to pin
 # GPU SELECTION: the 'compute' node has 8 GPUs (0-7). Pick a FREE one (check with
 # `nvidia-smi` on the node) and pass it, e.g.  cuda_device=3 bash submit_inference_compute.sh
-cuda_device=0
+cuda_device=3
 walltime="${walltime:-24:00:00}"
 # EE has NO GPU PBS resource (ngpus/num_gpus undefined) — GPUs live on the single
 # 'compute' node reached via the GPU_only queue; pick the GPU with CUDA_VISIBLE_DEVICES.

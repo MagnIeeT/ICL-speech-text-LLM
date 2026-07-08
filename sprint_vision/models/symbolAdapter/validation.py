@@ -556,7 +556,31 @@ class SPRInTValidationManager:
                     for j in range(n_cls):
                         all_scores[i][j] = _sc[j]
 
-                for j, lbl in enumerate([] if _vbatch > 1 else self._label_names):
+
+                _use_kvcache = (
+                    _vbatch <= 1
+                    and os.environ.get("SPRINT_KV_CACHE", "false").strip().lower() in ("1", "true", "yes")
+                    and self._cfg is not None and self._cfg.class_definitions
+                )
+                if _use_kvcache:
+                    from dataload.medfmc_prompts import score_class_probes_kvcache
+                    _sc = score_class_probes_kvcache(
+                        cfg=self._cfg, dataset=self._dataset_name,
+                        label_names_orig=self._cfg.label_names,
+                        tokenizer=self.tokenizer, model=self.model,
+                        image_tensor=image_tensor, image_size=None,
+                        token_id_neg=no_id, token_id_pos=yes_id,
+                        sym_mappings=sym_mappings,
+                        apply_to_text_fn=(self.symbol_manager.apply_to_text
+                                          if self.symbol_manager is not None else None),
+                        image_token=DEFAULT_IMAGE_TOKEN,
+                        first_image=(i == 0),
+                    )
+                    for j in range(n_cls):
+                        all_scores[i][j] = _sc[j]
+
+
+                for j, lbl in enumerate([] if (_vbatch > 1 or _use_kvcache) else self._label_names):
                     # Original-case label drives the def-block key lookup; the
                     # lowercased self._label_names[j] is kept for GT matching above.
                     orig_lbl = self._cfg.label_names[j] if self._cfg is not None else lbl

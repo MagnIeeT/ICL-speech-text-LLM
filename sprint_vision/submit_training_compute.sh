@@ -46,8 +46,8 @@ fi
 # ------------------------------------------------------------
 # 1. Job Configuration (edit / override via env)
 # ------------------------------------------------------------
-DATASET=colon      # colon | chest | endo
-STRATEGY=two_token # regular | two_token | ed_ft | id_ft | lf_ft
+DATASET=chest     # colon | chest | endo
+STRATEGY=regular     # regular | two_token | ed_ft | id_ft | lf_ft
 NUM_TRAIN_EPOCHS=5
 # ── ICL during training ──────────────────────────────────────────────────────
 # ICL_SHOTS: in-context example images+labels embedded in each training prompt.
@@ -72,6 +72,8 @@ COMPUTE_VAL_AUC_MAP="${COMPUTE_VAL_AUC_MAP:-true}"
 # P(Yes) scoring; 1 = original unbatched (default, byte-identical). Forwarded as
 # SPRINT_PROBE_BATCH_SIZE (read by validation.py). >1 logs [BATCH-VERIFY] OK.
 probe_batch_size=1
+
+kv_cache=true
 # Validation subsample cap. Also forms the checkpoint folder val-tag.
 MAX_VAL_SAMPLES=100  # 0 = use all
 # EVAL_DATA_PATH=none disables validation entirely (forwarded so the val-tag is right).
@@ -212,6 +214,7 @@ echo "Val modes:   ${VALIDATION_MODES}"
 echo "Val samples: ${MAX_VAL_SAMPLES} (0 = all)"
 echo "Val AUC/mAP: ${COMPUTE_VAL_AUC_MAP}"
 echo "Val probe batch: ${probe_batch_size} (>1 = batched per-class scoring)"
+echo "KV-cache:    ${kv_cache} (true = fast prefix-cached chest/endo validation)"
 echo "Checkpoint:  ${OUTPUT_DIR}"
 echo "Queue:       ${queue_name}"
 echo "Host:        ${HOST_MSG}"
@@ -285,6 +288,7 @@ COMPUTE_VAL_AUC_MAP=${COMPUTE_VAL_AUC_MAP} \
 MAX_VAL_SAMPLES=${MAX_VAL_SAMPLES} \
 EVAL_DATA_PATH=${EVAL_DATA_PATH} \
 SPRINT_PROBE_BATCH_SIZE=${probe_batch_size} \
+SPRINT_KV_CACHE=${kv_cache} \
 OUTPUT_DIR=${OUTPUT_DIR} \
 LLAVA_DIR=${LLAVA_DIR} \
 bash ${FINETUNE_SCRIPT} 2>&1 | tee \${LOG_FILE}
