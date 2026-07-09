@@ -20,6 +20,7 @@ import copy
 import math
 import random
 import re
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 import json
@@ -64,11 +65,17 @@ except ImportError:
 #   mapping per sample — a key-based throttle would log every sample and grow the
 #   dict unbounded, so we throttle by instance index instead (first 5, then /500).
 # _SPRINT_TOKLEN_LOGGED: one-time token-length log (def blocks lengthen the prompt).
+# _SPRINT_IDS_LOGGED: one-time dump of input_ids / conversation / target before and
+#   after masking, so the masking effect (question tokens -> IGNORE_INDEX) is visible.
+# _SPRINT_IMGLOAD_*: image-load timing (is disk/preprocess the training bottleneck?).
 _SPRINT_LOGGED_MAPPINGS: dict = {}   # mapping_snapshot_str -> log_count
 _SPRINT_INSTANCE_LOG_COUNT: int = 0
 _SPRINT_TOKLEN_LOGGED: bool = False
 _SPRINT_ICL_LOGGED: bool = False     # one-time log of the assembled ICL training prompt
 _SPRINT_TRAINPROMPT_LOGGED: bool = False  # one-time first training prompt for regular (no-symbol) strategy
+_SPRINT_IDS_LOGGED: bool = False     # one-time input_ids/conversation/target before+after masking
+_SPRINT_IMGLOAD_COUNT: int = 0       # number of images timed so far (per worker process)
+_SPRINT_IMGLOAD_TIME_SUM: float = 0.0  # running sum of load times (for periodic average)
 
 
 def _sprint_is_log_proc() -> bool:
@@ -607,6 +614,18 @@ def preprocess_v1(
 
     targets = input_ids.clone()
 
+    # One-time dump of input_ids / conversation / target BEFORE masking, so the
+    # masking effect can be compared against the AFTER-masking dump below. Prints
+    # once (first iteration only), gated to a single process like the other logs.
+    global _SPRINT_IDS_LOGGED
+    if (not _SPRINT_IDS_LOGGED) and _sprint_is_log_proc():
+        print("=" * 70, flush=True)
+        print("[SPRINT::IDS] ----- BEFORE MASKING -----", flush=True)
+        print(f"[SPRINT::IDS] conversation:\n{conversations[0]}", flush=True)
+        print(f"[SPRINT::IDS] input_ids:\n{input_ids[0].tolist()}", flush=True)
+        print(f"[SPRINT::IDS] target (before masking):\n{targets[0].tolist()}", flush=True)
+        print("=" * 70, flush=True)
+
     # SPRInT one-time token-length log — class-definition blocks lengthen the
     # prompt; confirm the def block is not being truncated at model_max_length.
     global _SPRINT_TOKLEN_LOGGED
@@ -674,6 +693,16 @@ def preprocess_v1(
                     f"WARNING: tokenization mismatch: {cur_len} vs. {total_len}."
                     f" (ignored)"
                 )
+
+    # One-time dump of target AFTER masking (pairs with the BEFORE dump above).
+    # The question/instruction tokens are now IGNORE_INDEX (-100); only the answer
+    # tokens keep their real ids. Set the flag here so both dumps fire once.
+    if (not _SPRINT_IDS_LOGGED) and _sprint_is_log_proc():
+        print("=" * 70, flush=True)
+        print("[SPRINT::IDS] ----- AFTER MASKING -----", flush=True)
+        print(f"[SPRINT::IDS] target (after masking):\n{targets[0].tolist()}", flush=True)
+        print("=" * 70, flush=True)
+    _SPRINT_IDS_LOGGED = True
 
     return dict(
         input_ids=input_ids,
@@ -900,7 +929,7 @@ class LazySupervisedDataset(Dataset):
             img_tokens = 128 if 'image' in sample else 0
             length_list.append(sum(len(conv['value'].split()) for conv in sample['conversations']) + img_tokens)
         return length_list
-
+                                          
     @property
     def modality_lengths(self):
         length_list = []
@@ -916,12 +945,32 @@ class LazySupervisedDataset(Dataset):
     def _load_image(self, image_file: str) -> torch.Tensor:
         """Load, pad, and preprocess a single image to a [C, H, W] tensor."""
         processor = self.data_args.image_processor
+        _t0 = time.time()
         image = Image.open(
             os.path.join(self.data_args.image_folder, image_file)
         ).convert("RGB")
         if self.data_args.image_aspect_ratio == "pad":
             image = _expand2square(image, tuple(int(x * 255) for x in processor.image_mean))
-        return processor.preprocess(image, return_tensors="pt")["pixel_values"][0]
+        pixel_values = processor.preprocess(image, return_tensors="pt")["pixel_values"][0]
+        _dt = time.time() - _t0
+
+        # Image-load timing: is disk read + preprocess the training bottleneck?
+        # Printing every image (512+/epoch) would flood the log, so we print the
+        # first 5 loads in full, then a running average every 100 loads.
+        if _sprint_is_log_proc():
+            global _SPRINT_IMGLOAD_COUNT, _SPRINT_IMGLOAD_TIME_SUM
+            _SPRINT_IMGLOAD_COUNT += 1
+            _SPRINT_IMGLOAD_TIME_SUM += _dt
+            if _SPRINT_IMGLOAD_COUNT <= 5:
+                print(f"[TIMING] image load took {_dt:.4f} sec  (image: {image_file})", flush=True)
+            elif _SPRINT_IMGLOAD_COUNT % 100 == 0:
+                _avg = _SPRINT_IMGLOAD_TIME_SUM / _SPRINT_IMGLOAD_COUNT
+                print(
+                    f"[TIMING] image load average = {_avg:.4f} sec "
+                    f"over {_SPRINT_IMGLOAD_COUNT} images",
+                    flush=True,
+                )
+        return pixel_values
 
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
         sources = self.list_data_dict[i]
