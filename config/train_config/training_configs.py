@@ -69,7 +69,7 @@ class DataConfig:
     max_samples: int = 10
     split: str = "test"
     val_batch_size: Optional[int] = 1
-    val_max_samples: int = 200
+    val_max_samples: int = 500
     val_frequency: int = 1
     val_dataset_type: Optional[str] = None
     num_examples: int = 5
@@ -310,9 +310,9 @@ def parse_training_args() -> argparse.Namespace:
     parser.add_argument("--dynamic_symbols", action="store_true")
     parser.add_argument("--diff_symbol_enabled", action="store_true", help="Enable Differentiable Symbolic Preference Optimization (D-SPO)")
     parser.add_argument("--dspo_slot_only", action="store_true", help="D-SPO: freeze LoRA, train router/slot matrix only")
-    parser.add_argument("--dspo_phase0_epochs", type=int, default=None, help="D-SPO: LoRA-only warmup epochs before D-SPO starts (0=disabled)")
-    parser.add_argument("--dspo_phase1_patience", type=int, default=None, help="D-SPO: epochs without conf_mean improvement before switching Phase 1→2 (0=disabled)")
-    parser.add_argument("--dspo_phase1_epochs", type=int, default=None, help="D-SPO: max Phase 1 epochs hard cap (0=disabled)")
+    parser.add_argument("--dspo_phase0_epochs", type=int, default=0, help="D-SPO: LoRA-only warmup epochs before D-SPO starts (0=disabled)")
+    parser.add_argument("--dspo_phase1_patience", type=int, default=0, help="D-SPO: epochs without conf_mean improvement before switching Phase 1→2 (0=disabled)")
+    parser.add_argument("--dspo_phase1_epochs", type=int, default=0, help="D-SPO: max Phase 1 epochs hard cap (0=disabled)")
     parser.add_argument("--dspo_num_slots", type=int, default=25, help="D-SPO: total slot pool size (>= num training labels)")
     parser.add_argument("--dspo_slot_vocab_size", type=int, default=100, help="D-SPO: private vocab tokens per slot (K)")
     parser.add_argument("--dspo_rotation_interval", type=int, default=-1, help="D-SPO Phase 1 slot rotation: -1=fixed, 0=per epoch, >0=every N steps")

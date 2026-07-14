@@ -36,7 +36,7 @@ def clean_prediction(prediction: str, dataset_type: DatasetType = None) -> str:
             text = text[len(prefix) :].strip()
 
     # Keep only first answer segment for single-label tasks.
-    if dataset_type in [DatasetType.VOXCELEB, DatasetType.MELD_EMOTION]:
+    if dataset_type in [DatasetType.VOXCELEB, DatasetType.MELD_EMOTION, DatasetType.RAVDESS, DatasetType.ESD, DatasetType.CREMAD, DatasetType.RAVDESS_SONG]:
         text = re.split(r"[,;|]", text)[0].strip()
 
     return text

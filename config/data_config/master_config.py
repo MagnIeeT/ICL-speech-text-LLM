@@ -8,6 +8,10 @@ class DatasetType(str, Enum):
     HVB = "hvb"
     VOXPOPULI = "voxpopuli"
     MELD_EMOTION = "meld_emotion"
+    RAVDESS = "ravdess" 
+    ESD = "esd"
+    CREMAD = "cremad"
+    RAVDESS_SONG = "ravdess_song"
 
 
 class DatasetSplit(Enum):
@@ -41,13 +45,20 @@ from .voxceleb_config import VOXCELEB_CONFIG
 from .hvb_config import HVB_CONFIG
 from .voxpopuli_config import VOXPOPULI_CONFIG
 from .meld_emotion_config import MELD_EMOTION_CONFIG
-
+from .ravdess_config import RAVDESS_CONFIG 
+from .esd_config import ESD_CONFIG
+from .cremad_config import CREMAD_CONFIG
+from .ravdess_song_config import RAVDESS_SONG_CONFIG
 
 DATASET_CONFIGS: Dict[DatasetType, DatasetConfig] = {
     DatasetType.VOXCELEB: VOXCELEB_CONFIG,
     DatasetType.HVB: HVB_CONFIG,
     DatasetType.VOXPOPULI: VOXPOPULI_CONFIG,
     DatasetType.MELD_EMOTION: MELD_EMOTION_CONFIG,
+    DatasetType.RAVDESS: RAVDESS_CONFIG,
+    DatasetType.ESD: ESD_CONFIG,
+    DatasetType.CREMAD: CREMAD_CONFIG,
+    DatasetType.RAVDESS_SONG: RAVDESS_SONG_CONFIG,
 }
 
 
