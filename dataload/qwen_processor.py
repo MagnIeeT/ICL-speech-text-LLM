@@ -34,13 +34,28 @@ class QwenProcessor(ModelProcessor):
         self._audio_stats_count = 0
 
     def process_inputs(self, data: Dict[str, Any], is_training: bool = False):
-        """Returns audio features and raw text strings. Skips tokenization."""
+        """Pre-computes audio features and tokenizes in the DataLoader worker.
+        Returns 1-D input_ids/attention_mask tensors so collate_batch can pad them."""
+        prompt = data.get("prompt", "")
+        completion = data.get("completion", "")
         input_features, feature_attention_mask = self._process_audio(data.get("audio"), data.get("examples_audio"))
-        result = {
-            "prompt": data.get("prompt", ""),
-            "completion": data.get("completion", ""),
-            "input_features": input_features,
-        }
+
+        try:
+            completions_arg = [completion] if is_training else None
+            tok = self.tokenize_batch([prompt], completions_arg)
+            result = {
+                "prompt": prompt,
+                "completion": completion,
+                "input_ids": tok["input_ids"][0],
+                "attention_mask": tok["attention_mask"][0],
+                "prompt_length": tok["prompt_length"][0],
+            }
+        except Exception as exc:
+            logging.warning("QwenProcessor: worker tokenization failed (%s), returning raw for main-thread fallback", exc)
+            result = {"prompt": prompt, "completion": completion}
+
+        if input_features is not None:
+            result["input_features"] = input_features
         if feature_attention_mask is not None:
             result["feature_attention_mask"] = feature_attention_mask
         return result
@@ -182,7 +197,7 @@ class QwenProcessor(ModelProcessor):
         conversation.append({"role": "user", "content": user_content})
         return self.processor.apply_chat_template(conversation, add_generation_prompt=True, tokenize=False)
 
-    def collate_batch(self, batch_items: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def collate_batch(self, batch_items: List[Dict[str, Any]], padding_side: str = "right") -> Dict[str, Any]:
         """
         Collate a list of items.
         Handles both raw items (no input_ids) and tokenized items.
@@ -239,9 +254,9 @@ class QwenProcessor(ModelProcessor):
             if key in passthrough:
                 batch[key] = values
             elif key == "input_ids":
-                batch[key] = _pad_sequence(values, pad_value=self.tokenizer.pad_token_id)
+                batch[key] = _pad_sequence(values, pad_value=self.tokenizer.pad_token_id, padding_side=padding_side)
             elif key == "attention_mask":
-                batch[key] = _pad_sequence(values, pad_value=0)
+                batch[key] = _pad_sequence(values, pad_value=0, padding_side=padding_side)
             elif key in ("input_features", "feature_attention_mask"):
                 batch[key] = pad_and_cat(values)
             elif key == "prompt_length":

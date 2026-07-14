@@ -5,6 +5,18 @@ import torch
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_sequence
 
+
+def _pad_sequence(tensors: List[torch.Tensor], pad_value: int = 0, padding_side: str = "right") -> torch.Tensor:
+    max_len = max(t.shape[-1] for t in tensors)
+    out = []
+    for t in tensors:
+        pad_size = max_len - t.shape[-1]
+        if pad_size > 0:
+            pad_args = (pad_size, 0) if padding_side == "left" else (0, pad_size)
+            t = torch.nn.functional.pad(t, pad_args, value=pad_value)
+        out.append(t)
+    return torch.stack(out)
+
 from config.data_config.master_config import DatasetType
 from utils.environment import get_env_path
 from .model_processors import ModelProcessor
@@ -26,7 +38,8 @@ class SalmonProcessor(ModelProcessor):
         self.max_length = max_length
 
     def process_inputs(self, data: Dict[str, Any], is_training: bool = False):
-        """Returns audio features and raw text strings. Skips tokenization."""
+        """Pre-computes audio features and tokenizes in the DataLoader worker.
+        Returns 1-D input_ids/attention_mask tensors so collate_batch can pad them."""
         prompt = data.get("prompt", "")
         audio = data.get("audio")
         examples_audio = data.get("examples_audio", [])
@@ -52,7 +65,7 @@ class SalmonProcessor(ModelProcessor):
                     "wav_length": len(example_raw_wav),
                 })
 
-        return {
+        result = {
             "prompt": prompt,
             "completion": completion,
             "spectrogram": spectrogram,
@@ -61,6 +74,17 @@ class SalmonProcessor(ModelProcessor):
             "examples_speech": examples_speech,
             "num_examples": len(examples_speech),
         }
+
+        try:
+            completions_arg = [completion] if is_training else None
+            tok = self.tokenize_batch([prompt], completions_arg)
+            result["input_ids"] = tok["input_ids"][0]
+            result["attention_mask"] = tok["attention_mask"][0]
+            result["prompt_length"] = tok["prompt_length"][0]
+        except Exception as exc:
+            logging.warning("SalmonProcessor: worker tokenization failed (%s), returning raw for main-thread fallback", exc)
+
+        return result
 
     def tokenize_batch(self, prompts: List[str], completions: Optional[List[str]] = None, padding_side: str = "right") -> Dict[str, torch.Tensor]:
         """
@@ -105,7 +129,7 @@ class SalmonProcessor(ModelProcessor):
         input_section = f"Text: {text}" if input_mode == "text_only" else "<Speech><SpeechHere></Speech>"
         return f"{template}\n{examples_text}Now analyze this input:\n{input_section}\nOutput:"
 
-    def collate_batch(self, batch_items: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def collate_batch(self, batch_items: List[Dict[str, Any]], padding_side: str = "right") -> Dict[str, Any]:
         """Flexible collate for raw items and tokenized items."""
         if not batch_items: return {}
         
@@ -129,8 +153,9 @@ class SalmonProcessor(ModelProcessor):
 
         # If tokenized, pad and stack
         batch: Dict[str, Any] = {}
-        batch["input_ids"] = torch.stack([item["input_ids"] for item in batch_items])
-        batch["attention_mask"] = torch.stack([item["attention_mask"] for item in batch_items])
+        batch["input_ids"] = _pad_sequence([item["input_ids"] for item in batch_items], pad_value=self.tokenizer.pad_token_id, padding_side=padding_side)
+        batch["attention_mask"] = _pad_sequence([item["attention_mask"] for item in batch_items], pad_value=0, padding_side=padding_side)
+        batch["prompt_length"] = torch.tensor([int(item["prompt_length"]) for item in batch_items])
 
         has_valid_speech = all(item.get("spectrogram") is not None for item in batch_items)
         if has_valid_speech:

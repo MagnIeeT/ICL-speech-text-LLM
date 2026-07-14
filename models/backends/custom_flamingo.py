@@ -218,7 +218,7 @@ class CustomFlamingo(nn.Module):
         self.batch_counter += 1
         return {"loss": outputs.loss, "logits": outputs.logits, "labels": labels}
 
-    def generate_output(self, batch: Dict[str, Any], slot_replacement=None) -> List[str]:
+    def generate_output(self, batch: Dict[str, Any], slot_replacement=None, max_new_tokens: int = 20) -> List[str]:
         input_ids = batch["input_ids"].to(self.device).long()
         attention_mask = batch["attention_mask"].to(self.device)
 
@@ -234,8 +234,8 @@ class CustomFlamingo(nn.Module):
         with self._autocast_ctx():
             generated_ids = self.model.generate(
                 **model_inputs,
-                max_new_tokens=20,
-                do_sample = False,
+                max_new_tokens=max_new_tokens,
+                do_sample=False,
             )
 
         if generated_ids.size(1) <= input_ids.size(1):

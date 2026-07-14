@@ -26,6 +26,7 @@ Guidelines:
     completion_key="normalized_combined_ner",
     text_key="normalized_text",
     is_multi_label=True,
+    max_new_tokens=12,
     audio_lookup_paths={
         DatasetSplit.TRAIN: get_env_path("VOXPOPULI_TRAIN_LOOKUP"),
         DatasetSplit.VAL: get_env_path("VOXPOPULI_VAL_LOOKUP"),

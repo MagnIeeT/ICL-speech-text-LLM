@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import random
+import time
 from typing import Any, Dict, List
 
 import torch
@@ -295,6 +296,36 @@ class SymbolTrainingOrchestrator:
                          self.global_step, effective_interval, ds_name_str, relevant_labels, indices)
         return self._slot_assignments[ds_name_str]
 
+    def _set_epoch_symbol_maps_on_dataset(self, epoch: int) -> None:
+        """Push symbol maps onto the dataset before the DataLoader iterator forks workers.
+        Workers inherit the maps at fork time — no IPC needed after this point.
+        Only used for non-D-SPO, non-swap modes (fixed, per_epoch, per_instance, no_symbols).
+        """
+        dataset = getattr(self.train_dataloader, 'dataset', None)
+        if dataset is None or not hasattr(dataset, 'set_epoch_symbol_maps'):
+            return
+
+        no_symbols = self.config.symbol_config.no_symbols
+        per_instance = (self.config.symbol_config.update_strategy == SymbolUpdateStrategy.PER_INSTANCE)
+
+        if no_symbols:
+            dataset.set_epoch_symbol_maps({}, no_symbols=True)
+        elif per_instance:
+            pool_list = self.symbol_manager._pregenerated_mappings or [self.symbol_manager.fixed_mappings]
+            ds_pool: Dict[str, List] = {}
+            for full_map in pool_list:
+                for ds_name, label_map in full_map.items():
+                    ds_pool.setdefault(ds_name, []).append(label_map)
+            dataset.set_epoch_symbol_maps({}, no_symbols=False, per_instance=True, pool=ds_pool)
+        else:
+            maps = self.symbol_manager.get_symbols_for_epoch(epoch, force_new_symbols=False)
+            dataset.set_epoch_symbol_maps(maps, no_symbols=False, per_instance=False)
+
+        logging.info(
+            "Symbol maps pushed to dataset workers (epoch=%d no_symbols=%s per_instance=%s)",
+            epoch + 1, no_symbols, per_instance,
+        )
+
     def _apply_symbol_replacement(self, batch: Dict[str, Any], epoch: int, batch_idx: int) -> Dict[str, Any]:
         ds_name_str, relevant_labels = get_dataset_info(batch, self.symbol_manager.original_labels)
 
@@ -332,15 +363,55 @@ class SymbolTrainingOrchestrator:
         self._swap_cache = {}  # reset per-epoch swap assignments
         total_loss, num_batches = 0.0, 0
         accumulation_steps = self.config.lora_config.gradient_accumulation_steps
+
+        # For non-D-SPO non-swap modes: push maps onto dataset so workers do substitution.
+        # Must happen before progress_bar is created — that's when workers fork.
+        _use_worker_symbols = self.router is None and not self.config.symbol_config.swap_labels
+        if _use_worker_symbols:
+            self._set_epoch_symbol_maps_on_dataset(epoch)
+
         progress_bar = tqdm(self.train_dataloader, desc=f"Epoch {epoch + 1}", leave=False)
+
+        _PROFILE = epoch == 0  # only profile first epoch
+        _t_batch_start = time.time()
+
+        _torch_prof = None
+        if _PROFILE and getattr(self.config, "torch_profile", False):
+            import torch.profiler as _tp
+            _prof_out = os.path.join(self.config.output_dir, f"{self.config.run_name}_torchprof")
+            _torch_prof = _tp.profile(
+                activities=[_tp.ProfilerActivity.CPU, _tp.ProfilerActivity.CUDA],
+                record_shapes=True,
+                with_stack=False,
+                on_trace_ready=_tp.tensorboard_trace_handler(_prof_out),
+                schedule=_tp.schedule(wait=2, warmup=2, active=20, repeat=1),
+            )
+            _torch_prof.start()
+            logging.info("PyTorch profiler started → %s", _prof_out)
 
         for batch_idx, raw_batch in enumerate(progress_bar):
             try:
+                _t0 = time.time()
+                t_dataloader = _t0 - _t_batch_start  # time waiting for DataLoader
+
                 if "completion" not in raw_batch or not raw_batch["completion"]:
                     for key in ["label", "true_label", "target"]:
                         if key in raw_batch and raw_batch[key]: raw_batch["completion"] = raw_batch[key]; break
 
-                updated_batch = self._apply_symbol_replacement(raw_batch, epoch, batch_idx)
+                _t1 = time.time()
+                if _use_worker_symbols:
+                    if "input_ids" in raw_batch:
+                        # Flamingo (File 3): worker tokenized — main thread is no-op.
+                        updated_batch = raw_batch
+                    else:
+                        # Qwen (worker tokenization not yet applied): tokenize in main thread.
+                        updated_batch = tokenize_batch_with_audio(raw_batch, self.processor, raw_batch.get("completion"))
+                else:
+                    # D-SPO or swap_labels: substitution + tokenization in main thread.
+                    updated_batch = self._apply_symbol_replacement(raw_batch, epoch, batch_idx)
+                _t2 = time.time()
+                t_tokenize = _t2 - _t1
+
                 if self._epoch_log_count < 2:
                     ids   = updated_batch["input_ids"][0]
                     p_len = int(updated_batch["prompt_length"][0])
@@ -357,13 +428,33 @@ class SymbolTrainingOrchestrator:
                     self._epoch_log_count += 1
 
                 updated_batch = self._move_batch_to_device(updated_batch)
+                torch.cuda.synchronize()
+                _t3 = time.time()
+                t_to_device = _t3 - _t2
+
                 fwd_router = None if self._in_phase2 else self.router
                 fwd_dspo   = None if self._in_phase2 else self.dspo_module
                 outputs = self.model(updated_batch, router=fwd_router, dspo_module=fwd_dspo)
-                
+                torch.cuda.synchronize()
+                _t4 = time.time()
+                t_forward = _t4 - _t3
+
                 loss = outputs.get("loss")
                 if loss is None or torch.isnan(loss): continue
                 (loss / accumulation_steps).backward()
+                torch.cuda.synchronize()
+                _t5 = time.time()
+                t_backward = _t5 - _t4
+
+                if _PROFILE and batch_idx < 50:
+                    seq_len = updated_batch["input_ids"].shape[-1]
+                    logging.info(
+                        "TIMING batch=%d seq_len=%d | dataloader=%.3fs tokenize=%.3fs "
+                        "to_device=%.3fs forward=%.3fs backward=%.3fs total=%.3fs",
+                        batch_idx, seq_len,
+                        t_dataloader, t_tokenize, t_to_device, t_forward, t_backward,
+                        time.time() - _t_batch_start,
+                    )
 
                 if (batch_idx + 1) % accumulation_steps == 0:
                     if self.router is not None:
@@ -399,6 +490,9 @@ class SymbolTrainingOrchestrator:
                 total_loss += loss.item()
                 num_batches += 1
                 progress_bar.set_postfix({"loss": f"{total_loss / num_batches:.6f}"})
+                _t_batch_start = time.time()
+                if _torch_prof is not None:
+                    _torch_prof.step()
             except Exception as exc: logging.error(f"Batch {batch_idx} failed: {exc}")
         
         # Accumulation Cleanup
@@ -409,6 +503,9 @@ class SymbolTrainingOrchestrator:
             self.optimizer.zero_grad(set_to_none=True)
             self.global_step += 1
 
+        if _torch_prof is not None:
+            _torch_prof.stop()
+            logging.info("PyTorch profiler saved.")
         progress_bar.close()
         return total_loss / max(num_batches, 1)
 

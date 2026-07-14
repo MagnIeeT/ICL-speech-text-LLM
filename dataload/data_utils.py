@@ -1,4 +1,5 @@
 import logging
+from functools import partial
 from typing import Dict
 
 from datasets import load_from_disk
@@ -126,15 +127,16 @@ def create_combined_dataloader(
         interleave=interleave,
     )
     batch_size = config.data_config.batch_size if is_training else config.data_config.val_batch_size
+    padding_side = "right" if is_training else "left"
 
     dataloader = DataLoader(
         combined_dataset,
         batch_size=batch_size,
         shuffle=shuffle,
-        collate_fn=processor.collate_batch,
+        collate_fn=partial(processor.collate_batch, padding_side=padding_side),
         num_workers=config.data_config.num_workers,
-        pin_memory=False,
-        drop_last=shuffle,  # drop only for training, keep all samples for validation/inference
+        pin_memory=True,
+        drop_last=shuffle,
     )
     return dataloader
 

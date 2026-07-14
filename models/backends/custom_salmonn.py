@@ -312,7 +312,7 @@ class CustomSalmonn(nn.Module):
     def maybe_autocast(self):
         return torch.cuda.amp.autocast() if self.use_fp16 else nullcontext()
 
-    def generate_output(self, samples):
+    def generate_output(self, samples, max_new_tokens: int = 10):
         speech_embeds, speech_atts, example_embeds, example_atts = self.get_speech_embeddings(samples)
         num_examples = samples.get("num_examples", torch.zeros(len(samples["prompt"]), dtype=torch.long))
         wrapped_embeds, wrapped_atts = self.custom_prompt_wrap(speech_embeds, speech_atts, samples["prompt"], num_examples, example_embeds, example_atts)
@@ -320,7 +320,7 @@ class CustomSalmonn(nn.Module):
         with torch.inference_mode():
             outputs = self.llama_model.generate(
                 inputs_embeds=wrapped_embeds, attention_mask=wrapped_atts,
-                max_new_tokens=samples.get("max_new_tokens", 10),
+                max_new_tokens=max_new_tokens,
                 pad_token_id=self.llama_tokenizer.pad_token_id,
                 eos_token_id=self.llama_tokenizer.eos_token_id,
             )

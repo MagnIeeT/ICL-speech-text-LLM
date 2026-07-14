@@ -108,16 +108,23 @@ class FlamingoProcessor(ModelProcessor):
         return {"conversation": conversation, "input_mode": input_mode}
 
     def process_inputs(self, data: Dict[str, Any], is_training: bool = False) -> Dict[str, Any]:
-        """Store raw prompt + pre-compute audio features in DataLoader workers.
+        """Pre-compute audio AND tokenize in the DataLoader worker.
 
-        Pre-computing here (in workers, parallel to GPU) avoids blocking the main thread
-        in tokenize_batch. _tokenize_one uses these features via the fast path, skipping
-        the expensive apply_chat_template feature-extractor call entirely.
+        By tokenizing here (in the worker, parallel to GPU forward/backward), the main
+        thread only needs to move tensors to device and call forward() — eliminating
+        apply_chat_template from the critical path and pushing GPU utilization from ~23%
+        toward ~80%+.
+
+        Falls back to returning raw fields if tokenization fails, so the main thread can
+        still tokenize via the legacy path.
         """
+        prompt = data.get("prompt")
+        completion = data.get("completion", "")
         audio = data.get("audio")
+        audio_np = _ensure_numpy(audio) if audio is not None else None
+
         precomputed = None
-        if audio is not None:
-            audio_np = _ensure_numpy(audio)
+        if audio_np is not None:
             try:
                 audio_inputs, _ = self.processor._process_audio(
                     [audio_np],
@@ -127,18 +134,31 @@ class FlamingoProcessor(ModelProcessor):
                     return_tensors="pt",
                 )
                 precomputed = {
-                    "input_features": audio_inputs["input_features"],       # [n_win, 128, 3000]
+                    "input_features": audio_inputs["input_features"],
                     "input_features_mask": audio_inputs["input_features_mask"],
                     "num_audio_tokens": int(audio_inputs["num_audio_tokens"][0].item()),
                 }
             except Exception as exc:
-                logging.warning("FlamingoProcessor: pre-compute failed (%s), will fall back to slow path", exc)
-        return {
-            "prompt": data.get("prompt"),
-            "completion": data.get("completion", ""),
-            "audio": _ensure_numpy(audio) if audio is not None else None,
-            "_precomputed": precomputed,
-        }
+                logging.warning("FlamingoProcessor: audio pre-compute failed (%s), falling back to slow path", exc)
+
+        try:
+            tokenized = self._tokenize_one(prompt, audio_np, completion, precomputed=precomputed)
+        except Exception as exc:
+            logging.warning("FlamingoProcessor: worker tokenization failed (%s), returning raw for main-thread fallback", exc)
+            return {
+                "prompt": prompt,
+                "completion": completion,
+                "audio": audio_np,
+                "_precomputed": precomputed,
+            }
+
+        # Keep raw fields alongside tokenized tensors so debug logging and passthrough
+        # keys in collate_batch still work.
+        tokenized["prompt"] = prompt
+        tokenized["completion"] = completion
+        tokenized["audio"] = audio_np
+        tokenized["_precomputed"] = precomputed
+        return tokenized
 
     def tokenize_batch(
         self,

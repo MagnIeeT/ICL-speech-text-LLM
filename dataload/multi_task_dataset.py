@@ -1,7 +1,8 @@
 import logging
 import random
+import re
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 from datasets import load_from_disk
@@ -11,6 +12,57 @@ from config.data_config.master_config import DatasetSplit, DatasetType, get_data
 from .model_processors import ModelProcessor
 
 logger = logging.getLogger(__name__)
+
+
+def _apply_symbol_mapping_to_text(text: str, mapping: Dict[str, str]) -> str:
+    """Replace label names with symbols in a text string (word-boundary safe)."""
+    if not mapping or not isinstance(text, str):
+        return text
+    # Protect description text in bullet lines: "- label: DESCRIPTION" — only
+    # the label token before the colon should be replaced, not the description.
+    desc_store: Dict[str, str] = {}
+    def _protect_desc(m: re.Match) -> str:
+        key = f"__DESCPROTECT_{len(desc_store):04d}__"
+        desc_store[key] = m.group(2)
+        return m.group(1) + key
+    protected = re.sub(r'(?m)^([ \t]*-[^:\n]+: )(.+)$', _protect_desc, text)
+
+    placeholders: Dict[str, str] = {}
+    transformed = protected
+    for idx, src in enumerate(sorted(mapping.keys(), key=len, reverse=True)):
+        ph = f"__SWAP_PLACEHOLDER_{idx}__"
+        placeholders[ph] = mapping[src]
+        transformed = re.compile(r'\b' + re.escape(src) + r'\b', re.IGNORECASE).sub(ph, transformed)
+    for ph, dst in placeholders.items():
+        transformed = transformed.replace(ph, dst)
+    for key, val in desc_store.items():
+        transformed = transformed.replace(key, val)
+    return transformed
+
+
+def _apply_symbol_mapping_to_prompt(prompt_obj: Any, mapping: Dict[str, str]) -> Any:
+    """Walk a prompt conversation structure and apply symbol mapping to all text parts."""
+    if not mapping:
+        return prompt_obj
+    if isinstance(prompt_obj, str):
+        return _apply_symbol_mapping_to_text(prompt_obj, mapping)
+    if isinstance(prompt_obj, dict) and "conversation" in prompt_obj:
+        new_obj = dict(prompt_obj)
+        new_conv = []
+        for msg in prompt_obj.get("conversation", []):
+            new_msg = dict(msg)
+            if isinstance(new_msg.get("content"), str):
+                new_msg["content"] = _apply_symbol_mapping_to_text(new_msg["content"], mapping)
+            elif isinstance(new_msg.get("content"), list):
+                new_msg["content"] = [
+                    {**p, "text": _apply_symbol_mapping_to_text(p["text"], mapping)}
+                    if p.get("type") == "text" else p
+                    for p in new_msg["content"]
+                ]
+            new_conv.append(new_msg)
+        new_obj["conversation"] = new_conv
+        return new_obj
+    return prompt_obj
 
 
 def convert_ner_to_dict(text: str, ner_data: Dict) -> Dict[str, List[str]]:
@@ -57,6 +109,13 @@ class BaseMultiTaskDataset(Dataset):
         self.config = get_dataset_config(dataset_type)
         self.current_config = self.config
 
+        # Symbol map set by SymbolTrainingOrchestrator at epoch start.
+        # Workers inherit these at fork time — no IPC needed.
+        self._no_symbols: bool = True
+        self._per_instance: bool = False
+        self._symbol_maps: Dict[str, Dict[str, str]] = {}   # {ds_name: {label: symbol}}
+        self._symbol_pool: Dict[str, List[Dict[str, str]]] = {}  # {ds_name: [map, ...]}
+
         self.audio_lookup = None
         self.valid_fewshot_indices = []
         self.audio_idx_to_dataset_idx = {}  # >>> NEW: Maps lookup index to actual integer row
@@ -99,6 +158,30 @@ class BaseMultiTaskDataset(Dataset):
                     len(self.audio_lookup),
                     len(self.valid_fewshot_indices),
                 )
+    def set_epoch_symbol_maps(
+        self,
+        maps: Dict[str, Dict[str, str]],
+        no_symbols: bool = True,
+        per_instance: bool = False,
+        pool: Optional[Dict[str, List[Dict[str, str]]]] = None,
+    ) -> None:
+        """Called by the training orchestrator at the start of each epoch.
+        Workers fork after this, so they see the updated maps automatically.
+        """
+        self._no_symbols = no_symbols
+        self._per_instance = per_instance
+        self._symbol_maps = maps or {}
+        self._symbol_pool = pool or {}
+
+    def _get_symbol_map_for_sample(self) -> Dict[str, str]:
+        if self._no_symbols:
+            return {}
+        ds_name = self.dataset_type.value
+        if self._per_instance:
+            pool = self._symbol_pool.get(ds_name, [])
+            return random.choice(pool) if pool else {}
+        return self._symbol_maps.get(ds_name, {})
+
     def __len__(self):
         return len(self.dataset)
 
@@ -203,6 +286,11 @@ class BaseMultiTaskDataset(Dataset):
             current_mapping=current_config.label_mapping,
             text=item[current_config.text_key],
         )
+
+        sym_map = self._get_symbol_map_for_sample()
+        if sym_map:
+            prompt = _apply_symbol_mapping_to_prompt(prompt, sym_map)
+            formatted_completion = _apply_symbol_mapping_to_text(formatted_completion, sym_map)
 
         inputs = self.processor.process_inputs(
             data={
@@ -314,6 +402,17 @@ class MultiTaskDataset(Dataset):
         if "dataset_type" not in item:
             item["dataset_type"] = dataset_type
         return item
+
+    def set_epoch_symbol_maps(
+        self,
+        maps: Dict[str, Dict[str, str]],
+        no_symbols: bool = True,
+        per_instance: bool = False,
+        pool: Optional[Dict[str, List[Dict[str, str]]]] = None,
+    ) -> None:
+        """Propagate symbol maps to all sub-datasets before epoch workers fork."""
+        for sub_ds in self.datasets.values():
+            sub_ds.set_epoch_symbol_maps(maps, no_symbols, per_instance, pool)
 
     def on_epoch_end(self):
         if self.balance_datasets or self.interleave:

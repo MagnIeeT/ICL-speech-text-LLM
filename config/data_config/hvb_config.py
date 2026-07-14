@@ -46,6 +46,7 @@ Guidelines:
     completion_key="dialog_acts",
     text_key="text",
     is_multi_label=True,
+    max_new_tokens=20,
     audio_lookup_paths={
         DatasetSplit.TRAIN: get_env_path("HVB_TRAIN_LOOKUP"),
         DatasetSplit.VAL: get_env_path("HVB_VAL_LOOKUP"),

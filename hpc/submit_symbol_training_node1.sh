@@ -20,7 +20,7 @@ _DEFAULT_CONDA_ENV="qwen"
 if [[ "${MODEL_TYPE}" == "flamingo" ]]; then _DEFAULT_CONDA_ENV="flamingo"; fi
 CONDA_ENV="${CONDA_ENV:-${_DEFAULT_CONDA_ENV}}"                                   # conda environment (auto: qwen→qwen env, flamingo→flamingo env)
 DEVICE="${DEVICE:-cuda:0}"                                                        # torch device for training
-CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"                                 # which GPU(s) the process can see
+CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-6}"                                 # which GPU(s) the process can see
 OUTPUT_DIR="${OUTPUT_DIR:-${HOME}/training/symbol_training}"                      # root output directory
 CHECKPOINT_DIR="${CHECKPOINT_BASE:-${HOME}/training/symbol_training/checkpoints}/$(date +"%Y-%m-%d")"  # checkpoint directory (dated subfolder)
 LOG_DIR="${LOGS_DIR:-${HOME}/training/logs}/$(date +"%Y-%m-%d")"                 # log directory (dated subfolder)
@@ -28,22 +28,23 @@ NUM_WORKERS="${NUM_WORKERS:-1}"                                                 
 
 # --- Data ---
 DATASET_TYPE="${DATASET_TYPE:-hvb}"                                      # training dataset(s), dash-separated
-VAL_DATASET_TYPE="${VAL_DATASET_TYPE:-hvb-voxpopuli-cremad-ravdess_song}"      # validation dataset(s), dash-separated
-MAX_SAMPLES="${MAX_SAMPLES:-0}"                                                  # max training samples (0 = full dataset)
+VAL_DATASET_TYPE="${VAL_DATASET_TYPE:-hvb-voxpopuli-cremad-ravdess_song}"      # validation dataset(s), dash-separated #
+MAX_SAMPLES="${MAX_SAMPLES:-10}"                                                  # max training samples (0 = full dataset)
+VAL_MAX_SAMPLES="${VAL_MAX_SAMPLES:-500}"                                         # max validation samples per dataset (0 = full)
 INPUT_MODE="${INPUT_MODE:-speech_only}"                                           # query modality: speech_only | text_only
 FEWSHOT_MODE="${FEWSHOT_MODE:-text}"                                              # few-shot example modality: text | speech
 NUM_EXAMPLES="${NUM_EXAMPLES:-0}"                                                 # few-shot examples in training prompt (0 = zero-shot)
 VAL_NUM_EXAMPLES="${VAL_NUM_EXAMPLES:-0}"                                         # few-shot examples in validation prompt
 
 # --- Training ---
-LORA_EPOCHS="${LORA_EPOCHS:-10}"                                                  # number of training epochs
+LORA_EPOCHS="${LORA_EPOCHS:-1}"                                                  # number of training epochs
 LORA_LR="${LORA_LR:-1e-5}"                                                       # LoRA adapter learning rate
 BATCH_SIZE="${BATCH_SIZE:-1}"                                                     # per-step training batch size
 VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-1}"                                             # per-step validation batch size
 GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-8}"                  # effective batch = BATCH_SIZE × this
 WARMUP_STEPS="${WARMUP_STEPS:-100}"                                               # LR scheduler warmup steps
 VALIDATE_BEFORE_TRAINING="${VALIDATE_BEFORE_TRAINING:-false}"                     # true = run validation pass before epoch 1 (baseline score)
-VALIDATION_MODES="${VALIDATION_MODES:-original,fixed,fresh}"                     # which symbol modes to validate: original,fixed,fresh
+VALIDATION_MODES="${VALIDATION_MODES:-original}"                     # which symbol modes to validate: original,fixed,fresh
 
 # --- Symbol mode (pick ONE of the blocks below) ---
 # SymDPO: DPO loss over chosen/rejected symbol pairs (requires NO_SYMBOLS=false)
@@ -64,7 +65,7 @@ DSPO_ROTATION_INTERVAL="${DSPO_ROTATION_INTERVAL:-200}"                         
 DSPO_PHASE2_ROTATION="${DSPO_PHASE2_ROTATION:-0}"                               # Phase 2 symbol refresh: -1=fixed, 0=per epoch, 1=per instance, >1=every N steps
 
 # Fixed/dynamic symbols
-NO_SYMBOLS="${NO_SYMBOLS:-false}"                                                 # true = disable symbol replacement, use raw labels (must be false for DPO)
+NO_SYMBOLS="${NO_SYMBOLS:-true}"                                                 # true = disable symbol replacement, use raw labels (must be false for DPO)
 DYNAMIC_SYMBOLS="${DYNAMIC_SYMBOLS:-false}"                                       # true = regenerate symbol mapping each epoch
 SYMBOL_UPDATE_STRATEGY="${SYMBOL_UPDATE_STRATEGY:-per_epoch}"                    # when dynamic symbols refresh: per_epoch | per_instance
 SWAP_LABELS="${SWAP_LABELS:-false}"                                               # true = randomly shuffle label↔symbol assignments each epoch
@@ -123,6 +124,9 @@ export TOKENIZERS_PARALLELISM="false"
 # Force line-buffered output when redirected to a file
 export PYTHONUNBUFFERED=1
 
+NSYS_PROFILE="${NSYS_PROFILE:-false}"                                             # true = wrap python with nsys profile
+TORCH_PROFILE="${TORCH_PROFILE:-false}"                                           # true = enable PyTorch built-in profiler on epoch 1
+
 mkdir -p "${LOG_DIR}" "${OUTPUT_DIR}" "${CHECKPOINT_DIR}"
 LOG_FILE="${LOG_DIR}/${RUN_NAME}.log"
 
@@ -148,7 +152,14 @@ printf '%s\n' "============================================================"
 
 export CUDA_VISIBLE_DEVICES
 
-python train.py \
+_PYTHON_CMD="python"
+if [[ "${NSYS_PROFILE}" == "true" ]]; then
+    NSYS_OUT="${OUTPUT_DIR}/${RUN_NAME}_nsys"
+    _PYTHON_CMD="nsys profile --output=${NSYS_OUT} --trace=cuda,osrt --force-overwrite=true --wait=primary python"
+    printf 'nsys profiling enabled → %s.nsys-rep\n' "${NSYS_OUT}"
+fi
+
+${_PYTHON_CMD} train.py \
     --model_type "${MODEL_TYPE}" \
     --dataset_type "${DATASET_TYPE}" \
     --val_dataset_type "${VAL_DATASET_TYPE}" \
@@ -156,6 +167,7 @@ python train.py \
     --batch_size "${BATCH_SIZE}" \
     --val_batch_size "${VAL_BATCH_SIZE}" \
     --max_samples "${MAX_SAMPLES}" \
+    --val_max_samples "${VAL_MAX_SAMPLES}" \
     --num_examples "${NUM_EXAMPLES}" \
     --val_num_examples "${VAL_NUM_EXAMPLES}" \
     --num_workers "${NUM_WORKERS}" \
@@ -190,4 +202,5 @@ python train.py \
     --input_mode "${INPUT_MODE}" \
     --fewshot_mode "${FEWSHOT_MODE}" \
     $( [[ "${VALIDATE_BEFORE_TRAINING}" == "false" ]] && printf '%s' "--no_validate_before_training" ) \
+    $( [[ "${TORCH_PROFILE}" == "true" ]] && printf '%s' "--torch_profile" ) \
     >> "${LOG_FILE}" 2>&1

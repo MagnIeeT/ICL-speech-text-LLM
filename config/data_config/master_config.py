@@ -31,6 +31,7 @@ class DatasetConfig:
     is_multi_label: bool = False
     audio_lookup_paths: Dict[DatasetSplit, str] = None
     label_mapping: Dict[str, str] = None
+    max_new_tokens: int = 8
 
     def get_path(self, split: DatasetSplit) -> str:
         return self.paths[split]

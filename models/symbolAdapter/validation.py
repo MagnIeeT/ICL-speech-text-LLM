@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 import torch
 from tqdm import tqdm
 
-from config.data_config.master_config import DatasetType
+from config.data_config.master_config import DatasetType, get_dataset_config
 from config.train_config.training_configs import (
     TrainingConfig,
     ValidationSymbolMode,
@@ -75,6 +75,14 @@ class ValidationManager:
             symbol_mappings_to_use = symbol_map if symbol_map is not None else self.symbol_manager.get_symbols_for_epoch(epoch)
             mode_name = "Fixed-Symbols"
 
+        # Push symbol maps to val dataset so workers apply substitution + tokenize
+        # (same pattern as training's _set_epoch_symbol_maps_on_dataset).
+        # persistent_workers=False means each enumerate() forks fresh workers that
+        # inherit the updated maps — no IPC needed.
+        dataset = getattr(val_dataloader, 'dataset', None)
+        if dataset is not None and hasattr(dataset, 'set_epoch_symbol_maps'):
+            dataset.set_epoch_symbol_maps(symbol_mappings_to_use, no_symbols=use_original_labels)
+
         logger.info("")
         logger.info("=" * 80)
         logger.info(f"VALIDATION MODE: {mode_name}")
@@ -107,26 +115,26 @@ class ValidationManager:
                 ds_name_str, relevant_labels = get_dataset_info(batch, self.symbol_manager.original_labels)
 
                 if use_original_labels:
-                    p_map = c_map = {}
+                    c_map = {}
                 else:
-                    # Look up flat {label: symbol} for this dataset; missing labels fall back to original
                     ds_map = symbol_mappings.get(ds_name_str, {})
-                    p_map = c_map = {l: ds_map[l] for l in relevant_labels if l in ds_map}
+                    c_map = {l: ds_map[l] for l in relevant_labels if l in ds_map}
 
                 if ds_name_str not in logged_datasets:
                     logged_datasets.add(ds_name_str)
                     if use_original_labels:
                         logger.info("VAL [%s] original labels (no replacement)", ds_name_str)
-                    elif p_map:
-                        logger.info("VAL [%s] symbol mapping: %s", ds_name_str, p_map)
+                    elif c_map:
+                        logger.info("VAL [%s] symbol mapping: %s", ds_name_str, c_map)
                     else:
                         logger.info("VAL [%s] no matching symbols — falling back to original labels", ds_name_str)
 
-                # 1. Text Replacement
-                updated_batch = self.symbol_manager.replace_symbols_in_batch(batch, prompt_mappings=p_map, completion_mappings=c_map)
-
-                # 2. Tokenization (left-pad for generation)
-                updated_batch = tokenize_batch_with_audio(updated_batch, self.processor, completions=None, padding_side="left")
+                # Workers applied symbol substitution + tokenization (left-pad via collate_fn).
+                # Fall back to main-thread tokenization for processors without worker tokenization (e.g. Qwen).
+                if "input_ids" not in batch:
+                    updated_batch = tokenize_batch_with_audio(batch, self.processor, completions=None, padding_side="left")
+                else:
+                    updated_batch = batch
 
                 # Log one full prompt per dataset per validation mode
                 if ds_name_str not in logged_prompts and "input_ids" in updated_batch:
@@ -136,10 +144,11 @@ class ValidationManager:
                     )
                     logger.info("VAL prompt [%s]:\n%s", ds_name_str, full_prompt)
 
-                # 3. Move to device and generate
+                # Move to device and generate
                 updated_batch = {k: v.to(model.device) if isinstance(v, torch.Tensor) else v for k, v in updated_batch.items()}
                 try:
-                    raw = model.generate_output(updated_batch)
+                    ds_cfg = get_dataset_config(DatasetType(ds_name_str))
+                    raw = model.generate_output(updated_batch, max_new_tokens=ds_cfg.max_new_tokens)
                 except Exception as gen_exc:
                     logger.warning("Skipping batch (generate_output failed): %s", gen_exc)
                     continue
@@ -154,6 +163,8 @@ class ValidationManager:
                     dt_key = dt_val.value if hasattr(dt_val, "value") else str(dt_val)
                     all_results.setdefault(dt_key, [])
                     true_label = batch["completion"][i]
+                    if not use_original_labels and c_map:
+                        true_label = self.symbol_manager.convert_symbols_back(true_label, mappings=c_map)
                     conv_pred = self.symbol_manager.convert_symbols_back(pred, mappings=c_map) if not use_original_labels and c_map else pred
                     lps = token_log_probs[i] if token_log_probs[i] is not None else []
                     all_results[dt_key].append({

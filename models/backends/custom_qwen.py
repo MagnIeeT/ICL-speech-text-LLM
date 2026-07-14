@@ -191,7 +191,7 @@ class CustomQwen(nn.Module):
         self.batch_counter += 1
         return {"loss": outputs.loss, "logits": outputs.logits, "labels": labels}
 
-    def generate_output(self, batch, slot_replacement=None):
+    def generate_output(self, batch, slot_replacement=None, max_new_tokens: int = 20):
         input_ids = batch["input_ids"].to(self.device).long()
         attention_mask = batch["attention_mask"].to(self.device)
         input_features = batch.get("input_features")
@@ -227,7 +227,7 @@ class CustomQwen(nn.Module):
                 attention_mask=attention_mask,
                 input_features=input_features,
                 feature_attention_mask=feature_attention_mask,
-                max_new_tokens=20,
+                max_new_tokens=max_new_tokens,
                 do_sample=False,
                 output_scores=True,
                 return_dict_in_generate=True,

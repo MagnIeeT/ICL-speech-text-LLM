@@ -127,6 +127,7 @@ class TrainingConfig:
     run_name: str = "symbol_training_run"
     checkpoint_frequency: int = 1
     validate_before_training: bool = True
+    torch_profile: bool = False
 
     device: str = "cuda:0"
 
@@ -246,7 +247,11 @@ class TrainingConfig:
             batch_size=args.batch_size,
             val_batch_size=getattr(args, "val_batch_size", None),
             max_samples=args.max_samples,
-            val_max_samples=200 if args.max_samples == 0 else min(200, args.max_samples),
+            val_max_samples=(
+                min(getattr(args, "val_max_samples", 500), args.max_samples)
+                if args.max_samples > 0
+                else getattr(args, "val_max_samples", 500)
+            ),
             split=getattr(args, "split", "test"),
             num_workers=getattr(args, "num_workers", 2),
             num_examples=getattr(args, "num_examples", 5),
@@ -257,6 +262,7 @@ class TrainingConfig:
 
         return cls(
             validate_before_training=not getattr(args, "no_validate_before_training", False),
+            torch_profile=getattr(args, "torch_profile", False),
             model_type=ModelType(args.model_type),
             salmonn_tokenizer_name=getattr(args, "salmonn_tokenizer_name", "lmsys/vicuna-13b-v1.1"),
             qwen_model_name=getattr(args, "qwen_model_name", "Qwen/Qwen2-Audio-7B-Instruct"),
@@ -298,6 +304,7 @@ def parse_training_args() -> argparse.Namespace:
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--val_batch_size", type=int, default=None, help="Validation batch size (default: same as batch_size)")
     parser.add_argument("--max_samples", type=int, default=100)
+    parser.add_argument("--val_max_samples", type=int, default=500, help="Max validation samples per dataset (0 = full)")
     parser.add_argument("--num_examples", type=int, default=5, help="Few-shot examples per training prompt")
     parser.add_argument("--val_num_examples", type=int, default=5, help="Few-shot examples per validation prompt")
     parser.add_argument("--num_workers", type=int, default=2)
@@ -360,6 +367,7 @@ def parse_training_args() -> argparse.Namespace:
     parser.add_argument("--use_dpo", action="store_true", help="Use SymDPO trainer instead of cross-entropy")
     parser.add_argument("--dpo_beta", type=float, default=0.1, help="DPO beta (preference margin temperature)")
     parser.add_argument("--no_validate_before_training", action="store_true", help="Skip baseline validation before epoch 1")
+    parser.add_argument("--torch_profile", action="store_true", help="Enable PyTorch profiler on epoch 1")
     parser.add_argument("--output_dir", type=str, default=None)
     parser.add_argument("--checkpoint_dir", type=str, default=None)
     parser.add_argument("--metrics_dir", type=str, default=None)
