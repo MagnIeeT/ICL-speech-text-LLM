@@ -44,6 +44,12 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
 
     if use_flash_attn:
         kwargs['attn_implementation'] = 'flash_attention_2'
+    else:
+        # Explicit eager (not left to transformers' auto-selection, which may pick
+        # 'sdpa' on newer versions) so inference's attention math matches training's
+        # forced-eager train_mem.py exactly -- both deterministic, standard PyTorch
+        # ops, not a fused/tiled kernel.
+        kwargs['attn_implementation'] = 'eager'
 
     if 'llava' in model_name.lower():
         # Load LLaVA model
@@ -52,6 +58,13 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         if 'lora' in model_name.lower() and model_base is not None:
             from llava.model.language_model.llava_llama import LlavaConfig
             lora_cfg_pretrained = LlavaConfig.from_pretrained(model_path)
+            # Force this onto the config object directly (not just the kwargs
+            # below) -- passing a pre-loaded `config=` to from_pretrained() can
+            # silently keep whatever attn_implementation was baked into the
+            # checkpoint's saved config.json instead of honoring the
+            # attn_implementation kwarg. Confirmed via runtime fingerprint:
+            # this path was loading as 'sdpa' despite kwargs requesting 'eager'.
+            lora_cfg_pretrained._attn_implementation = kwargs.get('attn_implementation', 'eager')
             tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
             print('Loading LLaVA from base model...')
             model = LlavaLlamaForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=lora_cfg_pretrained, **kwargs)
@@ -161,8 +174,18 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         vision_tower = model.get_vision_tower()
         if not vision_tower.is_loaded:
             vision_tower.load_model(device_map=device_map)
+        # Always match the vision tower's dtype to the main model's dtype.
+        # Previously this cast only ran when device_map != 'auto', which our
+        # caller (sprint_eval.py) never sets -- CLIPVisionModel.from_pretrained()
+        # never receives a torch_dtype, so it silently loaded at HF's fp32
+        # default while the rest of the model was bf16. Confirmed via runtime
+        # parameter-dtype census: training showed 0 fp32 params, this inference
+        # path showed 391 fp32 params (matching CLIP ViT-L/14's param count).
+        # Device placement (the original intent of this gate) is unaffected --
+        # device_map='auto' already handles device placement via accelerate.
+        vision_tower.to(dtype=model.dtype)
         if device_map != 'auto':
-            vision_tower.to(device=device_map, dtype=torch.float16)
+            vision_tower.to(device=device_map)
         image_processor = vision_tower.image_processor
 
     if hasattr(model.config, "max_sequence_length"):

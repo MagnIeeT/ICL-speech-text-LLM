@@ -30,6 +30,16 @@ from typing import Dict, Optional, Sequence, List
 
 import torch
 
+# NOTE: torch.use_deterministic_algorithms() was previously forced on here as a
+# diagnostic, to test whether GPU kernel nondeterminism explained a
+# training-vs-inference logit gap. That investigation concluded the real cause
+# was elsewhere (vision-tower dtype + attention implementation mismatch in
+# builder.py, both now fixed) -- confirmed via a clean bit-identical
+# TRAIN/INFER logit match. Determinism-forcing costs real runtime (slower
+# kernel variants, no cuDNN autotuning) with no further correctness benefit,
+# so it's been removed; left at PyTorch's normal fast defaults. Re-add only if
+# a future investigation specifically needs it.
+
 import transformers
 import tokenizers
 
@@ -76,6 +86,7 @@ _SPRINT_TRAINPROMPT_LOGGED: bool = False  # one-time first training prompt for r
 _SPRINT_IDS_LOGGED: bool = False     # one-time input_ids/conversation/target before+after masking
 _SPRINT_IMGLOAD_COUNT: int = 0       # number of images timed so far (per worker process)
 _SPRINT_IMGLOAD_TIME_SUM: float = 0.0  # running sum of load times (for periodic average)
+_SPRINT_FIRSTBATCH_LOG_COUNT: int = 0  # first-N __getitem__(i) calls -> sample-order diagnostic
 
 
 def _sprint_is_log_proc() -> bool:
@@ -973,6 +984,23 @@ class LazySupervisedDataset(Dataset):
         return pixel_values
 
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
+        # ── SPRInT-DIAG: first-batch sample order ──────────────────────────────
+        # Logs the first 10 dataset indices/ids requested by the sampler (via
+        # DataLoader.__getitem__ calls), gated to the main log process so it
+        # prints once regardless of NUM_WORKERS. Purpose: confirm two runs with
+        # the same --seed/split produce the identical shuffle order (this is
+        # currently NOT guaranteed even after the early transformers.set_seed()
+        # fix -- LLaVATrainer's LengthGroupedSampler consumes the global RNG
+        # stream with generator=None; see llava_trainer.py -- so this diagnostic
+        # is exactly what will show whether that sampler ended up reproducible
+        # in practice or needs its own fix next).
+        global _SPRINT_FIRSTBATCH_LOG_COUNT
+        if _SPRINT_FIRSTBATCH_LOG_COUNT < 10 and _sprint_is_log_proc():
+            _SPRINT_FIRSTBATCH_LOG_COUNT += 1
+            _sample_id = self.list_data_dict[i].get('id', '?') if isinstance(i, int) else '?'
+            print(f"[SPRINT-DIAG::FIRST-BATCH] call#{_SPRINT_FIRSTBATCH_LOG_COUNT}  "
+                  f"dataset_idx={i}  sample_id={_sample_id!r}", flush=True)
+
         sources = self.list_data_dict[i]
         if isinstance(i, int):
             sources = [sources]
@@ -1151,6 +1179,28 @@ def train(attn_implementation=None):
         (ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
     local_rank = training_args.local_rank
+
+    # Seed BEFORE any randomly-initialized trainable component is created.
+    # get_peft_model() below (LoRA-A Kaiming-uniform init) is the earliest such
+    # component in this function. HF Trainer's own internal set_seed() call runs
+    # much later -- inside Trainer.__init__, which isn't constructed until after
+    # LoRA is already added -- so it cannot control that init. Without this call,
+    # LoRA-A draws from PyTorch's default RNG, which is itself seeded from OS
+    # entropy at first use when never explicitly seeded, so it differs on every
+    # run regardless of training_args.seed. This call is a fixed cost (~microseconds),
+    # not a training-speed regression -- unlike TF32/deterministic-algorithms.
+    transformers.set_seed(training_args.seed)
+
+    # NOTE: torch.use_deterministic_algorithms(True) + CUBLAS_WORKSPACE_CONFIG were
+    # tried here (2026-07-17) to chase residual run-to-run variance beyond what the
+    # seed fix above closes. Result: mixed/inconsistent -- helped endo (tightest
+    # result seen all investigation) but made colon's own-task variance WORSE than
+    # the pre-investigation baseline (epoch-to-epoch macro_f1 crash, disagreeing
+    # best-epoch selection). Reverted. The remaining residual variance was verified
+    # (via the SPRINT-DIAG::PER-CLASS-LOGITS boundary-hovering check) to be
+    # threshold-crossing of already-ambiguous predictions near p=0.5, not large
+    # probability swings -- i.e. expected small-sample noise, not a bug. Current
+    # plan: accept it, report mean+/-std over multiple seeds instead.
     compute_dtype = (torch.float16 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32))
 
     bnb_model_from_pretrained_args = {}
@@ -1233,6 +1283,35 @@ def train(attn_implementation=None):
                 model.to(torch.float16)
         rank0_print("Adding LoRA adapters...")
         model = get_peft_model(model, lora_config)
+
+        # ── SPRInT-DIAG: initial trainable-parameter fingerprint ──────────────
+        # Lightweight (one-time, ~seconds not minutes): per-tensor L2 norm, not a
+        # full byte-hash, so it stays cheap even at 13B scale. Purpose: confirm
+        # two runs with the same --seed actually start from identical LoRA-A/B
+        # weights (see the early-seeding fix above). Compare this block's output
+        # across two runs' logs directly -- every line should match exactly.
+        if local_rank in (0, -1):
+            _n_trainable = 0
+            _total_sq = 0.0
+            _lora_a_shown = 0
+            for _name, _p in sorted(model.named_parameters(), key=lambda kv: kv[0]):
+                if not _p.requires_grad:
+                    continue
+                _n_trainable += 1
+                _norm = _p.detach().float().norm().item()
+                _total_sq += _norm ** 2
+                if "lora_A" in _name and _lora_a_shown < 3:
+                    _lora_a_shown += 1
+                    _flat = _p.detach().float().flatten()
+                    rank0_print(
+                        f"[SPRInT-DIAG::INIT-FINGERPRINT] {_name}  shape={tuple(_p.shape)}  "
+                        f"first5={[round(v, 6) for v in _flat[:5].tolist()]}  "
+                        f"sum={_flat.sum().item():.6f}  norm={_norm:.6f}"
+                    )
+            rank0_print(
+                f"[SPRInT-DIAG::INIT-FINGERPRINT] trainable_tensors={_n_trainable}  "
+                f"total_l2_norm={_total_sq ** 0.5:.6f}  seed={training_args.seed}"
+            )
 
     if 'mpt' in model_args.model_name_or_path:
         tokenizer = transformers.AutoTokenizer.from_pretrained(
@@ -1443,9 +1522,21 @@ def train(attn_implementation=None):
             model.config.save_pretrained(training_args.output_dir)
             model.save_pretrained(training_args.output_dir, state_dict=state_dict)
             torch.save(non_lora_state_dict, os.path.join(training_args.output_dir, 'non_lora_trainables.bin'))
-            # Sync non_lora_trainables.bin + config.json + symbol_mappings.json into
-            # every checkpoint-N and checkpoint-best so any epoch can be used directly
-            # for inference without manual file copying.
+            # Sync config.json + symbol_mappings.json (run-level, not epoch-specific)
+            # into every checkpoint-N and checkpoint-best so any epoch can be used
+            # directly for inference without manual file copying.
+            #
+            # non_lora_trainables.bin is deliberately EXCLUDED from this loop --
+            # each checkpoint-N now saves its OWN epoch-correct non_lora_trainables.bin
+            # at save time (sprint_callbacks.py SPRInTValidationCallback.on_save).
+            # Copying the final live model's non_lora_trainables.bin (saved just
+            # above, into output_dir root -- that one is correct, it's meant to
+            # represent the final-epoch model) into every historical checkpoint dir
+            # here would silently overwrite each epoch's own projector weights with
+            # the final epoch's, corrupting checkpoint-best whenever the best epoch
+            # isn't the last one. (This is exactly what happened before this fix --
+            # confirmed via md5sum showing one identical non_lora_trainables.bin
+            # hash shared by every checkpoint-N and checkpoint-best.)
             _ckpt_dirs = [
                 os.path.join(training_args.output_dir, d)
                 for d in os.listdir(training_args.output_dir)
@@ -1453,7 +1544,7 @@ def train(attn_implementation=None):
                    os.path.isdir(os.path.join(training_args.output_dir, d))
             ]
             for _ckpt_dir in _ckpt_dirs:
-                for _fname in ('non_lora_trainables.bin', 'config.json', 'symbol_mappings.json'):
+                for _fname in ('config.json', 'symbol_mappings.json'):
                     _src = os.path.join(training_args.output_dir, _fname)
                     if os.path.isfile(_src):
                         shutil.copy2(_src, os.path.join(_ckpt_dir, _fname))
