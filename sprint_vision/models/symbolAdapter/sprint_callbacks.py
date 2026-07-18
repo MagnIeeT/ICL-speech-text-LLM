@@ -14,6 +14,7 @@ import sys
 import math
 import shutil
 
+import torch
 import transformers
 
 from .validation import SPRInTValidationManager
@@ -325,7 +326,10 @@ class SPRInTValidationCallback(transformers.TrainerCallback):
             _all_mode_syms["fixed"] = self.symbol_manager.get_current_symbols()
             _all_mode_syms["fresh"] = self.symbol_manager._generate_symbol_mappings()
         requested    = [m.strip() for m in self._validation_modes.split(",")]
-        mode_symbols = {m: v for m, v in _all_mode_syms.items() if m in requested}
+        # Preserve the order the user wrote in VALIDATION_MODES (not _all_mode_syms's
+        # fixed original/fixed/fresh insertion order) -- the first mode listed is
+        # treated as "primary" for best-epoch selection downstream.
+        mode_symbols = {m: _all_mode_syms[m] for m in requested if m in _all_mode_syms}
         if not mode_symbols:
             mode_symbols = {"original": {}}
 
@@ -424,12 +428,34 @@ class SPRInTValidationCallback(transformers.TrainerCallback):
         if args.local_rank not in (-1, 0):
             return
         latest_ckpt = os.path.join(args.output_dir, f"checkpoint-{state.global_step}")
-        # HF Trainer with LoRA does not write config.json into epoch checkpoints.
-        # Write it now so every checkpoint-N is self-contained for direct inference.
+        # HF Trainer with LoRA does not write config.json OR non-LoRA trainable
+        # weights (e.g. mm_projector, tuned via its own --mm_projector_lr) into
+        # epoch checkpoints -- PeftModel.save_pretrained() only serializes the
+        # LoRA adapter itself. Write both now, from the model's CURRENT state --
+        # on_save fires immediately after THIS epoch's weights were written and
+        # before any further training happens, so "current state" == this
+        # epoch's state. This must happen before the checkpoint-best copy below
+        # so that copy picks up this epoch's own non_lora_trainables.bin, not a
+        # stale/missing one. (Previously non_lora_trainables.bin was only ever
+        # written once, post-training, from the FINAL epoch's live weights, then
+        # fanned out to every checkpoint dir including checkpoint-best --
+        # silently overwriting every historical checkpoint's projector weights
+        # with the final epoch's. Confirmed via md5sum: every checkpoint-N and
+        # checkpoint-best shared one identical non_lora_trainables.bin hash.)
         if os.path.isdir(latest_ckpt):
             model = kwargs.get("model")
             if model is not None:
                 model.config.save_pretrained(latest_ckpt)
+                if getattr(self.training_args, "lora_enable", False):
+                    from llava.train.train import get_peft_state_non_lora_maybe_zero_3
+                    non_lora_state_dict = get_peft_state_non_lora_maybe_zero_3(
+                        model.named_parameters()
+                    )
+                    if non_lora_state_dict:
+                        torch.save(
+                            non_lora_state_dict,
+                            os.path.join(latest_ckpt, "non_lora_trainables.bin"),
+                        )
 
         if not self._is_new_best:
             return
@@ -438,12 +464,12 @@ class SPRInTValidationCallback(transformers.TrainerCallback):
         if not os.path.isdir(latest_ckpt):
             _rank0_print(
                 f"[SPRInT] WARNING: checkpoint-{state.global_step} not found on disk; "
-                f"checkpoint-best not updated. Ensure --save_strategy epoch is set."
+                f"check  point-best not updated. Ensure --save_strategy epoch is set."
             )
             return
         if os.path.exists(best_ckpt):
             shutil.rmtree(best_ckpt)
-        shutil.copytree(latest_ckpt, best_ckpt)  # config.json already written above
+        shutil.copytree(latest_ckpt, best_ckpt)  # config.json + non_lora_trainables.bin already written above
         _rank0_print(
             f"[SPRInT] checkpoint-best updated → checkpoint-{state.global_step}"
             f"  (epoch {self._best_epoch}, score={self._best_score:.4f})"

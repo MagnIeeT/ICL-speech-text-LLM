@@ -19,8 +19,7 @@ fi
 # ============================================================
 # LLaVA Inference - HPC Submit Script  —  EE CLUSTER (IISc)
 # ============================================================
-# EE variant, modelled on ICI/hpc/submit_symbol_inference_job.sh (the script
-# sir made for EE) but wired to the VLM components (vision_orchestrator.py).
+# EE variant, modelled on ICI/hpc/submit_symbol_inference_job.sh ( but wired to the VLM components (vision_orchestrator.py).
 #   * PBS/Torque (qsub) with `-v` inline env passing + heredoc | tee
 #   * queue = "compute", NO host pin (the partition picks the node)
 #   * conda: source <CONDA_BASE>/etc/profile.d/conda.sh; conda activate llava
@@ -66,15 +65,15 @@ diagnose_samples=0  # set 0 so [BATCH-VERIFY] fires on sample 0 when batching
 #   Example: USE_VALIDATION=true MAX_VAL_SAMPLES=0 datasets=chest strategy=ed_ft \
 #            CHECKPOINT_PATH=<ckpt>/checkpoint-best bash submit_inference_compute.sh
 USE_VALIDATION=true
-MAX_VAL_SAMPLES=100
+MAX_VAL_SAMPLES=300
 val_shot=10
-val_exp=2
+val_exp=1
 
 # Eval modes (comma-separated subset of original,fixed,fresh). Empty = sprint_eval
 # default (symbol strategies → original,fixed,fresh ; regular/rft → original only).
 eval_modes=original
 # Fine-tuned checkpoint (LoRA adapter dir) — same checkpoint used for all datasets
-CHECKPOINT_PATH=
+CHECKPOINT_PATH=/home/harinisrireddykandula/llava/checkpoints/0715_0134_llava-colon-two_token-shot10_exp1_val300/checkpoint-best
 # Set to a job ID (e.g. "12093.eehpc") to wait for that job first.
 hold_job_id=
 
@@ -85,7 +84,7 @@ queue_name="${queue_name:-GPU_only}"        # EE GPU queue (others: workq, CPU_o
 hostname=compute                   # EMPTY = let 'compute' pick the node; set to pin
 # GPU SELECTION: the 'compute' node has 8 GPUs (0-7). Pick a FREE one (check with
 # `nvidia-smi` on the node) and pass it, e.g.  cuda_device=3 bash submit_inference_compute.sh
-cuda_device=3
+cuda_device=5
 walltime="${walltime:-24:00:00}"
 # EE has NO GPU PBS resource (ngpus/num_gpus undefined) — GPUs live on the single
 # 'compute' node reached via the GPU_only queue; pick the GPU with CUDA_VISIBLE_DEVICES.

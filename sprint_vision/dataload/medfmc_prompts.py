@@ -26,6 +26,7 @@ This single builder is imported by BOTH evaluation paths so they cannot drift:
 """
 
 import logging
+import os
 from typing import Callable, Dict, Optional
 
 from config.data_config import render_def_block
@@ -208,7 +209,7 @@ def score_probes_pyes(
                 # PEFT's generate() rejects positional input_ids → pass as `inputs=`
                 # (matches the unbatched path in validation.py / sprint_eval.py).
                 out = model.generate(inputs=input_ids, **gen_kwargs)
-            step0 = out.scores[0]   # [n, vocab]
+            step0 = out.scores[0].float()   # [n, vocab] — fp32 so softmax doesn't add its own bf16 rounding
             for r in range(n):
                 pair = torch.stack([step0[r, token_id_neg], step0[r, token_id_pos]])
                 out_scores.append(torch.nn.functional.softmax(pair, dim=0)[1].item())
@@ -256,6 +257,7 @@ def score_class_probes_kvcache(
     image_token: str = "<image>",
     conv_template: str = "vicuna_v1",
     first_image: bool = False,
+    pipeline: str = "UNKNOWN",
 ):
     """
     KV-prefix-cached version of the per-class Yes/No probe.
@@ -317,7 +319,13 @@ def score_class_probes_kvcache(
     )
     n_pref = prefix_ids.shape[0]
     if first_image:
-        print(f"[KV-CACHE] prefix_ids : {n_pref}", flush=True)
+        print(f"[KV-CACHE] prefix_ids (tokens) : {n_pref}", flush=True)
+        sprint_runtime_fingerprint(model, tokenizer, pipeline)
+        sprint_input_fingerprint(
+            pipeline, tag_suffix=" (prefix)",
+            prefix_input_ids=prefix_ids.unsqueeze(0),
+            image_tensor=image_tensor,
+        )
 
     # ---- ONE forward pass over the shared prefix (this is the whole point) ----
     with torch.inference_mode():
@@ -348,15 +356,33 @@ def score_class_probes_kvcache(
                 gen_kwargs["image_sizes"] = [image_size]
             with torch.inference_mode():
                 out = model.generate(inputs=full_ids.unsqueeze(0).to(device), **gen_kwargs)
-            step0 = out.scores[0][0]
+            step0 = out.scores[0][0].float()  # fp32 so softmax doesn't add its own bf16 rounding
             pair = torch.stack([step0[token_id_neg], step0[token_id_pos]])
             scores.append(torch.nn.functional.softmax(pair, dim=0)[1].item())
+            if first_image:
+                _pv = pair.tolist()  # [no_logit, yes_logit]
+                print(f"[SPRINT-DIAG::LOGITS] (KV-CACHE FALLBACK)  "
+                      f"cls_idx={cls_idx}  class={class_name!r}  "
+                      f"yes_logit={_pv[1]:.4f}  no_logit={_pv[0]:.4f}  "
+                      f"p_yes={scores[-1]:.6f}  p_no={1 - scores[-1]:.6f}", flush=True)
             continue
 
         tail_ids = full_ids[n_pref:]
         if first_image and cls_idx == 0:
             print(f"[KV-CACHE] tail_ids   : {tail_ids.shape[0]}", flush=True)
-        attn_mask = torch.ones((1, n_pref + tail_ids.shape[0]), dtype=torch.long, device=device)
+        # Use actual past KV length (not n_pref) because LLaVA expands the single
+        # -200 image placeholder token to N_patches visual tokens in the forward pass,
+        # making the KV cache longer than n_pref by (N_patches - 1) entries.
+        actual_past_len = past[0][0].shape[2]
+        if first_image and cls_idx == 0:
+            print(f"[KV-CACHE] actual past KV len : {actual_past_len}  (n_pref={n_pref}, image expansion={actual_past_len - n_pref + 1} tokens)", flush=True)
+        attn_mask = torch.ones((1, actual_past_len + tail_ids.shape[0]), dtype=torch.long, device=device)
+        if first_image and cls_idx == 0:
+            sprint_input_fingerprint(
+                pipeline, tag_suffix=" (tail)",
+                tail_input_ids=tail_ids.unsqueeze(0),
+                attention_mask=attn_mask,
+            )
 
         with torch.inference_mode():
             tail_out = model(
@@ -365,11 +391,141 @@ def score_class_probes_kvcache(
                 attention_mask=attn_mask,
                 use_cache=True,
             )
-        logits = tail_out.logits[0, -1, :]
+        logits = tail_out.logits[0, -1, :].float()  # fp32 so softmax doesn't add its own bf16 rounding
         pair = torch.stack([logits[token_id_neg], logits[token_id_pos]])
         scores.append(torch.nn.functional.softmax(pair, dim=0)[1].item())
+        if first_image:
+            _pv = pair.tolist()  # [no_logit, yes_logit]
+            print(f"[SPRINT-DIAG::LOGITS] (KV-CACHE)  cls_idx={cls_idx}  class={class_name!r}  "
+                  f"yes_logit={_pv[1]:.4f}  no_logit={_pv[0]:.4f}  "
+                  f"p_yes={scores[-1]:.6f}  p_no={1 - scores[-1]:.6f}", flush=True)
 
     return scores
+
+
+_RUNTIME_FINGERPRINT_PRINTED = False
+
+
+def sprint_runtime_fingerprint(model, tokenizer, pipeline: str) -> None:
+    """
+    Diagnostics-only, one-time (first call wins, process-wide) dump of every
+    piece of runtime state that could plausibly differ between training-
+    embedded validation and standalone inference on the SAME checkpoint:
+    host/GPU identity, library versions, model/adapter state, active forward
+    hooks, and global torch determinism/precision flags. Does not read or
+    change any tensor value -- pure introspection.
+    """
+    global _RUNTIME_FINGERPRINT_PRINTED
+    if _RUNTIME_FINGERPRINT_PRINTED:
+        return
+    if int(os.environ.get("LOCAL_RANK", "0")) != 0:
+        return
+    _RUNTIME_FINGERPRINT_PRINTED = True
+
+    import socket
+    import sys
+    from collections import Counter
+    import torch as _torch
+
+    tag = "[SPRINT-DIAG::FINGERPRINT]"
+
+    def _ver(mod_name):
+        try:
+            return __import__(mod_name).__version__
+        except Exception:
+            return "N/A"
+
+    print(f"{tag} pipeline={pipeline}  hostname={socket.gethostname()}  "
+          f"python={sys.executable}", flush=True)
+
+    if _torch.cuda.is_available():
+        dev = _torch.cuda.current_device()
+        print(f"{tag} gpu={_torch.cuda.get_device_name(dev)}  "
+              f"capability={_torch.cuda.get_device_capability(dev)}  "
+              f"device_index={dev}  "
+              f"CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}",
+              flush=True)
+    else:
+        print(f"{tag} gpu=NONE (CUDA not available)", flush=True)
+
+    try:
+        cudnn_ver = _torch.backends.cudnn.version()
+    except Exception:
+        cudnn_ver = "N/A"
+    print(f"{tag} torch={_torch.__version__}  cuda_runtime={_torch.version.cuda}  "
+          f"cudnn={cudnn_ver}  transformers={_ver('transformers')}  "
+          f"peft={_ver('peft')}  deepspeed={_ver('deepspeed')}", flush=True)
+
+    print(f"{tag} tf32_matmul={_torch.backends.cuda.matmul.allow_tf32}  "
+          f"tf32_cudnn={_torch.backends.cudnn.allow_tf32}  "
+          f"cudnn_benchmark={_torch.backends.cudnn.benchmark}  "
+          f"cudnn_deterministic={_torch.backends.cudnn.deterministic}  "
+          f"deterministic_algorithms="
+          f"{_torch.are_deterministic_algorithms_enabled()}  "
+          f"grad_enabled={_torch.is_grad_enabled()}  "
+          f"inference_mode_enabled={_torch.is_inference_mode_enabled()}",
+          flush=True)
+
+    base_model = getattr(model, "get_base_model", lambda: model)()
+    print(f"{tag} model_class={type(model).__name__}  "
+          f"base_model_class={type(base_model).__name__}  "
+          f"model.training={model.training}  "
+          f"attn_implementation="
+          f"{getattr(getattr(model, 'config', None), '_attn_implementation', 'N/A')!r}",
+          flush=True)
+
+    dtype_dev_counts = Counter(
+        (p.dtype, p.device.type, p.requires_grad) for p in model.parameters()
+    )
+    print(f"{tag} param_(dtype,device,requires_grad)_counts="
+          f"{ {str(k): v for k, v in dtype_dev_counts.items()} }", flush=True)
+
+    is_peft = hasattr(model, "peft_config")
+    print(f"{tag} is_peft_model={is_peft}", flush=True)
+    if is_peft:
+        try:
+            active = getattr(model, "active_adapter", "N/A")
+            merged_modules = [
+                n for n, m in model.named_modules()
+                if hasattr(m, "merged") and getattr(m, "merged", False)
+            ]
+            print(f"{tag} peft_active_adapter={active!r}  "
+                  f"peft_config_keys={list(model.peft_config.keys())}  "
+                  f"n_merged_lora_modules={len(merged_modules)}  "
+                  f"sample_merged_modules={merged_modules[:3]}", flush=True)
+        except Exception as e:
+            print(f"{tag} peft_introspection_failed={e!r}", flush=True)
+
+    try:
+        emb = model.get_input_embeddings()
+        hooks = list(getattr(emb, "_forward_hooks", {}).values())
+        hook_names = [getattr(h, "__qualname__", repr(h)) for h in hooks]
+        print(f"{tag} input_embedding_module={type(emb).__name__}  "
+              f"n_forward_hooks={len(hooks)}  hook_fns={hook_names}", flush=True)
+    except Exception as e:
+        print(f"{tag} embedding_hook_introspection_failed={e!r}", flush=True)
+
+
+def sprint_input_fingerprint(pipeline: str, tag_suffix: str = "", **tensors) -> None:
+    """
+    Diagnostics-only per-sample hash/dtype/shape/stat fingerprint of the exact
+    tensors about to enter model.forward()/model.generate(), captured
+    immediately before the call. Pass tensors as kwargs, e.g.
+    sprint_input_fingerprint("TRAIN", input_ids=input_ids, image_tensor=img).
+    """
+    import hashlib
+    tag = f"[SPRINT-DIAG::INPUT-FINGERPRINT]{tag_suffix}"
+
+    for name, t in tensors.items():
+        if t is None:
+            print(f"{tag} pipeline={pipeline}  {name}=None", flush=True)
+            continue
+        t_cpu = t.detach().float().cpu().contiguous()
+        h = hashlib.sha256(t_cpu.numpy().tobytes()).hexdigest()[:16]
+        print(f"{tag} pipeline={pipeline}  {name}("
+              f"shape={tuple(t.shape)}, dtype={t.dtype}, device={t.device}, "
+              f"sha256_16={h}, mean={t_cpu.mean().item():.6f}, "
+              f"sum={t_cpu.sum().item():.4f})", flush=True)
 
 
 def sprint_log(stage: str, **fields) -> None:

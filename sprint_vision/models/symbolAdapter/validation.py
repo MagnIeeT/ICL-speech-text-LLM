@@ -41,7 +41,10 @@ from utils.evaluation_utils import (
     compute_binary_metrics,
     compute_multilabel_metrics,
 )
-from dataload.medfmc_prompts import build_per_class_prompt, sprint_log, score_probes_pyes
+from dataload.medfmc_prompts import (
+    build_per_class_prompt, sprint_log, score_probes_pyes,
+    sprint_runtime_fingerprint, sprint_input_fingerprint,
+)
 
 
 class SPRInTValidationManager:
@@ -95,6 +98,7 @@ class SPRInTValidationManager:
         # instruction_intro) — used to build the HVB-style per-class mAP/AUC
         # probe so it carries the SAME definition block seen in training.
         self._cfg             = cfg
+        self._img_diag_printed = False  # fires once per manager instance
 
     # ── Data loading ──────────────────────────────────────────────────────────
 
@@ -128,7 +132,23 @@ class SPRInTValidationManager:
         """Open image → RGB → preprocess → [1, C, H, W] on model device."""
         from llava.mm_utils import process_images
         image = Image.open(img_path).convert("RGB")
+        pil_w, pil_h = image.size
         tensor = process_images([image], self.image_processor, self.data_args)[0]
+        if not self._img_diag_printed:
+            self._img_diag_printed = True
+            t32 = tensor.float()
+            print(
+                f"[SPRINT-DIAG::IMAGE-TENSOR] path={os.path.basename(img_path)}"
+                f"  pil_size=({pil_w},{pil_h})"
+                f"  tensor_shape={tuple(tensor.shape)}"
+                f"  dtype={tensor.dtype}"
+                f"  aspect_ratio={getattr(self.data_args,'image_aspect_ratio','?')}"
+                f"  mean={t32.mean().item():.6f}"
+                f"  std={t32.std().item():.6f}"
+                f"  min={t32.min().item():.6f}"
+                f"  max={t32.max().item():.6f}",
+                flush=True,
+            )
         return tensor.unsqueeze(0).to(dtype=self.model.dtype, device='cuda')
 
     # ── Text-generation validation (one mode) ─────────────────────────────────
@@ -310,13 +330,73 @@ class SPRInTValidationManager:
                     print(f"[SPRINT EVAL] GPT ground truth : {gt_show!r}  |  any GT token in sym_mappings: {gt_in_mapping}")
                     print("=" * 70)
 
+                if int(os.environ.get("LOCAL_RANK", "0")) == 0 and i < 2:
+                    _pl_pre = "INFER" if return_details else "TRAIN"
+                    sprint_runtime_fingerprint(self.model, self.tokenizer, _pl_pre)
+                    sprint_input_fingerprint(
+                        _pl_pre, tag_suffix=" (colon)",
+                        input_ids=input_ids, image_tensor=image_tensor,
+                    )
+
                 out = self.model.generate(
                     inputs=input_ids, images=image_tensor,
                     max_new_tokens=10, do_sample=False,
                     output_scores=True, return_dict_in_generate=True,
                 )
-                l1 = out.scores[0][0][tok1_id].item()
-                l0 = out.scores[0][0][tok0_id].item()
+                _scores0 = out.scores[0][0].float()  # fp32 so downstream comparison/softmax doesn't add bf16 rounding
+                l1 = _scores0[tok1_id].item()
+                l0 = _scores0[tok0_id].item()
+                if int(os.environ.get("LOCAL_RANK", "0")) == 0 and i < 2:
+                    _pl_c = "INFER" if return_details else "TRAIN"
+                    _raw_h_c = (item["conversations"][0]["value"]
+                                .replace(DEFAULT_IMAGE_TOKEN, "").strip())
+                    _m_c = max(l0, l1)
+                    _ppos_c = (math.exp(l1 - _m_c)
+                               / (math.exp(l0 - _m_c) + math.exp(l1 - _m_c)))
+                    _ids_c = input_ids[0].tolist()
+                    print("=" * 70, flush=True)
+                    print(f"[SPRINT-DIAG::DATA]  pipeline={_pl_c}  "
+                          f"dataset={self._dataset_name}  "
+                          f"val_json={self._eval_data_path}", flush=True)
+                    print(f"[SPRINT-DIAG::DATA]  sample_idx={i}  "
+                          f"sample_id={item.get('id', 'N/A')!r}  "
+                          f"image={item.get('image', 'N/A')!r}  "
+                          f"gt={item['conversations'][1]['value'].strip()!r}", flush=True)
+                    print(f"[SPRINT-DIAG::IMG]   shape={image_tensor.shape}  "
+                          f"dtype={image_tensor.dtype}  device={image_tensor.device}  "
+                          f"min={image_tensor.min().item():.4f}  "
+                          f"max={image_tensor.max().item():.4f}  "
+                          f"mean={image_tensor.mean().item():.6f}  "
+                          f"std={image_tensor.std().item():.6f}  "
+                          f"sum={image_tensor.sum().item():.2f}", flush=True)
+                    print(f"[SPRINT-DIAG::MODEL] training={self.model.training}  "
+                          f"dtype={self.model.dtype}  "
+                          f"name_or_path="
+                          f"{getattr(self.model.config, '_name_or_path', 'N/A')!r}",
+                          flush=True)
+                    print(f"[SPRINT-DIAG::GEN]   max_new_tokens=10  do_sample=False  "
+                          f"temperature=1.0  top_p=1.0  use_cache=True  "
+                          f"output_scores=True", flush=True)
+                    print(f"[SPRINT-DIAG::TOK]   pos_id={tok1_id}  "
+                          f"pos_token={self.tokenizer.decode([tok1_id])!r}  "
+                          f"neg_id={tok0_id}  "
+                          f"neg_token={self.tokenizer.decode([tok0_id])!r}", flush=True)
+                    print(f"[SPRINT-DIAG::PROMPT] sym_mappings_active="
+                          f"{'YES' if mapping else 'NO'}", flush=True)
+                    print(f"[SPRINT-DIAG::PROMPT] raw_human (pre-sym):\n{_raw_h_c}",
+                          flush=True)
+                    if mapping:
+                        print(f"[SPRINT-DIAG::PROMPT] after_sym_sub:\n{human_text}",
+                              flush=True)
+                    print(f"[SPRINT-DIAG::PROMPT] final_conv:\n{prompt}", flush=True)
+                    print(f"[SPRINT-DIAG::TOK]   n_input_ids={len(_ids_c)}", flush=True)
+                    print(f"[SPRINT-DIAG::TOK]   input_ids={_ids_c}", flush=True)
+                    print(f"[SPRINT-DIAG::TOK]   decoded="
+                          f"{self.tokenizer.decode([t for t in _ids_c if t >= 0])!r}", flush=True)
+                    print(f"[SPRINT-DIAG::LOGITS] pos_logit={l1:.4f}  "
+                          f"neg_logit={l0:.4f}  "
+                          f"p_pos={_ppos_c:.6f}  p_neg={1 - _ppos_c:.6f}", flush=True)
+                    print("=" * 70, flush=True)
                 gt = item["conversations"][1]["value"].strip()
                 pred = "1" if l1 > l0 else "0"   # argmax(0,1)
                 gt_norm = "1" if gt == "1" else "0"
@@ -346,6 +426,15 @@ class SPRInTValidationManager:
                     })
                 results.append(rec)
 
+        if int(os.environ.get("LOCAL_RANK", "0")) == 0 and results:
+            _pl_bc = "INFER" if return_details else "TRAIN"
+            print(f"[SPRINT-DIAG::METRIC-IN] first 2 entries passed to "
+                  f"compute_binary_metrics (pipeline={_pl_bc}):", flush=True)
+            for _mi in range(min(2, len(results))):
+                print(f"[SPRINT-DIAG::METRIC-IN]  sample={_mi}  "
+                      f"gt={results[_mi]['gt']!r}  pred={results[_mi]['pred']!r}  "
+                      f"logit_pos={results[_mi]['logit_pos']:.4f}  "
+                      f"logit_neg={results[_mi]['logit_neg']:.4f}", flush=True)
         m = compute_binary_metrics(results, auc_token_id=1)
         if return_details:
             return m, results
@@ -375,7 +464,7 @@ class SPRInTValidationManager:
             max_new_tokens=1, do_sample=False,
             output_scores=True, return_dict_in_generate=True,
         )
-        logits = out.scores[0][0]
+        logits = out.scores[0][0].float()  # fp32 so downstream comparison/softmax doesn't add bf16 rounding
         l_no, l_yes = logits[no_id].item(), logits[yes_id].item()
         m = max(l_no, l_yes)
         return math.exp(l_yes - m) / (math.exp(l_no - m) + math.exp(l_yes - m))
@@ -432,7 +521,7 @@ class SPRInTValidationManager:
     # ── AUC/mAP inference (chest/endo per-class binary queries) ───────────────
 
     def _run_multilabel_auc_map(self, sym_mappings: dict = None,
-                                return_details: bool = False):
+                                return_details: bool = False, epoch: int = None):
         """
         Per-class binary "Does this show <class>?  Answer Yes or No." queries.
 
@@ -507,26 +596,86 @@ class SPRInTValidationManager:
                 for j, lbl in enumerate(self._label_names):
                     all_labels[i][j] = 1 if lbl in gt_parts else 0
 
-                # Per-sample diagnostic — first 2 samples: show the first-class probe text
-                if return_details and i < 2:
-                    cls0 = (self._cfg.label_names[0] if self._cfg is not None else self._label_names[0])
-                    lbl0 = self._label_names[0]
+                # ── [SPRINT-DIAG] Passive diagnostics: first 2 samples, rank-0 only ─────
+                # Fires in BOTH training and inference (gated by return_details label only
+                # for the _pipeline tag). Zero execution-path changes — all prints are
+                # after real computation or string-only ops (no extra forward passes).
+                _pipeline = "INFER" if return_details else "TRAIN"
+                _diag = (int(os.environ.get("LOCAL_RANK", "0")) == 0) and (i < 2)
+                _first_sample = (int(os.environ.get("LOCAL_RANK", "0")) == 0) and (i == 0)
+                if _diag:
+                    _cls0_orig = (self._cfg.label_names[0] if self._cfg is not None
+                                  else self._label_names[0])
                     if self._cfg is not None and self._cfg.class_definitions:
-                        _p0 = build_per_class_prompt(
-                            cfg=self._cfg, dataset=self._dataset_name, class_name=cls0,
+                        _diag_raw = build_per_class_prompt(
+                            cfg=self._cfg, dataset=self._dataset_name,
+                            class_name=_cls0_orig,
+                            sym_mappings=None, apply_to_text_fn=None,
+                            image_token=DEFAULT_IMAGE_TOKEN,
+                        )
+                        _diag_sym = build_per_class_prompt(
+                            cfg=self._cfg, dataset=self._dataset_name,
+                            class_name=_cls0_orig,
                             sym_mappings=sym_mappings,
                             apply_to_text_fn=(self.symbol_manager.apply_to_text
                                               if self.symbol_manager is not None else None),
                             image_token=DEFAULT_IMAGE_TOKEN,
                         )
                     else:
-                        _p0 = (DEFAULT_IMAGE_TOKEN + "\n"
-                               + f"Does this {modality} show {lbl0.replace('_', ' ')}? Answer Yes or No.")
-                    print("=" * 70)
-                    print(f"[SPRINT EVAL] sample={i} (per-class binary mode, HVB-style probe)")
-                    print(f"[SPRINT EVAL] GT ground truth : {gt_text!r}")
-                    print(f"[SPRINT EVAL] First-class probe (class={cls0!r}):\n{_p0}")
-                    print("=" * 70)
+                        _lbl0 = self._label_names[0]
+                        _diag_raw = (DEFAULT_IMAGE_TOKEN + "\n" +
+                                     f"Does this {modality} show "
+                                     f"{_lbl0.replace('_', ' ')}? Answer Yes or No.")
+                        _diag_sym = _diag_raw
+                    _diag_conv = conv_templates["vicuna_v1"].copy()
+                    _diag_conv.append_message(_diag_conv.roles[0], _diag_sym)
+                    _diag_conv.append_message(_diag_conv.roles[1], None)
+                    _diag_full = _diag_conv.get_prompt()
+                    _diag_ids = tokenizer_image_token(
+                        _diag_full, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt"
+                    )
+                    print("=" * 70, flush=True)
+                    print(f"[SPRINT-DIAG::DATA]  pipeline={_pipeline}  "
+                          f"dataset={self._dataset_name}  "
+                          f"val_json={self._eval_data_path}", flush=True)
+                    print(f"[SPRINT-DIAG::DATA]  sample_idx={i}  "
+                          f"sample_id={item.get('id', 'N/A')!r}  "
+                          f"image={item.get('image', 'N/A')!r}  "
+                          f"gt={item['conversations'][1]['value'].strip()!r}", flush=True)
+                    print(f"[SPRINT-DIAG::IMG]   shape={image_tensor.shape}  "
+                          f"dtype={image_tensor.dtype}  device={image_tensor.device}  "
+                          f"min={image_tensor.min().item():.4f}  "
+                          f"max={image_tensor.max().item():.4f}  "
+                          f"mean={image_tensor.mean().item():.6f}  "
+                          f"std={image_tensor.std().item():.6f}  "
+                          f"sum={image_tensor.sum().item():.2f}", flush=True)
+                    print(f"[SPRINT-DIAG::MODEL] training={self.model.training}  "
+                          f"dtype={self.model.dtype}  "
+                          f"name_or_path="
+                          f"{getattr(self.model.config, '_name_or_path', 'N/A')!r}",
+                          flush=True)
+                    print(f"[SPRINT-DIAG::GEN]   max_new_tokens=1  do_sample=False  "
+                          f"temperature=1.0  top_p=1.0  use_cache=True  "
+                          f"output_scores=True", flush=True)
+                    print(f"[SPRINT-DIAG::TOK]   yes_id={yes_id}  "
+                          f"yes_token={self.tokenizer.decode([yes_id])!r}  "
+                          f"no_id={no_id}  "
+                          f"no_token={self.tokenizer.decode([no_id])!r}", flush=True)
+                    print(f"[SPRINT-DIAG::PROMPT] class={_cls0_orig!r}  "
+                          f"sym_mappings_active={'YES' if sym_mappings else 'NO'}", flush=True)
+                    print(f"[SPRINT-DIAG::PROMPT] raw_human (pre-sym):\n{_diag_raw}",
+                          flush=True)
+                    if sym_mappings:
+                        print(f"[SPRINT-DIAG::PROMPT] after_sym_sub:\n{_diag_sym}",
+                              flush=True)
+                    print(f"[SPRINT-DIAG::PROMPT] final_conv:\n{_diag_full}", flush=True)
+                    print(f"[SPRINT-DIAG::TOK]   n_input_ids={_diag_ids.shape[0]}",
+                          flush=True)
+                    print(f"[SPRINT-DIAG::TOK]   input_ids={_diag_ids.tolist()}",
+                          flush=True)
+                    print(f"[SPRINT-DIAG::TOK]   decoded="
+                          f"{self.tokenizer.decode([t for t in _diag_ids.tolist() if t >= 0])!r}", flush=True)
+                    print("=" * 70, flush=True)
 
                 # Batched per-class scoring (opt-in: SPRINT_PROBE_BATCH_SIZE>1).
                 # Builds every class probe (same prompt logic as below), scores
@@ -555,6 +704,12 @@ class SPRInTValidationManager:
                     )
                     for j in range(n_cls):
                         all_scores[i][j] = _sc[j]
+                    if _diag:
+                        print(f"[SPRINT-DIAG::LOGITS] sample={i}  "
+                              f"class={self._label_names[0]!r}  "
+                              f"p_yes={_sc[0]:.6f}  p_no={1 - _sc[0]:.6f}  "
+                              f"(batched mode — softmax P(Yes); raw logits not "
+                              f"separately captured)", flush=True)
 
 
                 _use_kvcache = (
@@ -574,7 +729,8 @@ class SPRInTValidationManager:
                         apply_to_text_fn=(self.symbol_manager.apply_to_text
                                           if self.symbol_manager is not None else None),
                         image_token=DEFAULT_IMAGE_TOKEN,
-                        first_image=(i == 0),
+                        first_image=_diag,
+                        pipeline=_pipeline,
                     )
                     for j in range(n_cls):
                         all_scores[i][j] = _sc[j]
@@ -616,14 +772,29 @@ class SPRInTValidationManager:
                         max_new_tokens=1, do_sample=False,
                         output_scores=True, return_dict_in_generate=True,
                     )
-                    logits = out.scores[0][0]
+                    logits = out.scores[0][0].float()  # fp32 so downstream comparison/softmax doesn't add bf16 rounding
                     l_no, l_yes = logits[no_id].item(), logits[yes_id].item()
                     del out, logits, input_ids   # free 32K-float score tensor immediately
                     m_val   = max(l_no, l_yes)
                     exp_no  = math.exp(l_no  - m_val)
                     exp_yes = math.exp(l_yes - m_val)
                     all_scores[i][j] = exp_yes / (exp_no + exp_yes)
+                    if _diag and j == 0:
+                        print(f"[SPRINT-DIAG::LOGITS] sample={i}  class={lbl!r}  "
+                              f"yes_logit={l_yes:.4f}  no_logit={l_no:.4f}  "
+                              f"p_yes={all_scores[i][j]:.6f}  "
+                              f"p_no={1 - all_scores[i][j]:.6f}", flush=True)
 
+                if _first_sample:
+                    for _j in range(n_cls):
+                        _p_yes = all_scores[i][_j]
+                        print(
+                            f"[SPRINT-DIAG::PER-CLASS-LOGITS]"
+                            f"  epoch={epoch}  cls_idx={_j}  class={self._label_names[_j]!r}"
+                            f"  p_yes={_p_yes:.6f}  gt={all_labels[i][_j]}"
+                            f"  pred={1 if _p_yes >= 0.5 else 0}",
+                            flush=True,
+                        )
 
                 # Free image tensor after all 19 (or N) class queries for this sample.
                 # Flush fragmented reserved-but-unallocated blocks every 10 samples so
@@ -674,6 +845,15 @@ class SPRInTValidationManager:
                         per_class_P_yes=p_yes,
                     )
             results.append(rec)
+        if int(os.environ.get("LOCAL_RANK", "0")) == 0 and results:
+            _pl_ml = "INFER" if return_details else "TRAIN"
+            print(f"[SPRINT-DIAG::METRIC-IN] first 2 entries passed to "
+                  f"compute_multilabel_metrics (pipeline={_pl_ml}):", flush=True)
+            for _mi in range(min(2, len(results))):
+                print(f"[SPRINT-DIAG::METRIC-IN]  sample={_mi}  "
+                      f"gt_binary={results[_mi]['gt_binary']}  "
+                      f"scores={[round(s, 4) for s in results[_mi]['scores']]}",
+                      flush=True)
         m = compute_multilabel_metrics(results, self._label_names, tie_header="VALIDATION ")
         if return_details:
             return m, results
@@ -756,54 +936,65 @@ class SPRInTValidationManager:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        auc_map_results = {}
-        if compute_auc_map and "original" in mode_symbols:
-            if not self._is_multi_label:
-                self._print(f"\n{'='*80}")
-                self._print(f"★  PRIMARY METRICS — AUC (MedFMC benchmark, colon binary)")
-                self._print(f"{'='*80}")
-                auc_map_results = self._run_colon_auc()
-                self._print(f"  ★ AUC : {auc_map_results['AUC']:.4f}   ← primary metric")
-            else:
-                self._print(f"\n{'='*80}")
-                self._print(
-                    f"★  PRIMARY METRICS — AUC + mAP (MedFMC benchmark, {dataset_name})"
-                )
-                self._print(
-                    f"   Running {len(self._label_names)} binary queries"
-                    f" × {len(self._load_val_data())} samples ..."
-                )
-                self._print(f"{'='*80}")
-                # SS-FT carries its fixed symbols into the probe (consistent with
-                # training); regular/ed_ft/id_ft/lf_ft evaluate with original
-                # labels (matches the final-inference convention in sprint_eval.py).
-                probe_syms = (
-                    self.symbol_manager.get_current_symbols()
-                    if (self.symbol_manager is not None and strategy in ("two_token", "ss_ft"))
-                    else {}
-                )
-                sprint_log(
-                    "VAL-AUC-MAP", dataset=self._dataset_name, strategy=strategy,
-                    probe_symbols=probe_syms or {},
-                )
-                auc_map_results = self._run_multilabel_auc_map(sym_mappings=probe_syms)
-                self._print(f"  ★ mAP      : {auc_map_results['mAP']:.4f}   ← primary metric")
-                self._print(f"  ★ macro_AUC: {auc_map_results['macro_auc']:.4f}   ← primary metric")
+        # Compute AUC/mAP once PER REQUESTED MODE -- each mode is scored with its
+        # own mapping (original -> {} -> None -> real labels; fixed/fresh -> the
+        # actual symbol dict for that mode). No strategy-name override: which
+        # labels get scored is decided purely by which mode this iteration is,
+        # matching what the text-gen loop above already does and what the
+        # standalone inference script (sprint_eval.py) already does per mode.
+        auc_map_by_mode = {}
+        if compute_auc_map:
+            for mode_name, mode_syms in mode_symbols.items():
+                mode_label = self._MODE_LABELS.get(mode_name, mode_name.title())
+                mapping = mode_syms or None
+                if not self._is_multi_label:
+                    self._print(f"\n{'='*80}")
+                    self._print(f"★  PRIMARY METRICS — AUC (MedFMC benchmark, colon binary)  [{mode_label}]")
+                    self._print(f"{'='*80}")
+                    auc_map_by_mode[mode_name] = self._run_colon_auc(mapping=mapping)
+                    self._print(f"  ★ AUC : {auc_map_by_mode[mode_name]['AUC']:.4f}   ← primary metric ({mode_label})")
+                else:
+                    self._print(f"\n{'='*80}")
+                    self._print(
+                        f"★  PRIMARY METRICS — AUC + mAP (MedFMC benchmark, {dataset_name})  [{mode_label}]"
+                    )
+                    self._print(
+                        f"   Running {len(self._label_names)} binary queries"
+                        f" × {len(self._load_val_data())} samples ..."
+                    )
+                    self._print(f"{'='*80}")
+                    sprint_log(
+                        "VAL-AUC-MAP", dataset=self._dataset_name, strategy=strategy,
+                        mode=mode_name, probe_symbols=mapping or {},
+                    )
+                    auc_map_by_mode[mode_name] = self._run_multilabel_auc_map(sym_mappings=mapping or {}, epoch=epoch)
+                    self._print(f"  ★ mAP      : {auc_map_by_mode[mode_name]['mAP']:.4f}   ← primary metric ({mode_label})")
+                    self._print(f"  ★ macro_AUC: {auc_map_by_mode[mode_name]['macro_auc']:.4f}   ← primary metric ({mode_label})")
+
+        # "Primary" mode for best-epoch selection / the single-number summary below
+        # = whichever mode was listed FIRST in VALIDATION_MODES (mode_symbols
+        # preserves that order -- see sprint_callbacks.py). Falls back to {} if
+        # compute_auc_map was False or nothing was requested.
+        _primary_mode_name = next(iter(mode_symbols), "original")
+        auc_map_results = auc_map_by_mode.get(_primary_mode_name, {})
 
         # ── FINAL VALIDATION RESULTS — all metrics in one place ───────────────
         self._print(f"\n{'='*80}")
         self._print(f"FINAL VALIDATION RESULTS — Epoch {epoch}/{total_epochs}")
         self._print(f"{'='*80}")
 
-        if auc_map_results:
-            self._print(f"\nPrimary Metrics — MedFMC benchmark (original mode, logit-based)")
+        if auc_map_by_mode:
+            self._print(f"\nPrimary Metrics — MedFMC benchmark (logit-based, per mode)")
             self._print(f"{'-'*80}")
-            if "AUC" in auc_map_results:
-                self._print(f"  ★ {dataset_name:<20} AUC       : {auc_map_results['AUC']:.4f}")
-            if "macro_auc" in auc_map_results:
-                self._print(f"  ★ {dataset_name:<20} macro_AUC : {auc_map_results['macro_auc']:.4f}")
-            if "mAP" in auc_map_results:
-                self._print(f"  ★ {dataset_name:<20} mAP       : {auc_map_results['mAP']:.4f}")
+            for _mn, _res in auc_map_by_mode.items():
+                _ml = self._MODE_LABELS.get(_mn, _mn.title())
+                _tag = " (primary/best-epoch)" if _mn == _primary_mode_name else ""
+                if "AUC" in _res:
+                    self._print(f"  ★ {dataset_name:<20} AUC       [{_ml}]{_tag}: {_res['AUC']:.4f}")
+                if "macro_auc" in _res:
+                    self._print(f"  ★ {dataset_name:<20} macro_AUC [{_ml}]{_tag}: {_res['macro_auc']:.4f}")
+                if "mAP" in _res:
+                    self._print(f"  ★ {dataset_name:<20} mAP       [{_ml}]{_tag}: {_res['mAP']:.4f}")
 
         self._print(f"\nSupplementary Text-Gen Metrics (all modes, generation-based)")
         self._print(f"{'-'*80}")
@@ -820,14 +1011,17 @@ class SPRInTValidationManager:
         orig_acc = epoch_results.get("original", {}).get("accuracy", 0.0)
         self._print(f"📊 Dataset metrics (original mode): {{{dataset_name}: {orig_f1:.4f}}}  [macro_f1]")
         self._print(f"📊 Combined metric (original mode): {orig_f1:.4f}  [macro_f1]")
-        self._print(f"📊 Accuracy        (original mode): {orig_acc:.4f}  [exact-match]")
+        if not self._is_multi_label and auc_map_results and "accuracy_aacc" in auc_map_results:
+            self._print(f"📊 Accuracy (logit-argmax, MedFMC primary, mode={_primary_mode_name}): {auc_map_results['accuracy_aacc']:.4f}  [accuracy_aacc]")
+        else:
+            self._print(f"📊 Accuracy        (original mode): {orig_acc:.4f}  [exact-match]")
         self._print(f"📊 Composite string (original mode): {dataset_name}:{orig_f1:.4f}")
         if auc_map_results:
             primary_val = auc_map_results.get(
                 self._primary_metric,
                 auc_map_results.get("macro_auc", auc_map_results.get("AUC", 0.0))
             )
-            self._print(f"📊 {self._primary_metric} (MedFMC primary, original mode): {primary_val:.4f}")
+            self._print(f"📊 {self._primary_metric} (MedFMC primary, mode={_primary_mode_name}): {primary_val:.4f}")
             if "mAP" in auc_map_results:
                 self._print(f"📊 mAP      : {auc_map_results['mAP']:.4f}")
             auc_key = "AUC" if "AUC" in auc_map_results else "macro_auc"
@@ -858,7 +1052,9 @@ class SPRInTValidationManager:
                     m: {k: v for k, v in mdata.items() if k != "results"}
                     for m, mdata in epoch_results.items()
                 },
-                "auc_map": auc_map_results,
+                "auc_map": auc_map_results,           # primary mode (= first in VALIDATION_MODES)
+                "auc_map_by_mode": auc_map_by_mode,    # every requested mode, scored with its own labels
+                "primary_mode": _primary_mode_name,
             }, f, indent=2)
         self._print(f"[SPRInT Val] Saved → {out_path}")
 
@@ -872,6 +1068,8 @@ class SPRInTValidationManager:
                 for m, v in epoch_results.items()
             },
             "auc_map": auc_map_results,
+            "auc_map_by_mode": auc_map_by_mode,
+            "primary_mode": _primary_mode_name,
         }
 
     # ── Inference entry point (thin; mirrors ICI inference.py) ────────────────
@@ -1005,9 +1203,15 @@ class SPRInTValidationManager:
             for mode, m in entry["modes"].items():
                 auc_col   = prim_str if mode == "original" else "  —"
                 best_star = " ★" if entry["epoch"] == best_epoch and mode == "original" else ""
+                # colon: show logit-argmax accuracy (matches inference); multilabel: exact-match
+                _acc = (
+                    am.get("accuracy_aacc", m["accuracy"])
+                    if (not self._is_multi_label and mode == "original" and am)
+                    else m["accuracy"]
+                )
                 self._print(
                     f"{entry['epoch']:<12} | {mode:<12} | {m['macro_f1']:<10.4f}"
-                    f" | {m['accuracy']:<10.4f} | {auc_col}{best_star}"
+                    f" | {_acc:<10.4f} | {auc_col}{best_star}"
                 )
         self._print(f"{'='*70}")
 
@@ -1021,8 +1225,14 @@ class SPRInTValidationManager:
         self._print(f"{'-'*110}")
         for entry in epoch_history:
             f1  = entry["modes"].get("original", {}).get("macro_f1", 0.0)
-            acc = entry["modes"].get("original", {}).get("accuracy", 0.0)
             am  = entry.get("auc_map", {})
+            # colon: use logit-argmax (accuracy_aacc) to match inference; multilabel: exact-match
+            acc = (
+                am.get("accuracy_aacc",
+                       entry["modes"].get("original", {}).get("accuracy", 0.0))
+                if not self._is_multi_label and am
+                else entry["modes"].get("original", {}).get("accuracy", 0.0)
+            )
             prim_val = am.get(prim, am.get("macro_auc", am.get("AUC", float("nan"))))
             prim_str = (
                 f"{prim_val:.4f}"

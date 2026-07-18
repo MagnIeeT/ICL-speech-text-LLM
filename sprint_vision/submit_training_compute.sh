@@ -46,7 +46,7 @@ fi
 # ------------------------------------------------------------
 # 1. Job Configuration (edit / override via env)
 # ------------------------------------------------------------
-DATASET=chest     # colon | chest | endo
+DATASET=colon     # colon | chest | endo
 STRATEGY=regular     # regular | two_token | ed_ft | id_ft | lf_ft
 NUM_TRAIN_EPOCHS=5
 # ── ICL during training ──────────────────────────────────────────────────────
@@ -75,7 +75,7 @@ probe_batch_size=1
 
 kv_cache=true
 # Validation subsample cap. Also forms the checkpoint folder val-tag.
-MAX_VAL_SAMPLES=100  # 0 = use all
+MAX_VAL_SAMPLES=300  # 0 = use all
 # EVAL_DATA_PATH=none disables validation entirely (forwarded so the val-tag is right).
 EVAL_DATA_PATH="${EVAL_DATA_PATH:-}"
 # RUN_TAG: optional human label appended to the checkpoint folder (readability only).

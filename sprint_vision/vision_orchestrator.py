@@ -32,8 +32,11 @@ class Config:
     # PROBE_BATCH_SIZE>1 enables batched per-class scoring for chest/endo (much
     # faster). DIAGNOSE_SAMPLES=0 lets the [BATCH-VERIFY] check run on sample 0
     # (with the default 3, sample 0 is a diagnose sample → unbatched → no verify).
+    # SPRINT_KV_CACHE=true shares the definition-block prefix across all N class
+    # queries for chest/endo (matches the training-time default in submit_inference_compute.sh).
     PROBE_BATCH_SIZE = int(os.environ.get("PROBE_BATCH_SIZE", "1"))
     DIAGNOSE_SAMPLES = int(os.environ.get("DIAGNOSE_SAMPLES", "3"))
+    KV_CACHE = os.environ.get("SPRINT_KV_CACHE", "true").strip().lower() in ("1", "true", "yes")
 
     # Eval modes (mirrors training's VALIDATION_MODES). Comma-separated subset of
     # original,fixed,fresh. Empty → sprint_eval.py default (all three for symbol
@@ -159,7 +162,9 @@ def run_inference(dataset: str, strategy: str, num_samples: int = 0, icl_shots: 
 
     # Record time just before run so we can find the JSON written by sprint_eval.py
     t_before = time.time()
-    _ret = subprocess.run(cmd)
+    _env = os.environ.copy()
+    _env["SPRINT_KV_CACHE"] = "true" if Config.KV_CACHE else "false"
+    _ret = subprocess.run(cmd, env=_env)
 
     print(f"\nDone: {dataset} at {time.strftime('%Y-%m-%d %H:%M:%S')}")
 

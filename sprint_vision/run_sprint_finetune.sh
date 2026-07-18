@@ -113,6 +113,13 @@ TRAIN_PERCENT="${TRAIN_PERCENT:-}"
 RANDOM_SHOT="${RANDOM_SHOT:-}"
 SHOT_SEED="${SHOT_SEED:-1}"
 
+# SEED controls training_args.seed (model/RNG: LoRA-A init, sampler shuffle,
+# dropout) -- distinct from SHOT_SEED above, which only controls which training
+# SAMPLES get selected. Was previously hardcoded to HF's default (42) with no
+# way to vary it. For the mean+/-std-over-N-seeds plan, launch with e.g.
+# SEED=1 ./run_sprint_finetune.sh, SEED=2 ./run_sprint_finetune.sh, ...
+SEED="${SEED:-42}"
+
 # ── Default: TRAIN_PERCENT=100 when nothing is specified ─────────────────────
 if [ -z "${TRAINING_SHOTS}" ] && [ -z "${TRAIN_PERCENT}" ] && [ -z "${RANDOM_SHOT}" ]; then
     TRAIN_PERCENT="100"
@@ -280,7 +287,7 @@ cd "${LLAVA_DIR}"
 if [ "${STRATEGY}" = "ed_ft" ]; then
     NUM_WORKERS=0
 else
-    NUM_WORKERS=4
+    NUM_WORKERS=2
 fi
 
 # Optional validation args — only passed when EVAL_DATA_PATH is set.
@@ -343,6 +350,7 @@ deepspeed ${DS_INCLUDE} --master_port ${MASTER_PORT} llava/train/train_mem.py \
     --warmup_ratio 0.03 \
     --lr_scheduler_type cosine \
     --logging_steps 1 \
+    --seed "${SEED}" \
     --tf32 True \
     --model_max_length 2048 \
     --gradient_checkpointing True \

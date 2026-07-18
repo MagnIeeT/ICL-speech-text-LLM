@@ -35,6 +35,20 @@ from types import SimpleNamespace
 
 import torch
 
+# NOTE: TF32 and torch.use_deterministic_algorithms() were previously forced
+# off/on here as diagnostics, to test whether GPU kernel nondeterminism
+# explained a training-vs-inference logit gap. That investigation concluded
+# the real cause was elsewhere (vision-tower dtype + attention implementation
+# mismatch in builder.py, both now fixed) -- confirmed via a clean
+# bit-identical TRAIN/INFER logit match. The determinism-forcing flags cost
+# real runtime (slower kernel variants, no cuDNN autotuning) with no further
+# correctness benefit, so they've been removed; left at PyTorch's normal fast
+# defaults. Re-add only if a future investigation specifically needs them.
+
+import llava
+print(f"[SPRINT-DIAG::IMPORT] llava package resolved from: {llava.__file__}", flush=True)
+print(f"[SPRINT-DIAG::IMPORT] sys.path[0:3]: {sys.path[0:3]}", flush=True)
+
 from llava.mm_utils import get_model_name_from_path
 from llava.model.builder import load_pretrained_model
 
@@ -278,6 +292,14 @@ def eval_model(args):
     torch.manual_seed(args.seed)
     random.seed(args.seed)
 
+    # NOTE: TF32 is intentionally left at PyTorch's own default (True on
+    # Ampere+ GPUs) here -- do not add a torch.backends.cuda.matmul.allow_tf32 /
+    # cudnn.allow_tf32 assignment at this call site. An earlier version of this
+    # function did reassign it here, which silently fought with a module-level
+    # setting elsewhere in the file; keeping precision flags set in exactly one
+    # place (nowhere, now that both sides match at PyTorch's default) avoids
+    # that class of bug recurring.
+
     # Forward --probe-batch-size to the env var the unified evaluator reads
     # (validation.py:_run_multilabel_auc_map → SPRINT_PROBE_BATCH_SIZE). This keeps
     # the existing orchestrator invocation (which passes --probe-batch-size) driving
@@ -298,7 +320,9 @@ def eval_model(args):
         model_path=model_path,
         model_base=args.model_base,
         model_name=model_name,
-        use_flash_attn=True,
+        # Forced to eager (not flash_attention_2) to match training's attention
+        # backend exactly — see llava/train/train_mem.py and builder.py comments.
+        use_flash_attn=False,
     )
     total_params = sum(p.numel() for p in model.parameters())
     print(f"  Base model   : {os.path.basename(args.model_base or model_path)}")
