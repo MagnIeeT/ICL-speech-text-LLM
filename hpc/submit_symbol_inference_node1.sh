@@ -22,6 +22,7 @@ CHECKPOINT_PATH="${CHECKPOINT_PATH:-}"
 MAX_VAL_SAMPLES="${MAX_VAL_SAMPLES:-100}"                                         # samples per dataset (0 = full val set)
 NUM_EXAMPLES="${NUM_EXAMPLES:-0}"                                                  # few-shot examples in prompt
 NUM_WORKERS="${NUM_WORKERS:-2}"
+VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-4}"
 VALIDATION_MODES="${VALIDATION_MODES:-fixed}"
 SPLIT="${SPLIT:-test}"                                                            # test | validation
 
@@ -114,6 +115,7 @@ python inference.py \
     --max_val_samples "${MAX_VAL_SAMPLES}" \
     --num_examples "${NUM_EXAMPLES}" \
     --num_workers "${NUM_WORKERS}" \
+    --val_batch_size "${VAL_BATCH_SIZE}" \
     --output_dir "${OUTPUT_DIR}" \
     --run_name "${RUN_NAME}" \
     --validation_modes "${VALIDATION_MODES}" \

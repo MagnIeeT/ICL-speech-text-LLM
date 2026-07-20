@@ -41,6 +41,7 @@ class InferenceOrchestrator:
         output_dir: Optional[str] = None,
         validation_modes: Optional[str] = None,
         num_workers: int = 2,
+        val_batch_size: int = 4,
         symbol_map_file: Optional[str] = None,
         metrics_dir: Optional[str] = None,
         split: str = "test",
@@ -54,6 +55,7 @@ class InferenceOrchestrator:
         self.validation_modes = validation_modes
         self.run_name = run_name
         self.num_workers = num_workers
+        self.val_batch_size = val_batch_size
         self.symbol_map_file = symbol_map_file
         self.split = split
 
@@ -67,6 +69,7 @@ class InferenceOrchestrator:
             self.config.run_name = run_name
 
         self.config.data_config.num_workers = num_workers
+        self.config.data_config.val_batch_size = val_batch_size
 
         self._setup_logging()
 
@@ -481,6 +484,7 @@ def main():
     parser.add_argument("--max_val_samples", type=int, default=0)
     parser.add_argument("--num_examples", type=int, default=5)
     parser.add_argument("--num_workers", type=int, default=2)
+    parser.add_argument("--val_batch_size", type=int, default=4)
     parser.add_argument("--output_dir", type=str, default=None)
     parser.add_argument("--run_name", type=str, required=True)
     parser.add_argument("--validation_modes", type=str, default=None,
@@ -506,6 +510,7 @@ def main():
             output_dir=args.output_dir,
             validation_modes=args.validation_modes,
             num_workers=args.num_workers,
+            val_batch_size=args.val_batch_size,
             symbol_map_file=args.symbol_map_file,
             metrics_dir=args.metrics_dir,
             split=args.split,
