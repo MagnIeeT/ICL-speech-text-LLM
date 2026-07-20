@@ -142,7 +142,7 @@ class FlamingoProcessor(ModelProcessor):
                 logging.warning("FlamingoProcessor: audio pre-compute failed (%s), falling back to slow path", exc)
 
         try:
-            tokenized = self._tokenize_one(prompt, audio_np, completion, precomputed=precomputed)
+            tokenized = self._tokenize_one(prompt, audio_np, completion if is_training else "", precomputed=precomputed)
         except Exception as exc:
             logging.warning("FlamingoProcessor: worker tokenization failed (%s), returning raw for main-thread fallback", exc)
             return {
