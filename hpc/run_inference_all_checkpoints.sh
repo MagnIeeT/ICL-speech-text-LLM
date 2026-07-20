@@ -60,7 +60,7 @@ for run in ${RUNS}; do
 
         # Build run name: timestamp_i_af_<datasets>_<samples>_tr<run>_ep<N>
         if [[ "${ckpt}" =~ epoch([0-9]+) ]]; then EPOCH_NUM="${BASH_REMATCH[1]}"; else EPOCH_NUM="X"; fi
-        RUN_NAME="$(date +"%H%M%S")_i_af_${SPLIT}_${MAX_VAL_SAMPLES}_tr${run}_ep${EPOCH_NUM}"
+        RUN_NAME="$(date +"%H%M%S")_i_af_${SPLIT:0:3}_${MAX_VAL_SAMPLES}_tr${run}_ep${EPOCH_NUM}"
         LOG_FILE="${LOG_DIR}/${RUN_NAME}.log"
 
         echo ""

@@ -26,7 +26,7 @@ NUM_EXAMPLES="${NUM_EXAMPLES:-0}"                                               
 NUM_WORKERS="${NUM_WORKERS:-1}"
 VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-4}"
 VALIDATION_MODES="${VALIDATION_MODES:-original}"
-SPLIT="${SPLIT:-test}"                                                            # test | validation
+SPLIT="${SPLIT:-validation}"                                                            # test | validation
 
 # Symbol map probe — swap to any of:
 #   analysis/symbol_maps/ep3_fixed.json   (voxceleb F1=0.028, meld F1=0.142)
@@ -69,7 +69,8 @@ TRAIN_DATA="${TRAIN_DATA//voxpopuli/vp}"
 
 [[ "${MAX_VAL_SAMPLES}" == "0" ]] && SAMPLES_TAG="" || SAMPLES_TAG="_${MAX_VAL_SAMPLES}"
 [[ -n "${CHECKPOINT_PATH}" ]] && _CKPT_TAG="_tr${TRAIN_DATA}_ep${EPOCH_NUM}" || _CKPT_TAG=""
-RUN_NAME="${RUN_NAME:-$(date +"%H%M%S")_i_${SHORT_MODEL_TYPE}_${SHORT_DATASET_TYPE}${SAMPLES_TAG}${_CKPT_TAG}_sh${NUM_EXAMPLES}}"
+_SPLIT_TAG="${SPLIT:0:3}"
+RUN_NAME="${RUN_NAME:-$(date +"%H%M%S")_i_${SHORT_MODEL_TYPE}_${SHORT_DATASET_TYPE}_${_SPLIT_TAG}${SAMPLES_TAG}${_CKPT_TAG}_sh${NUM_EXAMPLES}}"
 
 if [[ -x "${HOME}/miniconda3/bin/conda" ]]; then
     eval "$("${HOME}/miniconda3/bin/conda" shell.bash hook)"
