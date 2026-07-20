@@ -10,20 +10,22 @@ if [[ -f "${PROJECT_ROOT}/.env" ]]; then
     set -a; source "${PROJECT_ROOT}/.env"; set +a
 fi
 
-CONDA_ENV="${CONDA_ENV:-qwen}"
-MODEL_TYPE="${MODEL_TYPE:-qwen}"
-DATASET_TYPE="${DATASET_TYPE:-voxceleb-hvb-voxpopuli-meld_emotion}"
+MODEL_TYPE="${MODEL_TYPE:-flamingo}"
+_DEFAULT_CONDA_ENV="qwen"
+if [[ "${MODEL_TYPE}" == "flamingo" ]]; then _DEFAULT_CONDA_ENV="flamingo"; fi
+CONDA_ENV="${CONDA_ENV:-${_DEFAULT_CONDA_ENV}}"
+DATASET_TYPE="${DATASET_TYPE:-hvb-voxpopuli-cremad-ravdess_song}"
 DEVICE="${DEVICE:-cuda:0}"
 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
 # Checkpoint from 041203_qwen_meld_emotion_dspo run (epoch 1, Phase0-LoRA)
 # Swap to any other .pt file to test a different checkpoint
 #${HOME}/training/symbol_training/checkpoints/173148_qwen_meld_emotion_dspo/lora_epoch1_phase0.pt
 CHECKPOINT_PATH="${CHECKPOINT_PATH:-}"
-MAX_VAL_SAMPLES="${MAX_VAL_SAMPLES:-100}"                                         # samples per dataset (0 = full val set)
+MAX_VAL_SAMPLES="${MAX_VAL_SAMPLES:-500}"                                         # samples per dataset (0 = full val set)
 NUM_EXAMPLES="${NUM_EXAMPLES:-0}"                                                  # few-shot examples in prompt
 NUM_WORKERS="${NUM_WORKERS:-2}"
 VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-4}"
-VALIDATION_MODES="${VALIDATION_MODES:-fixed}"
+VALIDATION_MODES="${VALIDATION_MODES:-original}"
 SPLIT="${SPLIT:-test}"                                                            # test | validation
 
 # Symbol map probe — swap to any of:
@@ -32,7 +34,7 @@ SPLIT="${SPLIT:-test}"                                                          
 #   analysis/symbol_maps/ep4_fixed.json   (voxceleb F1=0.053, meld F1=0.275)
 #   analysis/symbol_maps/ep4_fresh.json   (voxceleb F1=0.425, meld F1=0.251) ← best
 # ${PROJECT_ROOT}/analysis/symbol_maps/ep4_fresh.json
-SYMBOL_MAP_FILE="${SYMBOL_MAP_FILE:-${PROJECT_ROOT}/analysis/symbol_maps/ep4_fresh.json}"
+SYMBOL_MAP_FILE="${SYMBOL_MAP_FILE:-}"
 OUTPUT_DIR="${OUTPUT_DIR:-${HOME}/training/symbol_training}"
 METRICS_DIR="${METRICS_BASE:-${HOME}/training/symbol_training/metrics}/$(date +"%Y-%m-%d")"  # metrics output (dated subfolder)
 LOG_DIR="${LOGS_INFERENCE_DIR:-${HOME}/training/symbol_training/logs_inference}/$(date +"%Y-%m-%d")"
@@ -45,6 +47,8 @@ SHORT_DATASET_TYPE="${DATASET_TYPE//voxceleb/vb}"
 SHORT_DATASET_TYPE="${SHORT_DATASET_TYPE//hvb/h}"
 SHORT_DATASET_TYPE="${SHORT_DATASET_TYPE//meld_emotion/me}"
 SHORT_DATASET_TYPE="${SHORT_DATASET_TYPE//voxpopuli/vp}"
+SHORT_DATASET_TYPE="${SHORT_DATASET_TYPE//cremad/cr}"
+SHORT_DATASET_TYPE="${SHORT_DATASET_TYPE//ravdess_song/rs}"
 
 # Extract epoch number from checkpoint filename (e.g. lora_epoch1_phase0.pt → 1)
 if [[ "${CHECKPOINT_PATH}" =~ epoch([0-9]+) ]]; then
