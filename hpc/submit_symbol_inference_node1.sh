@@ -20,10 +20,10 @@ CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
 # Checkpoint from 041203_qwen_meld_emotion_dspo run (epoch 1, Phase0-LoRA)
 # Swap to any other .pt file to test a different checkpoint
 #${HOME}/training/symbol_training/checkpoints/173148_qwen_meld_emotion_dspo/lora_epoch1_phase0.pt
-CHECKPOINT_PATH="${CHECKPOINT_PATH:-}"
+CHECKPOINT_PATH="${CHECKPOINT_PATH:-${HOME}/training/symbol_training/checkpoints/2026-07-14/155314_af_h_nosym/lora_epoch1_periodic.pt}"
 MAX_VAL_SAMPLES="${MAX_VAL_SAMPLES:-500}"                                         # samples per dataset (0 = full val set)
 NUM_EXAMPLES="${NUM_EXAMPLES:-0}"                                                  # few-shot examples in prompt
-NUM_WORKERS="${NUM_WORKERS:-2}"
+NUM_WORKERS="${NUM_WORKERS:-1}"
 VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-4}"
 VALIDATION_MODES="${VALIDATION_MODES:-original}"
 SPLIT="${SPLIT:-test}"                                                            # test | validation
