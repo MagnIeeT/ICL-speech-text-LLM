@@ -120,6 +120,8 @@ class InferenceOrchestrator:
                 self.config.run_name = run_name
                 if metrics_dir:
                     self.config.metrics_dir = metrics_dir
+                self.config.data_config.val_batch_size = self.val_batch_size
+                self.config.data_config.num_workers = self.num_workers
 
             else:
                 self.config.model_type = ModelType(self.model_type)
