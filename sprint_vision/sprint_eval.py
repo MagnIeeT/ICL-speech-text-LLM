@@ -63,7 +63,11 @@ from config.data_config import get_dataset_config, DatasetName
 VALID_DATASETS = [e.value for e in DatasetName]
 
 # MedFMC paper save_best / primary metric per task (mirrors sprint_callbacks.py).
-_PRIMARY_METRIC = {"chest": "mAP", "endo": "macro_auc", "colon": "accuracy_aacc"}  # logit-argmax == MedFMC top-1
+_PRIMARY_METRIC = {
+    "chest": "mAP", "endo": "macro_auc", "colon": "accuracy_aacc",  # logit-argmax == MedFMC top-1
+    "chest_binary": "mAP",       # multi-label (2 flags, OR-reduced from chest's 19) -- same shape as chest
+    "endo_binary":  "macro_auc", # multi-label (2 flags, OR-reduced from endo's 4) -- same shape as endo
+}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

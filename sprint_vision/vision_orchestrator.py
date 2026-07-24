@@ -10,7 +10,7 @@ import time
 # ==========================================
 class Config:
     # --- 1. EXPERIMENT SETTINGS ---
-    DATASET  = "colon"    # Options: "colon", "chest", "endo"
+    DATASET  = "colon"    # Options: "colon", "chest", "endo", "chest_binary", "endo_binary"
     STRATEGY = "regular"  # Options: "regular" (0/1 or disease names) or "two_token" (symbols)
     MODE     = "inference"
 
@@ -280,7 +280,8 @@ if __name__ == "__main__":
     parser.add_argument("--datasets",        type=str, default=None,
                         help="Hyphen-separated datasets: 'colon-chest-endo'. "
                              "Overrides --dataset when set.")
-    parser.add_argument("--dataset",         type=str, choices=["colon", "chest", "endo"],
+    parser.add_argument("--dataset",         type=str,
+                        choices=["colon", "chest", "endo", "chest_binary", "endo_binary"],
                         default=Config.DATASET,
                         help="Single dataset (use --datasets for multiple).")
     parser.add_argument("--strategy",        type=str,

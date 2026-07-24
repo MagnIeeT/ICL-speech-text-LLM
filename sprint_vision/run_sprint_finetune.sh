@@ -45,6 +45,20 @@ MODEL_PATH="${MODEL_PATH:-/home/harinisrireddykandula/llava-v1.5-13b}"
 DATASET="${DATASET:-colon}"
 STRATEGY="${STRATEGY:-regular}"
 
+# colon_binary is a training-time-only alias: colon needs no label grouping/
+# partitioning (it's already binary), so colon_binary reuses colon's EXACT
+# training/val data and config -- no new JSON files, no new DatasetConfig. It
+# only changes which cross-task family gets monitored during training (see
+# sprint_callbacks.py: colon_binary joins {chest_binary, endo_binary} instead
+# of {chest, endo}). DATA_DATASET is used for every file-path / data-generation
+# purpose below; DATASET itself stays unaliased for --sprint_dataset (so Python
+# picks the binary cross-task family) and for RUN_NAME/OUTPUT_DIR (so the
+# checkpoint folder name stays self-describing, e.g. llava-colon_binary-...).
+DATA_DATASET="${DATASET}"
+if [ "${DATASET}" = "colon_binary" ]; then
+    DATA_DATASET="colon"
+fi
+
 # ── Training duration ─────────────────────────────────────────────────────────
 # ED-FT benefits from multiple epochs so symbols rotate.  Default 1 for all
 # other strategies to preserve existing single-epoch behaviour.
@@ -70,10 +84,18 @@ LORA_ALPHA="${LORA_ALPHA:-32}"
 # seeded random.Random(42).sample, so it is representative, not the first N.
 # Otherwise fall back to the test set. Override with EVAL_DATA_PATH=path or "none".
 if [ -z "${EVAL_DATA_PATH:-}" ]; then
-    if [ -n "${TRAINING_SHOTS:-}" ] && [ -n "${SHOT_EXP:-}" ]; then
-        EVAL_DATA_PATH="${PROJECT_DIR}/data/${DATASET}_val_shot${TRAINING_SHOTS}_exp${SHOT_EXP}.json"
+    if [ "${SHOT_EXP:-}" = "all" ]; then
+        # Merged-training run (see SHOT_EXP=all below): there is no merged
+        # validation split (only train splits get merged, by design -- validation
+        # must stay exactly as in the existing exp1..exp5 runs). Default to
+        # exp1's official validation split; override with VAL_EXP_FOR_ALL=<K>
+        # or EVAL_DATA_PATH=<path> directly.
+        VAL_EXP_FOR_ALL="${VAL_EXP_FOR_ALL:-1}"
+        EVAL_DATA_PATH="${PROJECT_DIR}/data/${DATA_DATASET}_val_shot${TRAINING_SHOTS}_exp${VAL_EXP_FOR_ALL}.json"
+    elif [ -n "${TRAINING_SHOTS:-}" ] && [ -n "${SHOT_EXP:-}" ]; then
+        EVAL_DATA_PATH="${PROJECT_DIR}/data/${DATA_DATASET}_val_shot${TRAINING_SHOTS}_exp${SHOT_EXP}.json"
     else
-        EVAL_DATA_PATH="${PROJECT_DIR}/data/${DATASET}_test.json"
+        EVAL_DATA_PATH="${PROJECT_DIR}/data/${DATA_DATASET}_test.json"
     fi
 fi
 [ "${EVAL_DATA_PATH}" = "none" ] && EVAL_DATA_PATH=""
@@ -99,8 +121,12 @@ export SPRINT_KV_CACHE
 #   Without SHOT_EXP: reads train_{N}.txt  → {task}_train_shot{N}.json
 #   With    SHOT_EXP: reads {task}_{N}-shot_train_exp{K}.txt → {task}_train_shot{N}_exp{K}.json
 #   Generate: python data/medfmc_to_llava.py --shot N [--exp K]
+#   SHOT_EXP=all: uses the pre-merged {task}_train_shot{N}_all.json (exp1..exp5
+#   concatenated offline) instead of a single exp split. Validation is untouched
+#   -- defaults to exp1's val split (override with VAL_EXP_FOR_ALL=<K>).
+#   Generate: python data/merge_shot_splits.py --task <task> --shot N
 TRAINING_SHOTS="${TRAINING_SHOTS:-}"
-SHOT_EXP="${SHOT_EXP:-}"         # experiment index 1-5 for MedFMC repeated splits
+SHOT_EXP="${SHOT_EXP:-}"         # experiment index 1-5, or "all" for the merged split
 
 # TRAIN_PERCENT: percentage of trainval.txt, stratified by label.
 #   Generate: python data/medfmc_to_llava.py --train_percent P
@@ -144,37 +170,46 @@ fi
 if [ -n "${TRAIN_PERCENT}" ]; then
     # Percentage-based: reads trainval.txt, keeps P%.
     DATA_SUFFIX="percent${TRAIN_PERCENT}"
-    DATA_PATH="${PROJECT_DIR}/data/${DATASET}_train_percent${TRAIN_PERCENT}.json"
+    DATA_PATH="${PROJECT_DIR}/data/${DATA_DATASET}_train_percent${TRAIN_PERCENT}.json"
     REGEN_CMD="python ${PROJECT_DIR}/data/medfmc_to_llava.py \\
        --medfmc_root ${MEDFMC_ROOT} \\
        --output_dir  ${PROJECT_DIR}/data \\
-       --tasks ${DATASET} --train_percent ${TRAIN_PERCENT}"
+       --tasks ${DATA_DATASET} --train_percent ${TRAIN_PERCENT}"
 elif [ -n "${RANDOM_SHOT}" ]; then
     # Random N-shot: reads trainval.txt, samples exactly N (balanced by class).
     DATA_SUFFIX="rshot${RANDOM_SHOT}_seed${SHOT_SEED}"
-    DATA_PATH="${PROJECT_DIR}/data/${DATASET}_train_rshot${RANDOM_SHOT}_seed${SHOT_SEED}.json"
+    DATA_PATH="${PROJECT_DIR}/data/${DATA_DATASET}_train_rshot${RANDOM_SHOT}_seed${SHOT_SEED}.json"
     REGEN_CMD="python ${PROJECT_DIR}/data/medfmc_to_llava.py \\
        --medfmc_root ${MEDFMC_ROOT} \\
        --output_dir  ${PROJECT_DIR}/data \\
-       --tasks ${DATASET} --n_shot ${RANDOM_SHOT} --seed ${SHOT_SEED}"
+       --tasks ${DATA_DATASET} --n_shot ${RANDOM_SHOT} --seed ${SHOT_SEED}"
 else
     # Shot-based: MedFMC pre-defined split.
-    if [ -n "${SHOT_EXP}" ]; then
+    if [ "${SHOT_EXP}" = "all" ]; then
+        # Merged split: exp1..exp5 training JSONs concatenated offline via
+        # merge_shot_splits.py (pre-generated, not a training-time concat).
+        # Validation is handled separately above (defaults to exp1's val split).
+        DATA_SUFFIX="shot${TRAINING_SHOTS}_all"
+        DATA_PATH="${PROJECT_DIR}/data/${DATA_DATASET}_train_shot${TRAINING_SHOTS}_all.json"
+        REGEN_CMD="python ${PROJECT_DIR}/data/merge_shot_splits.py \\
+           --data_dir ${PROJECT_DIR}/data \\
+           --task ${DATA_DATASET} --shot ${TRAINING_SHOTS}"
+    elif [ -n "${SHOT_EXP}" ]; then
         # Repeated-experiment split: {task}_{N}-shot_train_exp{K}.txt
         DATA_SUFFIX="shot${TRAINING_SHOTS}_exp${SHOT_EXP}"
-        DATA_PATH="${PROJECT_DIR}/data/${DATASET}_train_shot${TRAINING_SHOTS}_exp${SHOT_EXP}.json"
+        DATA_PATH="${PROJECT_DIR}/data/${DATA_DATASET}_train_shot${TRAINING_SHOTS}_exp${SHOT_EXP}.json"
         REGEN_CMD="python ${PROJECT_DIR}/data/medfmc_to_llava.py \\
            --medfmc_root ${MEDFMC_ROOT} \\
            --output_dir  ${PROJECT_DIR}/data \\
-           --tasks ${DATASET} --shot ${TRAINING_SHOTS} --exp ${SHOT_EXP}"
+           --tasks ${DATA_DATASET} --shot ${TRAINING_SHOTS} --exp ${SHOT_EXP}"
     else
         # Legacy single split: train_{N}.txt
         DATA_SUFFIX="shot${TRAINING_SHOTS}"
-        DATA_PATH="${PROJECT_DIR}/data/${DATASET}_train_shot${TRAINING_SHOTS}.json"
+        DATA_PATH="${PROJECT_DIR}/data/${DATA_DATASET}_train_shot${TRAINING_SHOTS}.json"
         REGEN_CMD="python ${PROJECT_DIR}/data/medfmc_to_llava.py \\
            --medfmc_root ${MEDFMC_ROOT} \\
            --output_dir  ${PROJECT_DIR}/data \\
-           --tasks ${DATASET} --shot ${TRAINING_SHOTS}"
+           --tasks ${DATA_DATASET} --shot ${TRAINING_SHOTS}"
     fi
 fi
 
@@ -209,7 +244,13 @@ fi
 # OUTPUT_DIR may be set explicitly in the environment (e.g. to resume a specific
 # run with SPRINT_RESUME=true); otherwise a fresh timestamped folder is generated.
 if [ -z "${OUTPUT_DIR}" ]; then
-    OUTPUT_DIR="${BASE_OUTPUT_DIR}/checkpoints/$(date +%m%d_%H%M)_${RUN_NAME}_${VAL_TAG}${RUN_TAG}"
+    # "checkpoints" (no suffix) is a symlink to /data2/.../llava/checkpoints,
+    # which is NOT mounted on the "compute" node this training actually runs
+    # on (only on "master") -- writing there crashes with FileNotFoundError at
+    # trainer init. "checkpoints_local" is a real directory on /home, reachable
+    # from compute. See submit_train_and_relocate.sh for the automated version
+    # that moves the finished run to /data2 afterward.
+    OUTPUT_DIR="${BASE_OUTPUT_DIR}/checkpoints_local/$(date +%m%d_%H%M)_${RUN_NAME}_${VAL_TAG}${RUN_TAG}"
 fi
 
 # ============================================================
@@ -285,9 +326,9 @@ cd "${LLAVA_DIR}"
 # SPRInTSymbolEpochCallback in the main process is visible to __getitem__
 # calls without crossing fork boundaries.  Other strategies use 4 workers.
 if [ "${STRATEGY}" = "ed_ft" ]; then
-    NUM_WORKERS=0
-else
     NUM_WORKERS=2
+else
+    NUM_WORKERS=1
 fi
 
 # Optional validation args — only passed when EVAL_DATA_PATH is set.

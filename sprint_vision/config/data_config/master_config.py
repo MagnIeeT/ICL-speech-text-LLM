@@ -4,9 +4,11 @@ from typing import Dict, List, Optional
 
 
 class DatasetName(str, Enum):
-    COLON = "colon"
-    CHEST = "chest"
-    ENDO  = "endo"
+    COLON        = "colon"
+    CHEST        = "chest"
+    ENDO         = "endo"
+    CHEST_BINARY = "chest_binary"
+    ENDO_BINARY  = "endo_binary"
 
 
 @dataclass
@@ -77,11 +79,15 @@ def render_instruction(
 from .colon_config import COLON_CONFIG
 from .chest_config import CHEST_CONFIG
 from .endo_config  import ENDO_CONFIG
+from .chest_binary_config import CHEST_BINARY_CONFIG
+from .endo_binary_config  import ENDO_BINARY_CONFIG
 
 DATASET_CONFIGS: Dict[DatasetName, DatasetConfig] = {
-    DatasetName.COLON: COLON_CONFIG,
-    DatasetName.CHEST: CHEST_CONFIG,
-    DatasetName.ENDO:  ENDO_CONFIG,
+    DatasetName.COLON:        COLON_CONFIG,
+    DatasetName.CHEST:        CHEST_CONFIG,
+    DatasetName.ENDO:         ENDO_CONFIG,
+    DatasetName.CHEST_BINARY: CHEST_BINARY_CONFIG,
+    DatasetName.ENDO_BINARY:  ENDO_BINARY_CONFIG,
 }
 
 

@@ -1,0 +1,35 @@
+{
+    "folders": [
+        {
+            "name": "LLaVA Code",
+            "path": "/home/harinisrireddykandula/LLaVA"
+        },
+        {
+            "name": "Training Logs",
+            "path": "/home/harinisrireddykandula/llava/logs"
+        },
+        {
+            "name": "Checkpoints",
+            "path": "/home/harinisrireddykandula/llava/checkpoints"
+        },
+        {
+            "name": "Inference Results",
+            "path": "/home/harinisrireddykandula/LLaVA/logs/json"
+        }
+    ],
+    "settings": {
+        "explorer.fileNesting.enabled": true,
+        "explorer.fileNesting.patterns": {
+            "*.sh": "$(capture).log",
+            "submit_training.sh": "run_sprint_finetune.sh",
+            "submit_inference.sh": "vision_orchestrator.py",
+            "submit_training_compute.sh": "run_sprint_finetune.sh",
+            "submit_inference_compute.sh": "vision_orchestrator.py"
+        },
+        "files.exclude": {
+            "**/__pycache__": true,
+            "**/*.pyc": true,
+            "**/.git": false
+        }
+    }
+}

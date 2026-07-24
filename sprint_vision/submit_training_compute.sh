@@ -46,7 +46,7 @@ fi
 # ------------------------------------------------------------
 # 1. Job Configuration (edit / override via env)
 # ------------------------------------------------------------
-DATASET=colon     # colon | chest | endo
+DATASET=endo_binary    # colon | chest | endo | endo_binary | chest_binary | colon_binary
 STRATEGY=regular     # regular | two_token | ed_ft | id_ft | lf_ft
 NUM_TRAIN_EPOCHS=5
 # ── ICL during training ──────────────────────────────────────────────────────
@@ -58,7 +58,7 @@ NUM_TRAIN_EPOCHS=5
 #       Keep ICL_SHOTS small (≈1) for chest unless you also raise MODEL_MAX_LENGTH.
 ICL_SHOTS=0
 ICL_POOL_PATH="${ICL_POOL_PATH:-}"
-num_samples=0   # 0 = ALL samples
+num_samples=5   # 0 = ALL samples
 LORA_R=8
 LORA_ALPHA=32
 
@@ -75,7 +75,7 @@ probe_batch_size=1
 
 kv_cache=true
 # Validation subsample cap. Also forms the checkpoint folder val-tag.
-MAX_VAL_SAMPLES=300  # 0 = use all
+MAX_VAL_SAMPLES=5  # 0 = use all
 # EVAL_DATA_PATH=none disables validation entirely (forwarded so the val-tag is right).
 EVAL_DATA_PATH="${EVAL_DATA_PATH:-}"
 # RUN_TAG: optional human label appended to the checkpoint folder (readability only).
@@ -105,7 +105,7 @@ queue_name="${queue_name:-GPU_only}"        # EE GPU queue (others: workq, CPU_o
 hostname=compute                    # EMPTY = let 'compute' pick the node; set to pin
 # GPU SELECTION: the 'compute' node has 8 GPUs (0-7). Pick a FREE one (check with
 # `nvidia-smi` on the node) and pass it, e.g.  cuda_device=3 bash submit_training_compute.sh
-cuda_device=1
+cuda_device=0
 walltime="${walltime:-48:00:00}"
 # EE has NO GPU PBS resource (ngpus/num_gpus undefined) — GPUs live on the single
 # 'compute' node reached via the GPU_only queue; pick the GPU with CUDA_VISIBLE_DEVICES.
@@ -166,7 +166,13 @@ CKPT_RUN_NAME="llava-${DATASET}-${STRATEGY}-${DATA_SUFFIX}"
 CKPT_RUN_TAG=""
 [ -n "${RUN_TAG}" ] && CKPT_RUN_TAG="-${RUN_TAG}"
 CKPT_TS=$(_ts "%m%d_%H%M")   # MMDD_HHMM — matches run_sprint_finetune.sh naming
-OUTPUT_DIR="${BASE_OUTPUT_DIR}/checkpoints/${CKPT_TS}_${CKPT_RUN_NAME}_${VAL_TAG}${CKPT_RUN_TAG}"
+# "checkpoints" (no suffix) is a symlink to /data2/.../llava/checkpoints, which
+# is NOT mounted on the "compute" node the training job actually runs on (only
+# on "master") -- writing there crashes with FileNotFoundError at trainer init.
+# "checkpoints_local" is a real directory on /home, reachable from compute.
+# submit_train_and_relocate.sh moves the finished run to /data2 afterward, from
+# master (which can see both paths) -- see that script for the automated version.
+OUTPUT_DIR="${BASE_OUTPUT_DIR}/checkpoints_local/${CKPT_TS}_${CKPT_RUN_NAME}_${VAL_TAG}${CKPT_RUN_TAG}"
 
 LOG_DIR="${output_dir}/${TODAY}"
 mkdir -p "$LOG_DIR"
@@ -310,6 +316,48 @@ echo ""
 echo "  JOB_A=\$(hold_job_id=${JOB_ID} CHECKPOINT_PATH=\$CHECKPOINT_PATH dataset=${DATASET} strategy=${STRATEGY} icl_shots=0 bash submit_inference_compute.sh --print-id)"
 echo "  JOB_B=\$(hold_job_id=\$JOB_A   CHECKPOINT_PATH=\$CHECKPOINT_PATH dataset=${DATASET} strategy=${STRATEGY} icl_shots=1 bash submit_inference_compute.sh --print-id)"
 echo "         hold_job_id=\$JOB_B   CHECKPOINT_PATH=\$CHECKPOINT_PATH dataset=${DATASET} strategy=${STRATEGY} icl_shots=5 bash submit_inference_compute.sh"
+echo "=========================================="
+
+# ------------------------------------------------------------
+# 6. Auto-relocate watcher (background, detached).
+#
+# "checkpoints_local" (see OUTPUT_DIR above) is a real directory on /home,
+# reachable from "compute" -- where training actually runs. The PERMANENT
+# home for finished checkpoints is /data2/.../llava/checkpoints, which is
+# mounted on "master" (this script's own host) but NOT on "compute"
+# (confirmed via direct ssh: mount/df/ls all empty there, mkdir /data2 fails
+# with Permission denied) -- so training can't write there directly.
+#
+# This background task polls qstat (from master, which CAN reach /data2)
+# until the job leaves the queue, then moves the finished checkpoint over.
+# It's spawned detached (disown + /dev/null stdin) so it survives this
+# script exiting and keeps running even if this shell session ends, and it
+# does NOT block this script's own return -- --print-id / hold_job_id
+# chaining below is unaffected, same as before this was added.
+# ------------------------------------------------------------
+DATA2_CKPT_ROOT="/data2/harinisrireddykandula/llava/checkpoints"
+RELOCATE_LOG="${LOG_DIR}/${RUN_NAME}_relocate.log"
+(
+    {
+        echo "[relocate] watching job ${JOB_ID} -> will move ${OUTPUT_DIR}"
+        while qstat -u "$(whoami)" 2>/dev/null | grep -q "${JOB_ID}"; do
+            sleep 60
+        done
+        echo "[relocate] job ${JOB_ID} left the queue at $(date)"
+        if [ -d "${OUTPUT_DIR}" ]; then
+            mkdir -p "${DATA2_CKPT_ROOT}"
+            DEST="${DATA2_CKPT_ROOT}/$(basename "${OUTPUT_DIR}")"
+            echo "[relocate] moving ${OUTPUT_DIR} -> ${DEST}"
+            mv "${OUTPUT_DIR}" "${DEST}"
+            echo "[relocate] done: ${DEST}"
+        else
+            echo "[relocate] WARNING: ${OUTPUT_DIR} does not exist -- job likely failed before creating a checkpoint. Nothing to move."
+        fi
+    } >> "${RELOCATE_LOG}" 2>&1
+) </dev/null &
+disown
+echo "Auto-relocate watcher started (background, detached) -- log: ${RELOCATE_LOG}"
+echo "  (moves the finished checkpoint to ${DATA2_CKPT_ROOT}/ once the job completes)"
 echo "=========================================="
 
 if [[ "${1}" == "--print-id" ]]; then

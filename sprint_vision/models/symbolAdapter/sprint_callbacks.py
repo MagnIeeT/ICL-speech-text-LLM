@@ -19,6 +19,15 @@ import transformers
 
 from .validation import SPRInTValidationManager
 
+# colon_binary is a training-time-only alias: colon is already binary (2
+# classes), so it needs no label grouping/partitioning the way chest/endo did
+# for chest_binary/endo_binary. colon_binary reuses colon's EXACT config and
+# data files -- this map is only consulted for config/data lookups; it does
+# NOT change which cross-task family gets monitored (that's decided directly
+# off the unaliased dataset name, since colon_binary's whole purpose is
+# joining the binary-family cross-task set instead of the original one).
+_SPRINT_DATASET_ALIAS = {"colon_binary": "colon"}
+
 
 def _rank0_print(*args):
     """Deferred import of rank0_print to avoid circular import with train.py."""
@@ -194,7 +203,10 @@ class SPRInTValidationCallback(transformers.TrainerCallback):
                 sys.path.insert(0, _sprint_dir)
             from config.data_config import get_dataset_config as _get_cfg
             _ds  = getattr(training_args, "sprint_dataset", "colon")
-            _cfg = _get_cfg(_ds)
+            # colon_binary is a training-time-only alias (see run_sprint_finetune.sh):
+            # colon needs no label grouping, so colon_binary reuses colon's exact
+            # config/data -- it only changes the cross-task family below.
+            _cfg = _get_cfg(_SPRINT_DATASET_ALIAS.get(_ds, _ds))
             label_names    = [l.lower() for l in _cfg.label_names]
             is_multi_label = _cfg.is_multi_label
         except Exception as _e:
@@ -214,9 +226,13 @@ class SPRInTValidationCallback(transformers.TrainerCallback):
         #   auc_map["accuracy_aacc"]       → logit-argmax (l1>l0), same as MedFMC top-1
         # We use "accuracy_aacc" (logit path) as it matches the official metric exactly.
         # AUC is the tiebreaker when two epochs have equal accuracy_aacc.
-        if dataset_name == "chest":
+        if dataset_name in ("chest", "chest_binary"):
+            # chest_binary: 2 flags (pulmonary/extrapulmonary) OR-reduced from
+            # chest's 19 -- same multi-label shape as chest, same primary metric.
             self._primary_metric = "mAP"
-        elif dataset_name == "endo":
+        elif dataset_name in ("endo", "endo_binary"):
+            # endo_binary: 2 flags (inflammatory/mass_lesion) OR-reduced from
+            # endo's 4 -- same multi-label shape as endo, same primary metric.
             self._primary_metric = "macro_auc"       # AUC_multilabel in paper
         else:                                         # colon
             self._primary_metric = "accuracy_aacc"   # logit-argmax == MedFMC top-1
@@ -254,7 +270,24 @@ class SPRInTValidationCallback(transformers.TrainerCallback):
             except Exception as _e:
                 _get_cfg2 = None
                 _rank0_print(f"[SPRInT Monitor] config import failed ({_e}); cross-task validation disabled.")
-            for _d in [x for x in ("colon", "chest", "endo") if x != dataset_name]:
+            # Cross-task family: for the binary-experiment datasets (chest_binary/
+            # endo_binary/colon_binary), monitor the OTHER binary-family members
+            # instead of the original 19-/4-label chest/endo -- keeps the whole
+            # cross-task comparison within the same label-granularity family.
+            # colon_binary is an alias for colon (no data/config difference, see
+            # _SPRINT_DATASET_ALIAS) -- it must exclude BOTH "colon_binary" and
+            # "colon" from its own monitor list, or it would cross-task-monitor
+            # itself under colon's name. Original colon/chest/endo training is
+            # UNCHANGED -- still monitors the original siblings exactly as
+            # before, so every pre-existing result stays reproducible.
+            _binary_family_names = ("chest_binary", "endo_binary", "colon_binary")
+            _cross_task_family = (
+                ("colon", "chest_binary", "endo_binary")
+                if dataset_name in _binary_family_names
+                else ("colon", "chest", "endo")
+            )
+            _exclude_from_monitors = {dataset_name, _SPRINT_DATASET_ALIAS.get(dataset_name, dataset_name)}
+            for _d in [x for x in _cross_task_family if x not in _exclude_from_monitors]:
                 if _get_cfg2 is None:
                     break
                 try:
@@ -263,9 +296,20 @@ class SPRInTValidationCallback(transformers.TrainerCallback):
                     _rank0_print(f"[SPRInT Monitor:{_d}] config load failed ({_e}); skipping.")
                     continue
                 # Sibling val JSON: same dir + shot/exp, dataset token swapped.
-                _bn    = os.path.basename(_primary_eval).replace(f"{dataset_name}_", f"{_d}_", 1)
+                # Use the ALIAS-RESOLVED name as the substitution source: when
+                # dataset_name="colon_binary", eval_data_path was built by
+                # run_sprint_finetune.sh from colon's actual filename
+                # ("colon_val_..."), NOT "colon_binary_val_...", so swapping on
+                # the literal "colon_binary_" token would never match and would
+                # silently reuse colon's own val file for every sibling instead
+                # of failing loudly -- a real silent-wrong-data risk, not
+                # hypothetical.
+                _primary_file_token = _SPRINT_DATASET_ALIAS.get(dataset_name, dataset_name)
+                _bn    = os.path.basename(_primary_eval).replace(f"{_primary_file_token}_", f"{_d}_", 1)
                 _dpath = os.path.join(os.path.dirname(_primary_eval), _bn)
-                _dprim = "mAP" if _d == "chest" else ("macro_auc" if _d == "endo" else "accuracy_aacc")
+                _dprim = ("mAP" if _d in ("chest", "chest_binary")
+                          else "macro_auc" if _d in ("endo", "endo_binary")
+                          else "accuracy_aacc")
                 self._monitor_managers[_d] = SPRInTValidationManager(
                     model            = model,
                     tokenizer        = tokenizer,
