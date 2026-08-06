@@ -65,6 +65,13 @@ def _apply_symbol_mapping_to_prompt(prompt_obj: Any, mapping: Dict[str, str]) ->
     return prompt_obj
 
 
+def _strip_legend(template: str) -> str:
+    """Remove '- label: DESCRIPTION' → '- label' from prompt bullet lines (Wei-style
+    no-legend: the class meaning is no longer stated, only the label/symbol remains).
+    Non-bullet lines and bullets without a colon (e.g. guideline lines) are untouched."""
+    return re.sub(r'(?m)^([ \t]*-[ \t]*[^:\n]+?)[ \t]*:.*$', r'\1', template)
+
+
 def convert_ner_to_dict(text: str, ner_data: Dict) -> Dict[str, List[str]]:
     """Convert NER span annotations into a compact tag-to-phrases dictionary."""
     result: Dict[str, List[str]] = {}
@@ -86,19 +93,25 @@ class BaseMultiTaskDataset(Dataset):
         input_mode: str = "speech_only",
         fewshot_mode: str = "text",
         num_examples: int = 0,
+        num_examples_min: int = -1,
         random_examples: bool = False,
         split: DatasetSplit = DatasetSplit.TEST,
         model_type: str = "salmonn",
         run_name: str = "",
         randomize_swap: bool = False,
         is_training: bool = False,
+        no_legend: bool = False,
+        fewshot_per_class: bool = False,
     ):
+        self.no_legend = no_legend
+        self.fewshot_per_class = fewshot_per_class
         self.dataset_type = dataset_type
         self.dataset = dataset
         self.processor = processor
         self.input_mode = input_mode
         self.fewshot_mode = fewshot_mode
         self.num_examples = num_examples
+        self.num_examples_min = num_examples_min
         self.random_examples = random_examples
         self.split = split
         self.model_type = model_type.lower()
@@ -116,48 +129,84 @@ class BaseMultiTaskDataset(Dataset):
         self._symbol_maps: Dict[str, Dict[str, str]] = {}   # {ds_name: {label: symbol}}
         self._symbol_pool: Dict[str, List[Dict[str, str]]] = {}  # {ds_name: [map, ...]}
 
-        self.audio_lookup = None
-        self.valid_fewshot_indices = []
-        self.audio_idx_to_dataset_idx = {}  # >>> NEW: Maps lookup index to actual integer row
+        # ── Few-shot exemplar source: at runtime, sample class-balanced exemplars from
+        # the TRAIN split (no separate pool → no audio duplication). Training reuses the
+        # main dataset (it IS the train split); eval loads the train split from config.
+        self._exemplar_ds = None
+        self._exemplar_by_class: Dict[str, List[int]] = {}
+        if self.num_examples > 0:
+            self._init_exemplar_source()
 
-        if self.fewshot_mode == "speech":
-            audio_lookup_path = self.config.get_audio_lookup_path(self.split)
-            if audio_lookup_path:
-                load_time = time.time()
-                self.audio_lookup = load_from_disk(audio_lookup_path)
-                
-                dataset_len = len(self.dataset)
-                all_lookup_indices = self.audio_lookup["index"]
+    @staticmethod
+    def _base_labels(lab):
+        """Base class label(s) for single- or multi-label targets (hvb is a list)."""
+        if isinstance(lab, (list, tuple)):
+            return [str(x) for x in lab]
+        s = str(lab)
+        return [p.strip() for p in s.split(",")] if ", " in s else [s]
 
-                # >>> NEW: Build reverse map for string IDs if main dataset has "id" or "index" fields
-                ds_features = getattr(self.dataset, "column_names", [])
-                main_ds_id_to_row = {}
-                if "id" in ds_features:
-                    main_ds_id_to_row.update({str(v): i for i, v in enumerate(self.dataset["id"])})
-                if "index" in ds_features:
-                    main_ds_id_to_row.update({str(v): i for i, v in enumerate(self.dataset["index"])})
+    def _init_exemplar_source(self):
+        """Load the TRAIN split as exemplar source and index rows by base class."""
+        try:
+            self._exemplar_ds = self.dataset if self.is_training else load_from_disk(
+                self.config.get_path(DatasetSplit.TRAIN))
+        except Exception as e:  # e.g. dataset has no TRAIN split (eval-only)
+            logger.warning("Few-shot: no exemplar source for %s (%s) — few-shot disabled for it",
+                           self.dataset_type, e)
+            self._exemplar_ds = None
+            return
+        by_class: Dict[str, List[int]] = {}
+        for i, lab in enumerate(self._exemplar_ds[self.config.completion_key]):
+            for base in self._base_labels(lab):
+                by_class.setdefault(base, []).append(i)
+        self._exemplar_by_class = by_class
+        # AF3 accepts exactly ONE audio per prompt (processor 1:1 constraint), so audio
+        # exemplars are impossible on flamingo → fall back to TEXT exemplars.
+        self._audio_fewshot_ok = "audio" in self._exemplar_ds.column_names
+        if self.fewshot_mode == "speech" and self.model_type == "flamingo":
+            logger.warning("AF3/flamingo supports only ONE audio per prompt → audio exemplars "
+                           "are not possible; few-shot for %s uses TEXT exemplars.", self.dataset_type)
+            self._audio_fewshot_ok = False
+        logger.info("Few-shot exemplar source for %s: %d items, %d base classes (%s)",
+                    self.dataset_type, len(self._exemplar_ds), len(by_class),
+                    "main/train" if self.is_training else "train-split")
 
-                for audio_i, raw_idx in enumerate(all_lookup_indices):
-                    row_idx = None
-                    try:
-                        # Try pure integer row index first
-                        row_idx = int(raw_idx)
-                    except (ValueError, TypeError):
-                        # If it's a string ID like '0002f70f7386445b_1', look it up in our map
-                        row_idx = main_ds_id_to_row.get(str(raw_idx))
+    def _resolve_fewshot_k(self):
+        """Number of exemplars (total, or per-class if fewshot_per_class). Random count during training."""
+        k = self.num_examples
+        if getattr(self, "is_training", False) and self.num_examples_min >= 0 and self.num_examples > self.num_examples_min:
+            k = random.randint(self.num_examples_min, self.num_examples)
+        return k
 
-                    # Ensure the resolved row index is safe and within subset bounds
-                    if row_idx is not None and row_idx < dataset_len:
-                        self.valid_fewshot_indices.append(audio_i)
-                        self.audio_idx_to_dataset_idx[audio_i] = row_idx
+    def _sample_exemplar_rows(self, k, per_class):
+        """Class-balanced random row-indices from the exemplar source (deduped for multi-label)."""
+        by_class = self._exemplar_by_class
+        classes = list(by_class.keys())
+        random.shuffle(classes)
+        chosen, seen = [], set()
+        if per_class:
+            for c in classes:
+                for p in random.sample(by_class[c], min(k, len(by_class[c]))):
+                    if p not in seen:
+                        seen.add(p); chosen.append(p)
+        else:
+            pools = {c: random.sample(by_class[c], len(by_class[c])) for c in classes}
+            ptr = {c: 0 for c in classes}
+            while len(chosen) < k:
+                progressed = False
+                for c in classes:
+                    if len(chosen) >= k:
+                        break
+                    while ptr[c] < len(pools[c]) and pools[c][ptr[c]] in seen:
+                        ptr[c] += 1
+                    if ptr[c] < len(pools[c]):
+                        idx = pools[c][ptr[c]]; ptr[c] += 1
+                        seen.add(idx); chosen.append(idx); progressed = True
+                if not progressed:
+                    break
+        random.shuffle(chosen)
+        return chosen
 
-                logger.info(
-                    "Loaded audio lookup in %.3fs for %s (Total: %d items, Valid for subset: %d items)",
-                    time.time() - load_time,
-                    self.dataset_type,
-                    len(self.audio_lookup),
-                    len(self.valid_fewshot_indices),
-                )
     def set_epoch_symbol_maps(
         self,
         maps: Dict[str, Dict[str, str]],
@@ -188,9 +237,15 @@ class BaseMultiTaskDataset(Dataset):
     def _select_examples(self, pool: List) -> List:
         if not pool:
             return []
+        # Wei-style random count per prompt (training only): k ~ U[min, num_examples].
+        # Eval keeps a fixed count (num_examples) so the protocol is constant.
+        k = self.num_examples
+        if getattr(self, "is_training", False) and self.num_examples_min >= 0 and self.num_examples > self.num_examples_min:
+            k = random.randint(self.num_examples_min, self.num_examples)   # min=0 → some prompts zero-shot
+        k = min(k, len(pool))
         if self.random_examples:
-            return random.sample(pool, min(self.num_examples, len(pool)))
-        return pool[: self.num_examples]
+            return random.sample(pool, k)
+        return pool[:k]
 
     def _format_label(self, example_or_label, is_example: bool = True, current_mapping=None, text: str = None):
         label = example_or_label["label"] if is_example else example_or_label
@@ -226,53 +281,39 @@ class BaseMultiTaskDataset(Dataset):
         
         effective_fewshot_mode = self.fewshot_mode
 
-        if self.num_examples > 0:
-            if self.fewshot_mode == "speech":
-                if self.audio_lookup is not None:
-                    # Speech few-shot: select indices from the safe validated pool
-                    indices = self._select_examples(self.valid_fewshot_indices)
-                    for sample_idx in indices:
-                        example = self.audio_lookup[sample_idx]
-                        
-                        # >>> NEW: Fetch using our pre-calculated mapped row index!
-                        dataset_row_idx = self.audio_idx_to_dataset_idx[sample_idx]
-                        main_example = self.dataset[dataset_row_idx]
-                        
-                        formatted_examples.append(
-                            {
-                                "text": main_example[current_config.text_key],
-                                "label": self._format_label(
-                                    main_example[current_config.completion_key],
-                                    is_example=False,
-                                    current_mapping=current_config.label_mapping,
-                                    text=main_example[current_config.text_key],
-                                ),
-                            }
-                        )
-                        examples_audio.append(example["audio"]["array"])
-                else:
-                    logger.warning(
-                        "Few-shot mode is 'speech' but no valid audio lookup found for %s. Falling back to text few-shot.",
-                        self.dataset_type,
-                    )
-            else:
-                effective_fewshot_mode = "text"
-                
-                selected_examples = self._select_examples(item.get("few_shot_examples", []))
-                for example in selected_examples:
-                    formatted_examples.append(
-                        {
-                            "text": example["text"],
-                            "label": self._format_label(
-                                example,
-                                is_example=True,
-                                current_mapping=current_config.label_mapping,
-                            ),
-                        }
-                    )
+        if self.num_examples > 0 and self._exemplar_ds is not None and self._exemplar_by_class:
+            # Runtime class-balanced random exemplars from the TRAIN split (fresh per prompt).
+            rows = self._sample_exemplar_rows(self._resolve_fewshot_k(),
+                                              getattr(self, "fewshot_per_class", False))
+            has_audio = (self.fewshot_mode == "speech") and getattr(self, "_audio_fewshot_ok", False)
+            effective_fewshot_mode = "speech" if has_audio else "text"
+            for r in rows:
+                ex = self._exemplar_ds[int(r)]
+                fex = {
+                    "text": ex[current_config.text_key],
+                    "label": self._format_label(
+                        ex[current_config.completion_key],
+                        is_example=False,
+                        current_mapping=current_config.label_mapping,
+                        text=ex[current_config.text_key],
+                    ),
+                }
+                if has_audio:
+                    arr = ex["audio"]["array"]
+                    fex["audio"] = arr                # flamingo format_prompt embeds example["audio"]
+                    examples_audio.append(arr)        # other processors read the examples_audio list
+                formatted_examples.append(fex)
 
+        template = current_config.prompt_template
+        if getattr(self, "no_legend", False):
+            template = _strip_legend(template)
+        # QA: the reading passage is TEXT (embedded into the system prompt via {text}); the
+        # spoken question flows through the normal speech-audio path. Classification templates
+        # have no {text} and are unaffected.
+        if getattr(current_config, "task_type", "classification") == "qa" and "{text}" in template:
+            template = template.replace("{text}", str(item[current_config.text_key]))
         prompt = self.processor.format_prompt(
-            template=current_config.prompt_template,
+            template=template,
             text=item[current_config.text_key],
             examples=formatted_examples,
             input_mode=self.input_mode,

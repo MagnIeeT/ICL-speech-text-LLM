@@ -368,7 +368,8 @@ class SymbolDPOOrchestrator:
         torch.save(
             {
                 "model_state": trainable_state,
-                "optimizer_state": self.optimizer.state_dict() if self.optimizer else None,
+                # optimizer_state intentionally NOT saved — never loaded (no resume path), unused at inference.
+                "optimizer_state": None,
                 "config": self.config,
                 "symbol_mappings": {
                     "current_epoch_mappings": self.symbol_manager.get_symbols_for_epoch(epoch) if self.symbol_manager else {},

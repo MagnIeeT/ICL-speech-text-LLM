@@ -40,25 +40,49 @@ class ValidationManager:
         """Remote version of mode resolution."""
         raw = getattr(self.config.symbol_config, "validation_modes", "fixed,original,fresh")
         tokens = [token.strip().lower() for token in raw.split(",") if token.strip()]
-        valid = {ValidationSymbolMode.FIXED.value, ValidationSymbolMode.ORIGINAL.value, ValidationSymbolMode.FRESH.value}
+        valid = {ValidationSymbolMode.FIXED.value, ValidationSymbolMode.ORIGINAL.value,
+                 ValidationSymbolMode.FRESH.value, ValidationSymbolMode.FLIPPED.value}
         ordered_unique = []
         for token in tokens:
             if token in valid and token not in ordered_unique:
                 ordered_unique.append(token)
         if not ordered_unique:
             ordered_unique = [ValidationSymbolMode.FIXED.value]
+        # (suffix, use_original, use_dynamic, use_flip)
         mode_map = {
-            ValidationSymbolMode.FIXED.value: ("fixed", False, False),
-            ValidationSymbolMode.ORIGINAL.value: ("original", True, False),
-            ValidationSymbolMode.FRESH.value: ("fresh", False, True),
+            ValidationSymbolMode.FIXED.value: ("fixed", False, False, False),
+            ValidationSymbolMode.ORIGINAL.value: ("original", True, False, False),
+            ValidationSymbolMode.FRESH.value: ("fresh", False, True, False),
+            ValidationSymbolMode.FLIPPED.value: ("flipped", False, False, True),
         }
         return [mode_map[token] for token in ordered_unique]
+
+    @staticmethod
+    def _derangement(labels, seed, ds):
+        """Deterministic permutation of label WORDS with no fixed point (flipped labels)."""
+        import random
+        labels = sorted(set(labels))
+        if len(labels) <= 1:
+            return {l: l for l in labels}
+        rng = random.Random(hash((seed, ds, tuple(labels))) & 0x7FFFFFFF)
+        perm = labels[:]
+        for _ in range(200):
+            rng.shuffle(perm)
+            if all(a != b for a, b in zip(labels, perm)):
+                break
+        return dict(zip(labels, perm))
+
+    def _build_flip_map(self, seed):
+        """{ds_name: {label: other_label}} — real-label derangement per dataset (seeded)."""
+        lpd = self.symbol_manager.labels_per_dataset or {"": self.symbol_manager.original_labels}
+        return {ds: self._derangement(labels, seed, ds) for ds, labels in lpd.items()}
 
     def validate_model(
         self, model, val_dataloader, epoch: int,
         use_original_labels: bool = False,
         use_dynamic_symbols: bool = False,
         symbol_map: Optional[Dict[str, Dict[str, str]]] = None,
+        use_flip: bool = False,
     ):
         model.eval()
         if use_original_labels:
@@ -70,6 +94,10 @@ class ValidationManager:
                 force=True, difficulty=diff
             )
             mode_name = f"Fresh-Symbols({diff})"
+        elif use_flip:
+            seed = int(getattr(self.config.symbol_config, "val_flip_seed", 0))
+            symbol_mappings_to_use = self._build_flip_map(seed)
+            mode_name = f"Flipped-Labels(seed={seed})"
         else:
             # symbol_map comes pre-built from trainer (_build_current_symbol_map); fallback for non-trainer callers
             symbol_mappings_to_use = symbol_map if symbol_map is not None else self.symbol_manager.get_symbols_for_epoch(epoch)
@@ -208,8 +236,8 @@ class ValidationManager:
     def run_comprehensive_validation(self, model, val_dataloader, epoch: int, symbol_map: Optional[Dict[str, Dict[str, str]]] = None):
         mode_defs = self._resolve_validation_modes()
         comprehensive_results = {}
-        for mode_suffix, use_original, use_dynamic in mode_defs:
-            metrics_by_dataset = self.validate_model(model, val_dataloader, epoch, use_original, use_dynamic, symbol_map)
+        for mode_suffix, use_original, use_dynamic, use_flip in mode_defs:
+            metrics_by_dataset = self.validate_model(model, val_dataloader, epoch, use_original, use_dynamic, symbol_map, use_flip=use_flip)
             comprehensive_results[mode_suffix] = metrics_by_dataset
 
         self.log_validation_summary(comprehensive_results, epoch)

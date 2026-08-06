@@ -20,6 +20,7 @@ class ValidationSymbolMode(Enum):
     FIXED = "fixed"
     ORIGINAL = "original"
     FRESH = "fresh"
+    FLIPPED = "flipped"
 
 
 class ModelType(Enum):
@@ -60,6 +61,9 @@ class SymbolConfig:
     # Number of symbol mappings pre-generated at init for dynamic modes
     # Per epoch: pool[epoch % M], per instance: random.choice(pool)
     num_symbol_mappings: int = 20
+    # Seed for the 'flipped' validation mode's real-label derangement.
+    # Same seed → identical flipped legend across models (fair comparison).
+    val_flip_seed: int = 0
 
 
 @dataclass
@@ -73,10 +77,13 @@ class DataConfig:
     val_frequency: int = 1
     val_dataset_type: Optional[str] = None
     num_examples: int = 5
+    num_examples_min: int = -1         # >=0 → random per-prompt count U[min, num_examples] during TRAINING (min=0 allows zero-shot prompts); -1 = fixed count
     val_num_examples: int = 5
     num_workers: int = 2
     input_mode: str = "speech_only"   # speech_only | text_only
     fewshot_mode: str = "text"        # text | speech
+    no_legend: bool = False           # strip label descriptions from the prompt (Wei-style: meaning from exemplars/symbols only)
+    fewshot_per_class: bool = False   # few-shot: True → num_examples PER class (full coverage); False → num_examples TOTAL (class-balanced)
 
 
 from utils.environment import get_env_path
@@ -223,6 +230,7 @@ class TrainingConfig:
             symbol_difficulty=getattr(args, "symbol_difficulty", "random"),
             val_symbol_difficulty=getattr(args, "val_symbol_difficulty", "easy"),
             num_symbol_mappings=getattr(args, "num_symbol_mappings", 20),
+            val_flip_seed=getattr(args, "val_flip_seed", 0),
         )
         if symbol_config.no_symbols:
             symbol_config.dynamic_symbols = False
@@ -255,9 +263,12 @@ class TrainingConfig:
             split=getattr(args, "split", "test"),
             num_workers=getattr(args, "num_workers", 2),
             num_examples=getattr(args, "num_examples", 5),
+            num_examples_min=getattr(args, "num_examples_min", -1),
             val_num_examples=getattr(args, "val_num_examples", 5),
             input_mode=getattr(args, "input_mode", "speech_only"),
             fewshot_mode=getattr(args, "fewshot_mode", "text"),
+            no_legend=getattr(args, "no_legend", False),
+            fewshot_per_class=getattr(args, "fewshot_per_class", False),
         )
 
         return cls(
@@ -305,7 +316,8 @@ def parse_training_args() -> argparse.Namespace:
     parser.add_argument("--val_batch_size", type=int, default=None, help="Validation batch size (default: same as batch_size)")
     parser.add_argument("--max_samples", type=int, default=100)
     parser.add_argument("--val_max_samples", type=int, default=500, help="Max validation samples per dataset (0 = full)")
-    parser.add_argument("--num_examples", type=int, default=5, help="Few-shot examples per training prompt")
+    parser.add_argument("--num_examples", type=int, default=5, help="Few-shot examples per training prompt (fixed count, or the MAX when --num_examples_min > 0)")
+    parser.add_argument("--num_examples_min", type=int, default=-1, help="If >=0, random per-prompt count U[min, num_examples] during training (min=0 → some prompts zero-shot; Wei-style uses 2). -1 = fixed count. Eval stays fixed at num_examples")
     parser.add_argument("--val_num_examples", type=int, default=5, help="Few-shot examples per validation prompt")
     parser.add_argument("--num_workers", type=int, default=2)
 
@@ -356,6 +368,12 @@ def parse_training_args() -> argparse.Namespace:
         help="Difficulty of symbols used for fresh validation mode",
     )
     parser.add_argument(
+        "--val_flip_seed",
+        type=int,
+        default=0,
+        help="Seed for the 'flipped' validation mode real-label derangement (same seed = same flip across models)",
+    )
+    parser.add_argument(
         "--num_symbol_mappings",
         type=int,
         default=20,
@@ -364,6 +382,8 @@ def parse_training_args() -> argparse.Namespace:
 
     parser.add_argument("--input_mode", type=str, default="speech_only", choices=["speech_only", "text_only"], help="Query input modality")
     parser.add_argument("--fewshot_mode", type=str, default="text", choices=["text", "speech"], help="Few-shot example modality")
+    parser.add_argument("--no_legend", action="store_true", help="Strip label descriptions from the prompt legend (meaning conveyed only by exemplars/symbols; Wei-style)")
+    parser.add_argument("--fewshot_per_class", action="store_true", help="Few-shot: num_examples PER class (full coverage) instead of TOTAL (class-balanced)")
     parser.add_argument("--use_dpo", action="store_true", help="Use SymDPO trainer instead of cross-entropy")
     parser.add_argument("--dpo_beta", type=float, default=0.1, help="DPO beta (preference margin temperature)")
     parser.add_argument("--no_validate_before_training", action="store_true", help="Skip baseline validation before epoch 1")

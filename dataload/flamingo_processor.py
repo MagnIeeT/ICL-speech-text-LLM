@@ -189,8 +189,17 @@ class FlamingoProcessor(ModelProcessor):
         conversation = copy.deepcopy(prompt_obj["conversation"])
         input_mode = prompt_obj.get("input_mode", "speech_only")
         has_audio = input_mode != "text_only" and audio is not None
+        # Few-shot with SPEECH exemplars puts MULTIPLE audio items in one prompt. The fast
+        # path only precomputes the single query audio (and overwrites features), so route
+        # any multi-audio prompt to the slow path, where apply_chat_template extracts
+        # features for ALL audios (exemplars + query). Single-audio prompts stay fast.
+        has_exemplar_audio = any(
+            isinstance(p, dict) and p.get("type") == "audio" and p.get("audio") is not None
+            for msg in conversation if msg.get("role") == "user"
+            for p in (msg.get("content") or [])
+        )
 
-        if precomputed is not None and has_audio:
+        if precomputed is not None and has_audio and not has_exemplar_audio:
             # Fast path: substitute <sound>*N as text so apply_chat_template skips the feature
             # extractor (already computed in DataLoader workers). The Flamingo chat template
             # renders audio items as text anyway — so token sequences are identical.

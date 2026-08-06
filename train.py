@@ -144,6 +144,7 @@ def main():
             symbol_difficulty=config.symbol_config.symbol_difficulty,
             val_symbol_difficulty=config.symbol_config.val_symbol_difficulty,
             num_symbol_mappings=config.symbol_config.num_symbol_mappings,
+            model_type=config.model_type.value,
         )
 
         train_datasets, val_datasets = load_datasets_for_config(config)

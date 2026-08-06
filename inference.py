@@ -45,6 +45,10 @@ class InferenceOrchestrator:
         symbol_map_file: Optional[str] = None,
         metrics_dir: Optional[str] = None,
         split: str = "test",
+        val_flip_seed: int = 0,
+        no_legend: bool = False,
+        fewshot_mode: Optional[str] = None,
+        fewshot_per_class: bool = False,
     ):
         self.checkpoint_path = checkpoint_path
         self.dataset_type = dataset_type
@@ -53,6 +57,10 @@ class InferenceOrchestrator:
         self.max_val_samples = max_val_samples
         self.num_examples = num_examples
         self.validation_modes = validation_modes
+        self.val_flip_seed = val_flip_seed
+        self.no_legend = no_legend
+        self.fewshot_mode = fewshot_mode
+        self.fewshot_per_class = fewshot_per_class
         self.run_name = run_name
         self.num_workers = num_workers
         self.val_batch_size = val_batch_size
@@ -133,6 +141,11 @@ class InferenceOrchestrator:
             # all other symbol settings come from the saved checkpoint config
             if self.validation_modes:
                 self.config.symbol_config.validation_modes = self.validation_modes
+            self.config.symbol_config.val_flip_seed = self.val_flip_seed
+            self.config.data_config.no_legend = self.no_legend
+            if self.fewshot_mode:
+                self.config.data_config.fewshot_mode = self.fewshot_mode
+            self.config.data_config.fewshot_per_class = self.fewshot_per_class
 
             # Auto-detect D-SPO from checkpoint — no flag needed
             if checkpoint.get("router_state") is not None:
@@ -161,6 +174,7 @@ class InferenceOrchestrator:
                 no_symbols=self.config.symbol_config.no_symbols,
                 swap_labels=self.config.symbol_config.swap_labels,
                 labels_per_dataset=labels_per_dataset,
+                model_type=self.model_type,
             )
 
             # Load and normalize symbol mappings to per-dataset format {ds_name: {label: symbol}}
@@ -300,8 +314,10 @@ class InferenceOrchestrator:
                             # old flat format → convert to per-dataset
                             for ds_name in train_ds_names:
                                 try:
-                                    labels = list(DATASET_CONFIGS[_DT(ds_name)].valid_labels)
+                                    labels = list(DATASET_CONFIGS[_DT(ds_name)].valid_labels or [])
                                 except (ValueError, KeyError):
+                                    continue
+                                if not labels:      # QA / label-free datasets have no symbols
                                     continue
                                 self.current_mappings[ds_name] = {l: phase2_map[l] for l in labels if l in phase2_map}
                         total = sum(len(m) for m in self.current_mappings.values())
@@ -311,8 +327,10 @@ class InferenceOrchestrator:
                         slot_offsets = compute_slot_offsets(train_ds_names)
                         for ds_name in train_ds_names:
                             try:
-                                labels = list(DATASET_CONFIGS[_DT(ds_name)].valid_labels)
+                                labels = list(DATASET_CONFIGS[_DT(ds_name)].valid_labels or [])
                             except (ValueError, KeyError):
+                                continue
+                            if not labels:      # QA / label-free datasets have no symbols
                                 continue
                             offset = slot_offsets.get(ds_name, 0)
                             slot_indices = list(range(offset, offset + len(labels)))
@@ -490,7 +508,15 @@ def main():
     parser.add_argument("--output_dir", type=str, default=None)
     parser.add_argument("--run_name", type=str, required=True)
     parser.add_argument("--validation_modes", type=str, default=None,
-                        help="Override validation modes from checkpoint (e.g. original,fixed,fresh)")
+                        help="Override validation modes from checkpoint (e.g. original,fixed,fresh,flipped)")
+    parser.add_argument("--val_flip_seed", type=int, default=0,
+                        help="Seed for 'flipped' validation mode real-label derangement (same seed = same flip across models)")
+    parser.add_argument("--no_legend", action="store_true",
+                        help="Strip label descriptions from the prompt at eval (ablation: does the description carry the work?)")
+    parser.add_argument("--fewshot_mode", type=str, default=None, choices=["text", "speech"],
+                        help="Few-shot exemplar modality at eval (text | speech)")
+    parser.add_argument("--fewshot_per_class", action="store_true",
+                        help="Few-shot: num_examples PER class (full coverage) vs total (class-balanced)")
     parser.add_argument("--symbol_map_file", type=str, default=None,
                         help="JSON file with symbol overrides {ds_name: {label: symbol}}; merged over checkpoint mappings")
     parser.add_argument("--metrics_dir", type=str, default=None,
@@ -511,6 +537,10 @@ def main():
             run_name=args.run_name,
             output_dir=args.output_dir,
             validation_modes=args.validation_modes,
+            val_flip_seed=args.val_flip_seed,
+            no_legend=args.no_legend,
+            fewshot_mode=args.fewshot_mode,
+            fewshot_per_class=args.fewshot_per_class,
             num_workers=args.num_workers,
             val_batch_size=args.val_batch_size,
             symbol_map_file=args.symbol_map_file,

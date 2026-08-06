@@ -12,6 +12,13 @@ class DatasetType(str, Enum):
     ESD = "esd"
     CREMAD = "cremad"
     RAVDESS_SONG = "ravdess_song"
+    SKIT_S2I = "skit_s2i"
+    SPEECH_COMMANDS = "speech_commands"
+    MINDS14_EN = "minds14_en"
+    MINDS14_FR = "minds14_fr"
+    MINDS14_KO = "minds14_ko"
+    SPRSOUND = "sprsound"
+    HEYSQUAD = "heysquad"
 
 
 class DatasetSplit(Enum):
@@ -32,6 +39,7 @@ class DatasetConfig:
     audio_lookup_paths: Dict[DatasetSplit, str] = None
     label_mapping: Dict[str, str] = None
     max_new_tokens: int = 8
+    task_type: str = "classification"   # "classification" | "qa" (free-form extractive answer → EM/token-F1)
 
     def get_path(self, split: DatasetSplit) -> str:
         return self.paths[split]
@@ -50,6 +58,11 @@ from .ravdess_config import RAVDESS_CONFIG
 from .esd_config import ESD_CONFIG
 from .cremad_config import CREMAD_CONFIG
 from .ravdess_song_config import RAVDESS_SONG_CONFIG
+from .skit_s2i_config import SKIT_S2I_CONFIG
+from .speech_commands_config import SPEECH_COMMANDS_CONFIG
+from .minds14_config import MINDS14_EN_CONFIG, MINDS14_FR_CONFIG, MINDS14_KO_CONFIG
+from .sprsound_config import SPRSOUND_CONFIG
+from .heysquad_config import HEYSQUAD_CONFIG
 
 DATASET_CONFIGS: Dict[DatasetType, DatasetConfig] = {
     DatasetType.VOXCELEB: VOXCELEB_CONFIG,
@@ -60,6 +73,13 @@ DATASET_CONFIGS: Dict[DatasetType, DatasetConfig] = {
     DatasetType.ESD: ESD_CONFIG,
     DatasetType.CREMAD: CREMAD_CONFIG,
     DatasetType.RAVDESS_SONG: RAVDESS_SONG_CONFIG,
+    DatasetType.SKIT_S2I: SKIT_S2I_CONFIG,
+    DatasetType.SPEECH_COMMANDS: SPEECH_COMMANDS_CONFIG,
+    DatasetType.MINDS14_EN: MINDS14_EN_CONFIG,
+    DatasetType.MINDS14_FR: MINDS14_FR_CONFIG,
+    DatasetType.MINDS14_KO: MINDS14_KO_CONFIG,
+    DatasetType.SPRSOUND: SPRSOUND_CONFIG,
+    DatasetType.HEYSQUAD: HEYSQUAD_CONFIG,
 }
 
 

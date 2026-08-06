@@ -44,15 +44,16 @@ def load_datasets_for_config(config: TrainingConfig, inference_mode: bool = Fals
         try:
             dataset_type = DatasetType(dataset_name)
             if inference_mode:
-                logger.info("Loading test split for %s", dataset_name)
-                full_test_dataset = load_dataset(dataset_type, split="test")
+                split = getattr(config.data_config, "split", "test") or "test"
+                logger.info("Loading %s split for %s", split, dataset_name)
+                full_test_dataset = load_dataset(dataset_type, split=split)
                 if config.data_config.max_samples > 0:
                     test_samples = min(config.data_config.max_samples, len(full_test_dataset))
                     val_datasets[dataset_type] = full_test_dataset.select(range(test_samples))
                 else:
                     val_datasets[dataset_type] = full_test_dataset
                 train_datasets[dataset_type] = None
-                logger.info("Loaded %s TEST: %d samples", dataset_name, len(val_datasets[dataset_type]))
+                logger.info("Loaded %s %s: %d samples", dataset_name, split.upper(), len(val_datasets[dataset_type]))
             else:
                 logger.info("Loading train split for %s", dataset_name)
                 full_train_dataset = load_dataset(dataset_type, split="train")
@@ -113,12 +114,15 @@ def create_combined_dataloader(
             input_mode=config.data_config.input_mode,
             fewshot_mode=config.data_config.fewshot_mode,
             num_examples=num_examples if num_examples is not None else config.data_config.num_examples,
+            num_examples_min=config.data_config.num_examples_min,
             random_examples=False,
             split=DatasetSplit.TRAIN if is_training else DatasetSplit.TEST,
             model_type=config.model_type.value,
             run_name=config.run_name,
             randomize_swap=False,
             is_training=is_training,
+            no_legend=config.data_config.no_legend,
+            fewshot_per_class=config.data_config.fewshot_per_class,
         )
 
     combined_dataset = MultiTaskDataset(
