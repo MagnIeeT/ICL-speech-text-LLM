@@ -118,7 +118,7 @@ def get_dataset_info(batch: Dict, fallback_labels: Optional[List[str]] = None) -
     ds_name_str = ds.value if hasattr(ds, "value") else str(ds)
     for dt_enum, ds_cfg in DATASET_CONFIGS.items():
         if dt_enum.value == ds_name_str:
-            return ds_name_str, sorted(list(ds_cfg.valid_labels))
+            return ds_name_str, sorted(list(ds_cfg.valid_labels or []))
     return ds_name_str, (fallback_labels or [])
 
 

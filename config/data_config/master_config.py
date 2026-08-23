@@ -19,6 +19,16 @@ class DatasetType(str, Enum):
     MINDS14_KO = "minds14_ko"
     SPRSOUND = "sprsound"
     HEYSQUAD = "heysquad"
+    # custom-taxonomy eval (LLM clustering into user-defined clusters) — 3 datasets × 3 label styles
+    MINDS14_FR_CAT_MEAN = "minds14_fr_cat_mean"
+    MINDS14_FR_CAT_NEU = "minds14_fr_cat_neu"
+    MINDS14_FR_CAT_SYM = "minds14_fr_cat_sym"
+    MINDS14_KO_CAT_MEAN = "minds14_ko_cat_mean"
+    MINDS14_KO_CAT_NEU = "minds14_ko_cat_neu"
+    MINDS14_KO_CAT_SYM = "minds14_ko_cat_sym"
+    SKIT_CAT_MEAN = "skit_cat_mean"
+    SKIT_CAT_NEU = "skit_cat_neu"
+    SKIT_CAT_SYM = "skit_cat_sym"
 
 
 class DatasetSplit(Enum):
@@ -63,6 +73,7 @@ from .speech_commands_config import SPEECH_COMMANDS_CONFIG
 from .minds14_config import MINDS14_EN_CONFIG, MINDS14_FR_CONFIG, MINDS14_KO_CONFIG
 from .sprsound_config import SPRSOUND_CONFIG
 from .heysquad_config import HEYSQUAD_CONFIG
+from .custom_taxonomy_config import build_configs as _build_cat_configs
 
 DATASET_CONFIGS: Dict[DatasetType, DatasetConfig] = {
     DatasetType.VOXCELEB: VOXCELEB_CONFIG,
@@ -80,6 +91,7 @@ DATASET_CONFIGS: Dict[DatasetType, DatasetConfig] = {
     DatasetType.MINDS14_KO: MINDS14_KO_CONFIG,
     DatasetType.SPRSOUND: SPRSOUND_CONFIG,
     DatasetType.HEYSQUAD: HEYSQUAD_CONFIG,
+    **_build_cat_configs(),
 }
 
 

@@ -10,7 +10,7 @@ if [[ -f "${PROJECT_ROOT}/.env" ]]; then
     set -a; source "${PROJECT_ROOT}/.env"; set +a
 fi
 
-MODEL_TYPE="${MODEL_TYPE:-flamingo}"
+MODEL_TYPE="${MODEL_TYPE:-qwen}"
 _DEFAULT_CONDA_ENV="qwen"
 if [[ "${MODEL_TYPE}" == "flamingo" ]]; then _DEFAULT_CONDA_ENV="flamingo"; fi
 CONDA_ENV="${CONDA_ENV:-${_DEFAULT_CONDA_ENV}}"
@@ -19,9 +19,13 @@ CONDA_ENV="${CONDA_ENV:-${_DEFAULT_CONDA_ENV}}"
 # NOTE: speech_commands is a capability probe with no legend → its `fresh` column is
 # meaningless (ignore it); only its `original` (transcription) number matters.
 # voxpopuli is intentionally excluded (AF3-seen + sits at the floor).
-DATASET_TYPE="${DATASET_TYPE:-hvb-cremad-ravdess_song-skit_s2i-speech_commands-minds14_en-minds14_fr-minds14_ko}"
+DATASET_TYPE="${DATASET_TYPE:-hvb-cremad-ravdess_song-skit_s2i-minds14_en-minds14_fr-minds14_ko-sprsound-heysquad-speech_commands}"
+# DATASET_TYPE="${DATASET_TYPE:-sprsound-heysquad}"
+# Clustering eval (LLM clustering into user-defined clusters) — 9 = fr/ko/skit × {meaningful,neutral,symbol}.
+# Run with: VALIDATION_MODES=original NUM_EXAMPLES=0 NO_LEGEND=false  (definitions must stay in the prompt)
+# DATASET_TYPE="${DATASET_TYPE:-minds14_fr_cat_mean-minds14_fr_cat_neu-minds14_fr_cat_sym-minds14_ko_cat_mean-minds14_ko_cat_neu-minds14_ko_cat_sym-skit_cat_mean-skit_cat_neu-skit_cat_sym}"
 DEVICE="${DEVICE:-cuda:0}"
-CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-2}"
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  hvb+cremad CHECKPOINT PRESETS — best training-original epoch per seed.
@@ -57,10 +61,49 @@ CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-2}"
 # CKPT_DATE=2026-08-02 TRAIN_RUN=112912_af_h-cr-m14en_dpi_ha EPOCH=5  # dpi   seed2
 # CKPT_DATE=2026-08-02 TRAIN_RUN=113131_af_h-cr-m14en_dpi_ha EPOCH=1  # dpi   seed3
 # CKPT_DATE=2026-08-02 TRAIN_RUN=112544_af_h-cr-m14en_nosym  EPOCH=4  # nosym seed1
-CKPT_DATE=2026-08-02 TRAIN_RUN=112555_af_h-cr-m14en_nosym  EPOCH=5  # nosym seed2
+# CKPT_DATE=2026-08-02 TRAIN_RUN=112555_af_h-cr-m14en_nosym  EPOCH=5  # nosym seed2
 #   (+ untrained: uncomment UNTRAINED=true above)
+# ──────────────────────────────────────────────────────────────────────────────
+#  3-TASK 3×3 CROSS-CONDITION GRID — B/C-trained off-diagonals (best train-original epoch).
+#  Uncomment ONE line, prepend the eval condition, run. Conditions (see hpc/eval_grid.md):
+#    eval-A  NUM_EXAMPLES=0 NO_LEGEND=false
+#    eval-B  NUM_EXAMPLES=1 FEWSHOT_PER_CLASS=true NO_LEGEND=false
+#    eval-C  NUM_EXAMPLES=1 FEWSHOT_PER_CLASS=true NO_LEGEND=true
+#  B-trained (legend+fs) → run eval-A + eval-C   |   C-trained (fs-only) → run eval-A + eval-B
+#  dpi B (legend+fs)
+# CKPT_DATE=2026-08-06 TRAIN_RUN=184309_af_h-cr-m14en_dpi_ha_fs1t     EPOCH=5  # dpi   B seed1
+# CKPT_DATE=2026-08-06 TRAIN_RUN=184319_af_h-cr-m14en_dpi_ha_fs1t     EPOCH=5  # dpi   B seed2
+# CKPT_DATE=2026-08-06 TRAIN_RUN=184454_af_h-cr-m14en_dpi_ha_fs1t     EPOCH=5  # dpi   B seed3
+#  dpi C (fewshot-only)
+# CKPT_DATE=2026-08-06 TRAIN_RUN=185105_af_h-cr-m14en_dpi_ha_nl_fs1t  EPOCH=4  # dpi   C seed1
+# CKPT_DATE=2026-08-06 TRAIN_RUN=185112_af_h-cr-m14en_dpi_ha_nl_fs1t  EPOCH=5  # dpi   C seed2
+# CKPT_DATE=2026-08-06 TRAIN_RUN=185119_af_h-cr-m14en_dpi_ha_nl_fs1t  EPOCH=5  # dpi   C seed3
+#  nosym B (legend+fs)
+# CKPT_DATE=2026-08-07 TRAIN_RUN=100621_af_h-cr-m14en_nosym_fs1t      EPOCH=5  # nosym B seed1
+# CKPT_DATE=2026-08-07 TRAIN_RUN=100738_af_h-cr-m14en_nosym_fs1t      EPOCH=5  # nosym B seed2
+# CKPT_DATE=2026-08-07 TRAIN_RUN=100829_af_h-cr-m14en_nosym_fs1t      EPOCH=5  # nosym B seed3
+#  nosym C (fewshot-only)
+# CKPT_DATE=2026-08-06 TRAIN_RUN=185143_af_h-cr-m14en_nosym_nl_fs1t   EPOCH=5  # nosym C seed1
+# CKPT_DATE=2026-08-07 TRAIN_RUN=100544_af_h-cr-m14en_nosym_nl_fs1t   EPOCH=4  # nosym C seed2
+# CKPT_DATE=2026-08-07 TRAIN_RUN=100549_af_h-cr-m14en_nosym_nl_fs1t   EPOCH=5  # nosym C seed3
+# ──────────────────────────────────────────────────────────────────────────────
+#  QWEN2-AUDIO 3-TASK (hvb+cremad+minds14_en) — main table, eval-A (val).
+#  Run each with:  MODEL_TYPE=qwen VALIDATION_MODES=original,fresh NUM_EXAMPLES=0 NO_LEGEND=false SPLIT=validation
+#  (eval-A = legend ON, zero-shot; NO_LEGEND=false forces the definition into the prompt even for the no-legend Wei ckpts.)
+#  Wei (Symbol Tuning) — RUN THESE NOW for the pending eval-A cell:
+CKPT_DATE=2026-08-23 TRAIN_RUN=004014_qa_h-cr-m14en_dpi_ha_nl_fs1t EPOCH=4  # qwen Wei  seed1
+# CKPT_DATE=2026-08-23 TRAIN_RUN=004029_qa_h-cr-m14en_dpi_ha_nl_fs1t EPOCH=3  # qwen Wei  seed2
+#  DGST (n=3)
+# CKPT_DATE=2026-08-23 TRAIN_RUN=003002_qa_h-cr-m14en_dpi_ha EPOCH=3  # qwen DGST seed1
+# CKPT_DATE=2026-08-23 TRAIN_RUN=003016_qa_h-cr-m14en_dpi_ha EPOCH=2  # qwen DGST seed2
+# CKPT_DATE=2026-08-23 TRAIN_RUN=003227_qa_h-cr-m14en_dpi_ha EPOCH=3  # qwen DGST seed3
+#  Instruction Tuning / nosym (n=2)
+# CKPT_DATE=2026-08-23 TRAIN_RUN=004932_qa_h-cr-m14en_nosym EPOCH=3  # qwen IT   seed1
+# CKPT_DATE=2026-08-23 TRAIN_RUN=005022_qa_h-cr-m14en_nosym EPOCH=4  # qwen IT   seed2
+#  untrained base Qwen (n=1):  UNTRAINED=true MODEL_TYPE=qwen
 # ══════════════════════════════════════════════════════════════════════════════
 
+CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-5}"
 TRAIN_RUN="${TRAIN_RUN:-203511_af_h-cremad_dpi_ha}"
 EPOCH="${EPOCH:-4}"
 CKPT_DATE="${CKPT_DATE:-2026-07-30}"
@@ -75,14 +118,15 @@ elif [[ -z "${CHECKPOINT_PATH:-}" ]]; then
     fi
 fi
 MAX_VAL_SAMPLES="${MAX_VAL_SAMPLES:-500}"                                         # samples per dataset (0 = full val set)
-NUM_EXAMPLES="${NUM_EXAMPLES:-1}"                                                  # few-shot examples in eval prompt (0 = zero-shot)
+NUM_EXAMPLES="${NUM_EXAMPLES:-0}"                                                  # few-shot examples in eval prompt (0 = zero-shot)
 FEWSHOT_MODE="${FEWSHOT_MODE:-text}"                                               # few-shot exemplar modality: text | speech
 FEWSHOT_PER_CLASS="${FEWSHOT_PER_CLASS:-true}"                                    # true = NUM_EXAMPLES per class (full coverage); false = total (class-balanced)
-NUM_WORKERS="${NUM_WORKERS:-1}"
+NUM_WORKERS="${NUM_WORKERS:-2}"
 VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-4}"
-VALIDATION_MODES="${VALIDATION_MODES:-fresh}"                                           # original,fixed,fresh,flipped
+VALIDATION_MODES="${VALIDATION_MODES:-original, fresh}"                                           # original,fixed,fresh,flipped
 VAL_FLIP_SEED="${VAL_FLIP_SEED:-0}"                                                       # 'flipped' mode real-label derangement seed (same seed = same flip across models)
 NO_LEGEND="${NO_LEGEND:-false}"                                                           # true = strip label descriptions at eval (ablation: does the description carry the work?)
+INPUT_MODE="${INPUT_MODE:-text_only}"                                                   # speech_only (audio) | text_only (transcription as text; Wei-style text ablation)
 SPLIT="${SPLIT:-validation}"                                                            # test | validation
 
 # Symbol map probe — swap to any of:
@@ -113,6 +157,11 @@ SHORT_DATASET_TYPE="${SHORT_DATASET_TYPE//minds14_fr/m14fr}"
 SHORT_DATASET_TYPE="${SHORT_DATASET_TYPE//minds14_ko/m14ko}"
 SHORT_DATASET_TYPE="${SHORT_DATASET_TYPE//sprsound/spr}"
 SHORT_DATASET_TYPE="${SHORT_DATASET_TYPE//heysquad/hsq}"
+# clustering-eval datasets → compact tags (run AFTER minds14_fr/ko already shortened above)
+SHORT_DATASET_TYPE="${SHORT_DATASET_TYPE//_cat_mean/Cme}"
+SHORT_DATASET_TYPE="${SHORT_DATASET_TYPE//_cat_neu/Cne}"
+SHORT_DATASET_TYPE="${SHORT_DATASET_TYPE//_cat_sym/Csy}"
+SHORT_DATASET_TYPE="${SHORT_DATASET_TYPE//skit/sk}"
 
 # Extract epoch number from checkpoint filename (e.g. lora_epoch1_phase0.pt → 1)
 if [[ "${CHECKPOINT_PATH}" =~ epoch([0-9]+) ]]; then
@@ -200,6 +249,7 @@ python inference.py \
     --val_flip_seed "${VAL_FLIP_SEED}" \
     $( [[ "${NO_LEGEND}" == "true" ]] && printf '%s' "--no_legend" ) \
     --split "${SPLIT}" \
+    --input_mode "${INPUT_MODE}" \
     --metrics_dir "${METRICS_DIR}" \
     $( [[ -n "${SYMBOL_MAP_FILE}" ]] && printf '%s %s' "--symbol_map_file" "${SYMBOL_MAP_FILE}" ) \
     >> "${LOG_FILE}" 2>&1

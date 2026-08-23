@@ -49,6 +49,7 @@ class InferenceOrchestrator:
         no_legend: bool = False,
         fewshot_mode: Optional[str] = None,
         fewshot_per_class: bool = False,
+        input_mode: str = "speech_only",
     ):
         self.checkpoint_path = checkpoint_path
         self.dataset_type = dataset_type
@@ -61,6 +62,7 @@ class InferenceOrchestrator:
         self.no_legend = no_legend
         self.fewshot_mode = fewshot_mode
         self.fewshot_per_class = fewshot_per_class
+        self.input_mode = input_mode
         self.run_name = run_name
         self.num_workers = num_workers
         self.val_batch_size = val_batch_size
@@ -146,6 +148,7 @@ class InferenceOrchestrator:
             if self.fewshot_mode:
                 self.config.data_config.fewshot_mode = self.fewshot_mode
             self.config.data_config.fewshot_per_class = self.fewshot_per_class
+            self.config.data_config.input_mode = self.input_mode
 
             # Auto-detect D-SPO from checkpoint — no flag needed
             if checkpoint.get("router_state") is not None:
@@ -523,6 +526,8 @@ def main():
                         help="Directory for metrics/predictions output (dated subfolder recommended)")
     parser.add_argument("--split", type=str, default="test", choices=["test", "validation"],
                         help="Dataset split to run inference on")
+    parser.add_argument("--input_mode", type=str, default="speech_only", choices=["speech_only", "text_only"],
+                        help="Query modality at eval: speech_only (audio) | text_only (transcription as text, no audio)")
 
     args = parser.parse_args()
 
@@ -546,6 +551,7 @@ def main():
             symbol_map_file=args.symbol_map_file,
             metrics_dir=args.metrics_dir,
             split=args.split,
+            input_mode=args.input_mode,
         )
 
         results = orchestrator.run_complete_inference()

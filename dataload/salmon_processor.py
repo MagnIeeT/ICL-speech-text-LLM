@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 class SalmonProcessor(ModelProcessor):
     """Processor for SALMONN model. Handles audio features and modular tokenization."""
 
-    def __init__(self, tokenizer, max_length: int = 512, symbol_manager=None):
+    def __init__(self, tokenizer, max_length: int = 1024, symbol_manager=None):
         super().__init__(symbol_manager=symbol_manager)
         from transformers import WhisperFeatureExtractor
 

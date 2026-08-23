@@ -61,6 +61,15 @@ Key variables:
 - `VOXCELEB_TRAIN_PATH`, `HVB_TRAIN_PATH`, etc. — dataset split paths
 - `BASE_OUTPUT_DIR`, `CHECKPOINT_DIR`, `LOGS_DIR`
 
+See `.env.example` for the full list of keys (copy it to `.env` and fill in real paths).
+
+**3. SALMONN weights** (only for `--model_type salmonn`):
+- `salmonn_v1.pth` → `SALMONN_CKPT_PATH` — from [tsinghua-ee/SALMONN](https://huggingface.co/tsinghua-ee/SALMONN)
+- BEATs `cpt2` → `BEATS_CKPT_PATH` — from [WeiChihChen/BEATs_iter3_plus_AS2M_finetuned_on_AS2M_cpt2](https://huggingface.co/WeiChihChen/BEATs_iter3_plus_AS2M_finetuned_on_AS2M_cpt2)
+- Whisper (`openai/whisper-large-v2`) and Vicuna (`lmsys/vicuna-13b-v1.1`) auto-download from their HF ids on first run.
+
+SALMONN runs in the `qwen` conda env (shares `transformers==4.45.2`); no separate env is required.
+
 ## Training
 
 ### HPC (SLURM)
@@ -108,7 +117,9 @@ python train.py \
 | `--dynamic_symbols` | Generate new symbol mappings each epoch |
 | `--symbol_update_strategy` | `per_epoch` (default) or `per_instance` |
 | `--swap_labels` | Shuffle label→symbol assignments (see Swap Mode below) |
-| `--validation_modes` | Comma-separated: `fixed`, `original`, `fresh` (default: all three) |
+| `--num_symbol_mappings` | Pool of pre-generated label→symbol maps; `per_instance` samples one per example |
+| `--no_legend` | Strip label definitions from the prompt (exemplar-only, Wei-style). Default keeps definitions (definition-guided) |
+| `--validation_modes` | Comma-separated: `fixed`, `original`, `fresh`, `flipped` (default: all) |
 
 ### Differentiable Symbolic Preference Optimization (D-SPO)
 | Argument | Default | Description |
@@ -159,20 +170,27 @@ Three modes run sequentially each epoch (configurable via `--validation_modes`):
 |---|---|
 | `original` | Original label names — tests whether symbol training hurt base capability |
 | `fixed` | Same symbols used during training — tests how well the model learned the mapping |
-| `fresh` | Brand new symbols never seen in training — tests whether the model learned to use in-context mappings generally |
+| `fresh` | Brand new symbols never seen in training — tests whether the model follows the in-context definition for a novel label |
+| `flipped` | Real labels paired with deranged (contradictory) definitions — tests steerability: does the model follow the definition or revert to its label prior |
 
 **Primary metric:** `macro_f1_with_invalid` — samples with out-of-vocabulary true labels (e.g. `disagreement` in VoxCeleb) are excluded from both metrics. Invalid model predictions (outputs not in the valid label set) are counted as wrong. `avg_score` in epoch summaries reflects the primary (first configured) validation mode, averaged across datasets.
 
 ## Active Datasets
 
-| Dataset | Task | Labels |
+| Dataset | Task | Role |
 |---|---|---|
-| VoxCeleb | Sentiment | positive, negative, neutral |
-| HVB | Dialogue Acts | ~34 act types |
-| VoxPopuli | Named Entity | Multi-label |
-| MELD-Emotion | Emotion | 7 emotion classes |
+| HVB | Dialogue acts (~34) | Trained |
+| CREMA-D | Speech emotion | Trained |
+| MInDS-14 (en) | Banking intent | Trained |
+| MInDS-14 (fr / ko) | Banking intent | Held-out |
+| Skit-S2I | Speech-to-intent | Held-out |
+| RAVDESS-Song | Song emotion | Held-out |
+| Speech Commands | Keyword spotting | Held-out |
+| SPRSound | Respiratory-sound classification | Held-out |
+| HeySQuAD | Spoken question answering | Held-out (generative) |
+| VoxCeleb / VoxPopuli / MELD / RAVDESS / ESD | Sentiment / intent / emotion | Additional (configured) |
 
-Dataset configs in `config/data_config/`. Register new datasets in `config/data_config/master_config.py`.
+Dataset configs in `config/data_config/`. Register new datasets in `config/data_config/master_config.py`. User-defined 3-cluster taxonomies for the clustering eval are built by `utils/build_custom_taxonomy.py`.
 
 ## Checkpoints
 

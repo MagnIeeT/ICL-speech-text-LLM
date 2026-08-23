@@ -25,7 +25,7 @@ def _pad_sequence(tensors: List[torch.Tensor], pad_value: int = 0, padding_side:
 class QwenProcessor(ModelProcessor):
     """Processor for Qwen2 audio model. Handles audio features and modular tokenization."""
 
-    def __init__(self, processor, tokenizer=None, max_length: int = 512, symbol_manager=None):
+    def __init__(self, processor, tokenizer=None, max_length: int = 1024, symbol_manager=None):
         super().__init__(symbol_manager=symbol_manager)
         self.processor = processor
         self.tokenizer = tokenizer if tokenizer is not None else processor.tokenizer
