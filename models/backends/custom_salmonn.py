@@ -36,7 +36,10 @@ class CustomSalmonn(nn.Module):
         whisper_path = whisper_path or get_env_path("WHISPER_MODEL_NAME")
         beats_path = beats_path or get_env_path("BEATS_CKPT_PATH")
         salmonn_ckpt = get_env_path("SALMONN_CKPT_PATH")
-        self.use_fp16 = False
+        # fp16 forward: enables autocast + casts audio/embedding tensors to fp16 so the
+        # LLM matmuls use tensor cores. With this False the fp16 weights meet fp32 inputs
+        # and every matmul upcasts to fp32 (no tensor cores) → ~4x slower forward.
+        self.use_fp16 = True
         
         salmonn_config = {
             "llama_path": llama_path,

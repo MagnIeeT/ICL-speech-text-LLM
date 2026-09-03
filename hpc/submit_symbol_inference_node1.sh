@@ -13,6 +13,7 @@ fi
 MODEL_TYPE="${MODEL_TYPE:-qwen}"
 _DEFAULT_CONDA_ENV="qwen"
 if [[ "${MODEL_TYPE}" == "flamingo" ]]; then _DEFAULT_CONDA_ENV="flamingo"; fi
+if [[ "${MODEL_TYPE}" == "salmonn" ]];  then _DEFAULT_CONDA_ENV="salmonn";  fi
 CONDA_ENV="${CONDA_ENV:-${_DEFAULT_CONDA_ENV}}"
 # Eval battery — 8 datasets, evaluated original,fresh in one run.
 #   trained tasks (reference): hvb, cremad   |   held-out: ravdess_song, skit_s2i, speech_commands, minds14_en/fr/ko
