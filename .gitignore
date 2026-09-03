@@ -18,3 +18,9 @@ eval_asr_tasks/data/
 eval_asr_tasks/logs/
 eval_asr_tasks/*.json
 eval_asr_tasks/*.log
+
+# Local docs / paper artifacts (do not push)
+CLAUDE.md
+RESEARCH_APPROACH.md
+DATASET_CANDIDATES.md
+dgst_overview*
