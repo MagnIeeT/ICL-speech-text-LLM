@@ -102,9 +102,11 @@ class BaseMultiTaskDataset(Dataset):
         is_training: bool = False,
         no_legend: bool = False,
         fewshot_per_class: bool = False,
+        definition_variant: str = "orig",
     ):
         self.no_legend = no_legend
         self.fewshot_per_class = fewshot_per_class
+        self.definition_variant = definition_variant
         self.dataset_type = dataset_type
         self.dataset = dataset
         self.processor = processor
@@ -305,6 +307,11 @@ class BaseMultiTaskDataset(Dataset):
                 formatted_examples.append(fex)
 
         template = current_config.prompt_template
+        # Definition-sensitivity ablation: swap in an alternate-wording legend if requested
+        # and available for this dataset. Falls back to the original template otherwise.
+        _variant = getattr(self, "definition_variant", "orig")
+        if _variant and _variant != "orig" and getattr(current_config, "prompt_variants", None):
+            template = current_config.prompt_variants.get(_variant, template)
         if getattr(self, "no_legend", False):
             template = _strip_legend(template)
         # QA: the reading passage is TEXT (embedded into the system prompt via {text}); the

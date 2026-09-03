@@ -123,6 +123,7 @@ def create_combined_dataloader(
             is_training=is_training,
             no_legend=config.data_config.no_legend,
             fewshot_per_class=config.data_config.fewshot_per_class,
+            definition_variant=getattr(config.data_config, "definition_variant", "orig"),
         )
 
     combined_dataset = MultiTaskDataset(

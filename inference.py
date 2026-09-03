@@ -50,6 +50,7 @@ class InferenceOrchestrator:
         fewshot_mode: Optional[str] = None,
         fewshot_per_class: bool = False,
         input_mode: str = "speech_only",
+        definition_variant: str = "orig",
     ):
         self.checkpoint_path = checkpoint_path
         self.dataset_type = dataset_type
@@ -63,6 +64,7 @@ class InferenceOrchestrator:
         self.fewshot_mode = fewshot_mode
         self.fewshot_per_class = fewshot_per_class
         self.input_mode = input_mode
+        self.definition_variant = definition_variant
         self.run_name = run_name
         self.num_workers = num_workers
         self.val_batch_size = val_batch_size
@@ -149,6 +151,7 @@ class InferenceOrchestrator:
                 self.config.data_config.fewshot_mode = self.fewshot_mode
             self.config.data_config.fewshot_per_class = self.fewshot_per_class
             self.config.data_config.input_mode = self.input_mode
+            self.config.data_config.definition_variant = self.definition_variant
 
             # Auto-detect D-SPO from checkpoint — no flag needed
             if checkpoint.get("router_state") is not None:
@@ -520,6 +523,8 @@ def main():
                         help="Few-shot exemplar modality at eval (text | speech)")
     parser.add_argument("--fewshot_per_class", action="store_true",
                         help="Few-shot: num_examples PER class (full coverage) vs total (class-balanced)")
+    parser.add_argument("--definition_variant", type=str, default="orig",
+                        help="Definition-sensitivity ablation: select an alternate-wording legend from a dataset's prompt_variants (e.g. paraphrase, terse); 'orig' = default template")
     parser.add_argument("--symbol_map_file", type=str, default=None,
                         help="JSON file with symbol overrides {ds_name: {label: symbol}}; merged over checkpoint mappings")
     parser.add_argument("--metrics_dir", type=str, default=None,
@@ -552,6 +557,7 @@ def main():
             metrics_dir=args.metrics_dir,
             split=args.split,
             input_mode=args.input_mode,
+            definition_variant=getattr(args, "definition_variant", "orig"),
         )
 
         results = orchestrator.run_complete_inference()

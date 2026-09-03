@@ -84,6 +84,7 @@ class DataConfig:
     fewshot_mode: str = "text"        # text | speech
     no_legend: bool = False           # strip label descriptions from the prompt (Wei-style: meaning from exemplars/symbols only)
     fewshot_per_class: bool = False   # few-shot: True → num_examples PER class (full coverage); False → num_examples TOTAL (class-balanced)
+    definition_variant: str = "orig"  # definition-sensitivity ablation: pick an alternate-wording legend from a dataset's prompt_variants; "orig" = default template
 
 
 from utils.environment import get_env_path
@@ -269,6 +270,7 @@ class TrainingConfig:
             fewshot_mode=getattr(args, "fewshot_mode", "text"),
             no_legend=getattr(args, "no_legend", False),
             fewshot_per_class=getattr(args, "fewshot_per_class", False),
+            definition_variant=getattr(args, "definition_variant", "orig"),
         )
 
         return cls(
@@ -384,6 +386,7 @@ def parse_training_args() -> argparse.Namespace:
     parser.add_argument("--fewshot_mode", type=str, default="text", choices=["text", "speech"], help="Few-shot example modality")
     parser.add_argument("--no_legend", action="store_true", help="Strip label descriptions from the prompt legend (meaning conveyed only by exemplars/symbols; Wei-style)")
     parser.add_argument("--fewshot_per_class", action="store_true", help="Few-shot: num_examples PER class (full coverage) instead of TOTAL (class-balanced)")
+    parser.add_argument("--definition_variant", type=str, default="orig", help="Definition-sensitivity ablation: select an alternate-wording legend from a dataset's prompt_variants (e.g. paraphrase, terse); 'orig' uses the default template")
     parser.add_argument("--use_dpo", action="store_true", help="Use SymDPO trainer instead of cross-entropy")
     parser.add_argument("--dpo_beta", type=float, default=0.1, help="DPO beta (preference margin temperature)")
     parser.add_argument("--no_validate_before_training", action="store_true", help="Skip baseline validation before epoch 1")

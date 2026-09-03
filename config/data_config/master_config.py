@@ -50,6 +50,10 @@ class DatasetConfig:
     label_mapping: Dict[str, str] = None
     max_new_tokens: int = 8
     task_type: str = "classification"   # "classification" | "qa" (free-form extractive answer → EM/token-F1)
+    # Alternate prompt templates for the definition-sensitivity ablation: {variant_name: template}.
+    # Reword only the definition text after each "- label:"; keep label names (symbol swap anchors).
+    # Selected at inference via --definition_variant; None/"orig" uses prompt_template unchanged.
+    prompt_variants: Optional[Dict[str, str]] = None
 
     def get_path(self, split: DatasetSplit) -> str:
         return self.paths[split]
