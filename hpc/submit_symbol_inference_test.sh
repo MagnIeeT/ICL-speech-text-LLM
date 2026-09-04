@@ -54,7 +54,7 @@ DEVICE="${DEVICE:-cuda:0}"
 #  Flipped-label Tuning (Agrawal) = nosym_swap (n=3)  [== section (4); main-table row]
 # CKPT_DATE=2026-08-29 TRAIN_RUN=003509_af_h-cr-m14en_nosym_swap_per_instance EPOCH=2  # AF3 flip-train seed1
 # CKPT_DATE=2026-08-29 TRAIN_RUN=003524_af_h-cr-m14en_nosym_swap_per_instance EPOCH=4  # AF3 flip-train seed2
-# CKPT_DATE=2026-08-29 TRAIN_RUN=003530_af_h-cr-m14en_nosym_swap_per_instance EPOCH=3  # AF3 flip-train seed3
+CKPT_DATE=2026-08-29 TRAIN_RUN=003530_af_h-cr-m14en_nosym_swap_per_instance EPOCH=3  # AF3 flip-train seed3
 # ══════════════════════════════════════════════════════════════════════════════
 #  (2) MAIN TABLE — Qwen2-Audio, 3-task, eval-A, TEST split.
 #      RUN EACH WITH:  MODEL_TYPE=qwen INPUT_MODE=speech_only \
@@ -180,7 +180,7 @@ DEVICE="${DEVICE:-cuda:0}"
 #  1-task = cremad (n=3)
 # CKPT_DATE=2026-07-22 TRAIN_RUN=180126_af_cremad_nosym EPOCH=2  # IT 1-task seed1
 # CKPT_DATE=2026-07-22 TRAIN_RUN=180214_af_cremad_nosym EPOCH=3  # IT 1-task seed2
-CKPT_DATE=2026-07-22 TRAIN_RUN=180547_af_cremad_nosym EPOCH=2  # IT 1-task seed3
+# CKPT_DATE=2026-07-22 TRAIN_RUN=180547_af_cremad_nosym EPOCH=2  # IT 1-task seed3
 #  2-task = hvb+cremad (n=2 only — no more seeds on disk)
 # CKPT_DATE=2026-07-30 TRAIN_RUN=201011_af_h-cremad_nosym EPOCH=3  # IT 2-task seed1
 # CKPT_DATE=2026-07-30 TRAIN_RUN=201026_af_h-cremad_nosym EPOCH=2  # IT 2-task seed2
@@ -193,11 +193,12 @@ CKPT_DATE=2026-07-22 TRAIN_RUN=180547_af_cremad_nosym EPOCH=2  # IT 1-task seed3
 #      RUN EACH k WITH:  MODEL_TYPE=flamingo INPUT_MODE=speech_only VALIDATION_MODES=fresh \
 #        NUM_EXAMPLES=<k> FEWSHOT_PER_CLASS=false NO_LEGEND=false FEWSHOT_MODE=text SPLIT=test
 #      (FEWSHOT_PER_CLASS=false => total-k, the Agrawal protocol; run tag ...fs<k>t (no 'pc'))
+#      k in {1, 5, 10} — spans Agrawal's own 0-5 range and beyond; k=0 = Flip def-only 0.534.
 # ──────────────────────────────────────────────────────────────────────────────
 # CKPT_DATE=2026-08-29 TRAIN_RUN=003509_af_h-cr-m14en_nosym_swap_per_instance EPOCH=2  # Agrawal/Flip seed1
 # CKPT_DATE=2026-08-29 TRAIN_RUN=003524_af_h-cr-m14en_nosym_swap_per_instance EPOCH=4  # Agrawal/Flip seed2
 # CKPT_DATE=2026-08-29 TRAIN_RUN=003530_af_h-cr-m14en_nosym_swap_per_instance EPOCH=3  # Agrawal/Flip seed3
-#  Run all 3 seeds at each k in {1,2,3} = 9 runs.
+#  Run all 3 seeds at each k in {1,5,10} = 9 runs.
 # ══════════════════════════════════════════════════════════════════════════════
 #  (11) DEFINITION-SENSITIVITY ABLATION  [MECHANISM WIRED — just add variant text to configs]
 #      Q: does performance depend on definition WORDING? Vary the legend text (e.g.
@@ -214,7 +215,7 @@ CKPT_DATE=2026-07-22 TRAIN_RUN=180547_af_cremad_nosym EPOCH=2  # IT 1-task seed3
 #      (clustering's mean/neu/sym tests NAME sensitivity — complementary, NOT def wording.)
 # ══════════════════════════════════════════════════════════════════════════════
 
-CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-6}"
+CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-5}"
 TRAIN_RUN="${TRAIN_RUN:-112859_af_h-cr-m14en_dpi_ha}"
 EPOCH="${EPOCH:-4}"
 CKPT_DATE="${CKPT_DATE:-2026-08-02}"
@@ -237,7 +238,7 @@ VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-4}"
 VALIDATION_MODES="${VALIDATION_MODES:-original,fresh}"                            # original,fixed,fresh,flipped
 VAL_FLIP_SEED="${VAL_FLIP_SEED:-0}"
 NO_LEGEND="${NO_LEGEND:-false}"
-DEFINITION_VARIANT="${DEFINITION_VARIANT:-orig}"                                  # def-sensitivity ablation: orig | paraphrase | terse | ... (needs prompt_variants in config)
+DEFINITION_VARIANT="${DEFINITION_VARIANT:-verbose}"                                  # def-sensitivity ablation: orig | paraphrase | terse | verbose (set per run; keys, NOT the _PROMPT_* constant names)
 INPUT_MODE="${INPUT_MODE:-speech_only}"                                           # speech_only (audio, main table) | text_only
 SPLIT="${SPLIT:-test}"                                                            # TEST for final paper numbers
 
@@ -288,7 +289,7 @@ _SPLIT_TAG="${SPLIT:0:3}"
 if [[ "${NUM_EXAMPLES}" == "0" ]]; then
     _FS_TAG="_sh0"
 else
-    _FS_TAG="_fs${NUM_EXAMPLES}${FEWSHOT_MODE:0:1}$( [[ "${FEWSHOT_PER_CLASS}" == "true" ]] && printf 'pc' )"
+    _FS_TAG="_fs${NUM_EXAMPLES}${FEWSHOT_MODE:0:1}$( [[ "${FEWSHOT_PER_CLASS}" == "true" ]] && printf 'pc' || true )"
 fi
 [[ "${NO_LEGEND}" == "true" ]] && _FS_TAG="${_FS_TAG}_nl"
 [[ "${DEFINITION_VARIANT}" != "orig" ]] && _FS_TAG="${_FS_TAG}_dv${DEFINITION_VARIANT}"
@@ -386,8 +387,15 @@ python inference.py \
 # ├─────┼───────────────────────────────────────────┼──────────────────────────────────┼───────┤
 # │ G   │ Qwen flip-train main (after training ×3)  │ eval-A original,fresh            │ 3  (done)   │
 # H 1 task, 2 task 3 task.   11
-# I  Faithful-Agrawal Flip TOTAL-k (§10): 003509/003524/003530 × k=1,2,3, fresh,
+# I  Faithful-Agrawal Flip TOTAL-k (§10): 003509/003524/003530 × k=1,5,10, fresh,
 #    NUM_EXAMPLES=k FEWSHOT_PER_CLASS=false NO_LEGEND=false = 9 runs
 # J  Definition-sensitivity (§11) [PLANNED, needs code]: DGST + Flip × def-wording
 #    variants (orig/paraphrase/terse), fresh held-out. Robustness check.
+# K  AGRAWAL-TRAINED (flip+demos, NEW ckpts AF3×3 + Qwen×3) — after training:
+#    (K1) MAIN-TABLE row, ZERO-SHOT eval-A: 6 runs (AF3×3 + Qwen×3),
+#         MODEL_TYPE=<af|qa> VALIDATION_MODES=original,fresh NUM_EXAMPLES=0 NO_LEGEND=false
+#    (K2) tab:agrawal FEW-SHOT (AF3 demo-trained only) × m in {1,5,10}: 9 runs (3 seeds×3 k),
+#         MODEL_TYPE=flamingo VALIDATION_MODES=original,fresh NUM_EXAMPLES=m \
+#         FEWSHOT_PER_CLASS=false NO_LEGEND=false FEWSHOT_MODE=text
+#    Total = 15 (excl. SALMONN). m=0 row of tab:agrawal = our def-only Flip 0.534 (have).
 # └─────┴───────────────────────────────────────────┴──────────────────────────────────┴───────┘
