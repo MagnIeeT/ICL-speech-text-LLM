@@ -31,7 +31,7 @@ if [[ "${MODEL_TYPE}" == "flamingo" ]]; then _DEFAULT_CONDA_ENV="flamingo"; fi
 if [[ "${MODEL_TYPE}" == "salmonn" ]];  then _DEFAULT_CONDA_ENV="salmonn";  fi
 CONDA_ENV="${CONDA_ENV:-${_DEFAULT_CONDA_ENV}}"                                   # conda env (auto: qwen→qwen, flamingo→flamingo, salmonn→salmonn)
 DEVICE="${DEVICE:-cuda:0}"                                                        # torch device for training
-CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-5}"                                 # which GPU(s) the process can see
+CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"                                 # which GPU(s) the process can see
 OUTPUT_DIR="${OUTPUT_DIR:-${HOME}/training/symbol_training}"                      # root output directory
 CHECKPOINT_DIR="${CHECKPOINT_BASE:-${HOME}/training/symbol_training/checkpoints}/$(date +"%Y-%m-%d")"  # checkpoint directory (dated subfolder)
 LOG_DIR="${LOGS_DIR:-${HOME}/training/logs}/$(date +"%Y-%m-%d")"                 # log directory (dated subfolder)
@@ -53,9 +53,9 @@ MAX_SAMPLES="${MAX_SAMPLES:-0}"                                                 
 VAL_MAX_SAMPLES="${VAL_MAX_SAMPLES:-500}"                                         # max validation samples per dataset (0 = full)
 INPUT_MODE="${INPUT_MODE:-speech_only}"                                           # query modality: speech_only | text_only
 FEWSHOT_MODE="${FEWSHOT_MODE:-text}"                                              # few-shot example modality: text | speech
-NUM_EXAMPLES="${NUM_EXAMPLES:-0}"                                                 # few-shot examples in training prompt (0 = zero-shot; MAX when NUM_EXAMPLES_MIN>0)
-NUM_EXAMPLES_MIN="${NUM_EXAMPLES_MIN:--1}"                                        # >=0 = random per-prompt count U[min,NUM_EXAMPLES] during training (min=0 → some zero-shot; Wei uses 2); -1 = fixed. Eval stays fixed
-FEWSHOT_PER_CLASS="${FEWSHOT_PER_CLASS:-true}"                                   # true = NUM_EXAMPLES per class (full coverage); false = NUM_EXAMPLES total (class-balanced)
+NUM_EXAMPLES="${NUM_EXAMPLES:-10}"                                                 # few-shot examples in training prompt (0 = zero-shot; MAX when NUM_EXAMPLES_MIN>0)
+NUM_EXAMPLES_MIN="${NUM_EXAMPLES_MIN:-0}"                                        # >=0 = random per-prompt count U[min,NUM_EXAMPLES] during training (min=0 → some zero-shot; Wei uses 2); -1 = fixed. Eval stays fixed
+FEWSHOT_PER_CLASS="${FEWSHOT_PER_CLASS:-false}"                                   # true = NUM_EXAMPLES per class (full coverage); false = NUM_EXAMPLES total (class-balanced)
 VAL_NUM_EXAMPLES="${VAL_NUM_EXAMPLES:-0}"                                         # few-shot examples in validation prompt
 NO_LEGEND="${NO_LEGEND:-false}"                                                   # true = strip label descriptions from prompt (Wei-style, meaning from exemplars/symbols only)
 
