@@ -152,7 +152,12 @@ class SymbolTrainingOrchestrator:
         trainable_params = []
         slot_only = self.config.diff_symbol_config.slot_only
         if not slot_only:
-            lora_params = [p for n, p in self.model.named_parameters() if p.requires_grad and "lora" in n.lower()]
+            # Collect ALL unfrozen model params, not just LoRA-named ones. SALMONN unfreezes
+            # the speech Q-Former + speech_llama_proj (freeze_*=False in custom_salmonn.py);
+            # a name filter on "lora" would silently drop them from the optimizer so they
+            # never train. For qwen/flamingo only LoRA is unfrozen, so this is equivalent.
+            # (router params live on self.router and are added separately below.)
+            lora_params = [p for n, p in self.model.named_parameters() if p.requires_grad]
             if lora_params:
                 trainable_params.append({"params": lora_params, "lr": base_lr})
         if self.router is not None:
@@ -162,9 +167,10 @@ class SymbolTrainingOrchestrator:
                 trainable_params.append({"params": router_params, "lr": self.config.diff_symbol_config.router_lr})
         if not trainable_params:
             raise ValueError("No trainable parameters found")
+        n_model = sum(p.numel() for n, p in self.model.named_parameters() if p.requires_grad)
         n_lora = sum(p.numel() for n, p in self.model.named_parameters() if p.requires_grad and "lora" in n.lower())
         n_router = sum(p.numel() for p in self.router.parameters() if p.requires_grad) if self.router else 0
-        logging.info("Optimizer: slot_only=%s  lora_params=%d  router_params=%d  lr=%.2e", slot_only, n_lora, n_router, base_lr)
+        logging.info("Optimizer: slot_only=%s  model_params=%d (of which lora=%d)  router_params=%d  lr=%.2e", slot_only, n_model, n_lora, n_router, base_lr)
         self.optimizer = torch.optim.AdamW(trainable_params, lr=base_lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=self.config.lora_config.weight_decay)
         t_max = remaining_epochs if remaining_epochs is not None else self.config.lora_config.epochs
         steps_per_epoch = max(len(self.train_dataloader) // max(self.config.lora_config.gradient_accumulation_steps, 1), 1)

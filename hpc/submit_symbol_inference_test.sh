@@ -19,7 +19,7 @@ if [[ -f "${PROJECT_ROOT}/.env" ]]; then
     set -a; source "${PROJECT_ROOT}/.env"; set +a
 fi
 
-MODEL_TYPE="${MODEL_TYPE:-flamingo}"  # flamingo | qwen | salmonn
+MODEL_TYPE="${MODEL_TYPE:-salmonn}"  # flamingo | qwen | salmonn
 _DEFAULT_CONDA_ENV="qwen"
 if [[ "${MODEL_TYPE}" == "flamingo" ]]; then _DEFAULT_CONDA_ENV="flamingo"; fi
 if [[ "${MODEL_TYPE}" == "salmonn" ]];  then _DEFAULT_CONDA_ENV="salmonn";  fi
@@ -28,7 +28,9 @@ CONDA_ENV="${CONDA_ENV:-${_DEFAULT_CONDA_ENV}}"
 # Eval battery — trained (reference): hvb, cremad, minds14_en | held-out: skit_s2i,
 # ravdess_song, minds14_fr, minds14_ko (+ speech_commands probe: only its `original`
 # column is meaningful). heysquad/sprsound optional (QA / shelved-medical).
-DATASET_TYPE="${DATASET_TYPE:-hvb-cremad-minds14_en-ravdess_song-skit_s2i-minds14_fr-minds14_ko-speech_commands-sprsound-heysquad}"
+# DATASET_TYPE="${DATASET_TYPE:-hvb-cremad-minds14_en-ravdess_song-skit_s2i-minds14_fr-minds14_ko-speech_commands-sprsound-heysquad}"
+DATASET_TYPE="${DATASET_TYPE:-hvb-cremad-minds14_en-ravdess_song-skit_s2i-minds14_fr-minds14_ko}"
+
 # Clustering eval (9 = fr/ko/skit × {meaningful,neutral,symbol}):
 # DATASET_TYPE="${DATASET_TYPE:-minds14_fr_cat_mean-minds14_fr_cat_neu-minds14_fr_cat_sym-minds14_ko_cat_mean-minds14_ko_cat_neu-minds14_ko_cat_sym-skit_cat_mean-skit_cat_neu-skit_cat_sym}"
 DEVICE="${DEVICE:-cuda:0}"
@@ -54,7 +56,7 @@ DEVICE="${DEVICE:-cuda:0}"
 #  Flipped-label Tuning (Agrawal) = nosym_swap (n=3)  [== section (4); main-table row]
 # CKPT_DATE=2026-08-29 TRAIN_RUN=003509_af_h-cr-m14en_nosym_swap_per_instance EPOCH=2  # AF3 flip-train seed1
 # CKPT_DATE=2026-08-29 TRAIN_RUN=003524_af_h-cr-m14en_nosym_swap_per_instance EPOCH=4  # AF3 flip-train seed2
-CKPT_DATE=2026-08-29 TRAIN_RUN=003530_af_h-cr-m14en_nosym_swap_per_instance EPOCH=3  # AF3 flip-train seed3
+# CKPT_DATE=2026-08-29 TRAIN_RUN=003530_af_h-cr-m14en_nosym_swap_per_instance EPOCH=3  # AF3 flip-train seed3
 # ══════════════════════════════════════════════════════════════════════════════
 #  (2) MAIN TABLE — Qwen2-Audio, 3-task, eval-A, TEST split.
 #      RUN EACH WITH:  MODEL_TYPE=qwen INPUT_MODE=speech_only \
@@ -214,8 +216,35 @@ CKPT_DATE=2026-08-29 TRAIN_RUN=003530_af_h-cr-m14en_nosym_swap_per_instance EPOC
 #      Run name gets a _dv<variant> tag so variants don't collide with orig runs.
 #      (clustering's mean/neu/sym tests NAME sensitivity — complementary, NOT def wording.)
 # ══════════════════════════════════════════════════════════════════════════════
+#  (12) AGRAWAL-TRAINED (flip + definitions + demos, fs5t) — main-table Agrawal row (K1).
+#       Trained NO_SYMBOLS + SWAP_LABELS + 5 demos/instance (hvb-cremad-minds14_en, 5 ep,
+#       best-val epoch kept per seed). ZERO-SHOT eval-A, TEST split.
+#       RUN EACH WITH:  MODEL_TYPE=<qwen|flamingo> INPUT_MODE=speech_only \
+#                       VALIDATION_MODES=original,fresh NUM_EXAMPLES=0 NO_LEGEND=false SPLIT=test
+# ──────────────────────────────────────────────────────────────────────────────
+#  Qwen (n=3)  [DONE 2026-09-05, evaluated + in Tables 1/2/8, best-val epoch per seed]
+# CKPT_DATE=2026-09-05 TRAIN_RUN=120338_qa_h-cr-m14en_nosym_swap_per_instance_fs5t EPOCH=3  # Qwen Agrawal seed1
+# CKPT_DATE=2026-09-05 TRAIN_RUN=120502_qa_h-cr-m14en_nosym_swap_per_instance_fs5t EPOCH=2  # Qwen Agrawal seed2
+# CKPT_DATE=2026-09-05 TRAIN_RUN=120519_qa_h-cr-m14en_nosym_swap_per_instance_fs5t EPOCH=5  # Qwen Agrawal seed3
+#  AF3 (n=3)  [DONE training 2026-09-06, full 5 ep, best-val epoch kept per seed]  RUN WITH MODEL_TYPE=flamingo
+# CKPT_DATE=2026-09-06 TRAIN_RUN=022423_af_h-cr-m14en_nosym_swap_per_instance_fs5t EPOCH=3  # AF3 Agrawal seed1
+# CKPT_DATE=2026-09-06 TRAIN_RUN=023316_af_h-cr-m14en_nosym_swap_per_instance_fs5t EPOCH=4  # AF3 Agrawal seed2
+# CKPT_DATE=2026-09-06 TRAIN_RUN=024900_af_h-cr-m14en_nosym_swap_per_instance_fs5t EPOCH=5  # AF3 Agrawal seed3 (DONE)
+# ══════════════════════════════════════════════════════════════════════════════
+#  (13) SALMONN main-table + baselines — eval-A, TEST split (n=1 scale reference).
+#       Reduced-data (2000/task), 3 epochs, Q-Former trained; best-val epoch per run.
+#       RUN EACH WITH:  MODEL_TYPE=salmonn INPUT_MODE=speech_only \
+#                       VALIDATION_MODES=original,fresh NUM_EXAMPLES=0 NO_LEGEND=false SPLIT=test
+# ──────────────────────────────────────────────────────────────────────────────
+#  Pre-trained (n=1):  UNTRAINED=true MODEL_TYPE=salmonn
+# CKPT_DATE=2026-09-08 TRAIN_RUN=003158_sl_h-cr-m14en_nosym EPOCH=3  # SALMONN Instruction Tuning (best-val ep3)
+# CKPT_DATE=2026-09-07 TRAIN_RUN=231324_sl_h-cr-m14en_dpi_ha EPOCH=2  # SALMONN DG-ICL-Sym (best-val ep2, NOT ep3)
+# CKPT_DATE=2026-09-09 TRAIN_RUN=094658_sl_h-cr-m14en_dpi_ha_nl_fs1t EPOCH=3  # SALMONN Symbol Tuning (Wei)
+# CKPT_DATE=2026-09-09 TRAIN_RUN=094822_sl_h-cr-m14en_nosym_swap_per_instance_fs5t EPOCH=3  # SALMONN Agrawal
+CKPT_DATE=2026-09-15 TRAIN_RUN=224319_sl_h-cr-m14en_nosym_swap_per_instance EPOCH=3  # SALMONN DG-ICL-Flip (best-val ep3)
+# ══════════════════════════════════════════════════════════════════════════════
 
-CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-5}"
+CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-6}"
 TRAIN_RUN="${TRAIN_RUN:-112859_af_h-cr-m14en_dpi_ha}"
 EPOCH="${EPOCH:-4}"
 CKPT_DATE="${CKPT_DATE:-2026-08-02}"
@@ -234,11 +263,11 @@ NUM_EXAMPLES="${NUM_EXAMPLES:-0}"                                               
 FEWSHOT_MODE="${FEWSHOT_MODE:-text}"                                               # few-shot exemplar modality: text | speech
 FEWSHOT_PER_CLASS="${FEWSHOT_PER_CLASS:-true}"
 NUM_WORKERS="${NUM_WORKERS:-1}"
-VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-4}"
+VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-1}"
 VALIDATION_MODES="${VALIDATION_MODES:-original,fresh}"                            # original,fixed,fresh,flipped
 VAL_FLIP_SEED="${VAL_FLIP_SEED:-0}"
 NO_LEGEND="${NO_LEGEND:-false}"
-DEFINITION_VARIANT="${DEFINITION_VARIANT:-verbose}"                                  # def-sensitivity ablation: orig | paraphrase | terse | verbose (set per run; keys, NOT the _PROMPT_* constant names)
+DEFINITION_VARIANT="${DEFINITION_VARIANT:-orig}"                                  # def-sensitivity ablation: orig | paraphrase | terse | verbose (set per run; keys, NOT the _PROMPT_* constant names)
 INPUT_MODE="${INPUT_MODE:-speech_only}"                                           # speech_only (audio, main table) | text_only
 SPLIT="${SPLIT:-test}"                                                            # TEST for final paper numbers
 
@@ -388,14 +417,19 @@ python inference.py \
 # │ G   │ Qwen flip-train main (after training ×3)  │ eval-A original,fresh            │ 3  (done)   │
 # H 1 task, 2 task 3 task.   11
 # I  Faithful-Agrawal Flip TOTAL-k (§10): 003509/003524/003530 × k=1,5,10, fresh,
-#    NUM_EXAMPLES=k FEWSHOT_PER_CLASS=false NO_LEGEND=false = 9 runs
+#    NUM_EXAMPLES=k FEWSHOT_PER_CLASS=false NO_LEGEND=false = 9 runs (done)
 # J  Definition-sensitivity (§11) [PLANNED, needs code]: DGST + Flip × def-wording
-#    variants (orig/paraphrase/terse), fresh held-out. Robustness check.
-# K  AGRAWAL-TRAINED (flip+demos, NEW ckpts AF3×3 + Qwen×3) — after training:
+#    variants (orig/paraphrase/terse), fresh held-out. Robustness check. (done)
+# K  AGRAWAL-TRAINED (flip+demos, fs5t; ckpts in preset §12) — after training:
+#    Qwen×3 DONE (2026-09-05: 120338 ep3 / 120502 ep2 / 120519 ep5). AF3×3 killed, relaunch pending.
 #    (K1) MAIN-TABLE row, ZERO-SHOT eval-A: 6 runs (AF3×3 + Qwen×3),
 #         MODEL_TYPE=<af|qa> VALIDATION_MODES=original,fresh NUM_EXAMPLES=0 NO_LEGEND=false
 #    (K2) tab:agrawal FEW-SHOT (AF3 demo-trained only) × m in {1,5,10}: 9 runs (3 seeds×3 k),
 #         MODEL_TYPE=flamingo VALIDATION_MODES=original,fresh NUM_EXAMPLES=m \
 #         FEWSHOT_PER_CLASS=false NO_LEGEND=false FEWSHOT_MODE=text
 #    Total = 15 (excl. SALMONN). m=0 row of tab:agrawal = our def-only Flip 0.534 (have).
+# L  Flip def-vs-demo row (tab:def-vs-demo, \methodflip{}): 003509(ep2)/003524(ep4)/003530(ep3) ×
+#    {demos-only NUM_EXAMPLES=1 FEWSHOT_PER_CLASS=true NO_LEGEND=true (=fs1tpc_nl) |
+#    def+demos NUM_EXAMPLES=1 FEWSHOT_PER_CLASS=true NO_LEGEND=false (=fs1tpc)}, original,fresh split=test
+#    = 6 runs. (def-only already have = zeroshot Flip 0.534, no re-run.)
 # └─────┴───────────────────────────────────────────┴──────────────────────────────────┴───────┘

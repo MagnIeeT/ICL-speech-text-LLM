@@ -19,7 +19,7 @@ export TRANSFORMERS_OFFLINE=1
 export HF_DATASETS_OFFLINE=1
 
 # --- Model ---
-MODEL_TYPE="${MODEL_TYPE:-qwen}"                                                  # model backend: qwen | salmonn | flamingo
+MODEL_TYPE="${MODEL_TYPE:-salmonn}"                                                  # model backend: qwen | salmonn | flamingo
 
 # --- Infrastructure ---
 # Auto-select conda env based on MODEL_TYPE unless explicitly overridden.
@@ -31,11 +31,11 @@ if [[ "${MODEL_TYPE}" == "flamingo" ]]; then _DEFAULT_CONDA_ENV="flamingo"; fi
 if [[ "${MODEL_TYPE}" == "salmonn" ]];  then _DEFAULT_CONDA_ENV="salmonn";  fi
 CONDA_ENV="${CONDA_ENV:-${_DEFAULT_CONDA_ENV}}"                                   # conda env (auto: qwen→qwen, flamingo→flamingo, salmonn→salmonn)
 DEVICE="${DEVICE:-cuda:0}"                                                        # torch device for training
-CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"                                 # which GPU(s) the process can see
+CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"                                 # which GPU(s) the process can see
 OUTPUT_DIR="${OUTPUT_DIR:-${HOME}/training/symbol_training}"                      # root output directory
 CHECKPOINT_DIR="${CHECKPOINT_BASE:-${HOME}/training/symbol_training/checkpoints}/$(date +"%Y-%m-%d")"  # checkpoint directory (dated subfolder)
 LOG_DIR="${LOGS_DIR:-${HOME}/training/logs}/$(date +"%Y-%m-%d")"                 # log directory (dated subfolder)
-NUM_WORKERS="${NUM_WORKERS:-1}"                                                   # dataloader worker processes
+NUM_WORKERS="${NUM_WORKERS:-2}"                                                   # dataloader worker processes
 
 # --- Data ---
 # 3-task breadth run (hvb + cremad + minds14_en). Val = full eval battery so we get
@@ -49,18 +49,18 @@ NUM_WORKERS="${NUM_WORKERS:-1}"                                                 
 DATASET_TYPE="${DATASET_TYPE:-hvb-cremad-minds14_en}"                            # training dataset(s), dash-separated
 # VAL_DATASET_TYPE="${VAL_DATASET_TYPE:-hvb-cremad-minds14_en-ravdess_song-skit_s2i-speech_commands-minds14_fr-minds14_ko}"  # full eval battery
 VAL_DATASET_TYPE="${VAL_DATASET_TYPE:-hvb-cremad-minds14_en}"  # full eval battery
-MAX_SAMPLES="${MAX_SAMPLES:-0}"                                                  # max training samples (0 = full dataset)
+MAX_SAMPLES="${MAX_SAMPLES:-2000}"                                                  # max training samples (0 = full dataset)
 VAL_MAX_SAMPLES="${VAL_MAX_SAMPLES:-500}"                                         # max validation samples per dataset (0 = full)
 INPUT_MODE="${INPUT_MODE:-speech_only}"                                           # query modality: speech_only | text_only
 FEWSHOT_MODE="${FEWSHOT_MODE:-text}"                                              # few-shot example modality: text | speech
-NUM_EXAMPLES="${NUM_EXAMPLES:-10}"                                                 # few-shot examples in training prompt (0 = zero-shot; MAX when NUM_EXAMPLES_MIN>0)
+NUM_EXAMPLES="${NUM_EXAMPLES:-0}"                                                 # few-shot examples in training prompt (0 = zero-shot; MAX when NUM_EXAMPLES_MIN>0)
 NUM_EXAMPLES_MIN="${NUM_EXAMPLES_MIN:-0}"                                        # >=0 = random per-prompt count U[min,NUM_EXAMPLES] during training (min=0 → some zero-shot; Wei uses 2); -1 = fixed. Eval stays fixed
 FEWSHOT_PER_CLASS="${FEWSHOT_PER_CLASS:-false}"                                   # true = NUM_EXAMPLES per class (full coverage); false = NUM_EXAMPLES total (class-balanced)
 VAL_NUM_EXAMPLES="${VAL_NUM_EXAMPLES:-0}"                                         # few-shot examples in validation prompt
 NO_LEGEND="${NO_LEGEND:-false}"                                                   # true = strip label descriptions from prompt (Wei-style, meaning from exemplars/symbols only)
 
 # --- Training ---
-LORA_EPOCHS="${LORA_EPOCHS:-5}"                                                  # number of training epochs
+LORA_EPOCHS="${LORA_EPOCHS:-3}"                                                  # number of training epochs
 LORA_LR="${LORA_LR:-1e-5}"                                                       # LoRA adapter learning rate
 BATCH_SIZE="${BATCH_SIZE:-1}"                                                     # per-step training batch size
 VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-1}"                                             # per-step validation batch size

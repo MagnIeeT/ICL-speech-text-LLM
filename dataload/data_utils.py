@@ -58,7 +58,8 @@ def load_datasets_for_config(config: TrainingConfig, inference_mode: bool = Fals
                 logger.info("Loading train split for %s", dataset_name)
                 full_train_dataset = load_dataset(dataset_type, split="train")
                 if config.data_config.max_samples > 0:
-                    train_datasets[dataset_type] = full_train_dataset.select(range(config.data_config.max_samples))
+                    train_samples = min(config.data_config.max_samples, len(full_train_dataset))
+                    train_datasets[dataset_type] = full_train_dataset.select(range(train_samples))
                 else:
                     train_datasets[dataset_type] = full_train_dataset
                 logger.info("Loaded %s TRAIN: %d samples", dataset_name, len(train_datasets[dataset_type]))
