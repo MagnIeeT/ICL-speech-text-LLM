@@ -59,8 +59,7 @@ MELD:
 | Instruction Tuning | `112544_af_h-cr-m14en_nosym` ep4 | 47.2% | 54.4% | +7.2 | **43.2%** | 43 | 79 |
 | DG-ICL-Sym | `112859_af_h-cr-m14en_dpi_ha` ep4 | 50.0% | 56.8% | +6.8 | **29.6%** | 32 | 66 |
 | DG-ICL-Flip | `003524_af_h-cr-m14en_nosym_swap_per_instance` ep4 | 44.2% | 49.6% | +5.4 | **39.2%** | 45 | 72 |
-
-Pre-trained AF3: running.
+| **Pre-trained** | no LoRA | **50.0%** | **57.2%** | **+7.2** | **31.8%** | 26 | 62 |
 
 CREMA-D control:
 
@@ -69,6 +68,7 @@ CREMA-D control:
 | Instruction Tuning | 82.2% | 17.4% | 82.6% | 335 | 11 |
 | DG-ICL-Sym | 77.6% | 16.2% | 82.2% | 310 | 3 |
 | DG-ICL-Flip | 79.8% | 17.0% | 84.6% | 324 | 10 |
+| Pre-trained | 51.6% | 14.4% | 57.6% | 187 | 1 |
 
 ### What it shows
 
@@ -82,17 +82,30 @@ CREMA-D control:
    The plan's abort condition was disagreement near zero. E0b is worth building,
    on both backbones.
 
-3. **[F] The lexical lean is created by fine-tuning, not inherited.** This is
-   the most important result so far. Pre-trained Qwen2-Audio is balanced
-   (29.2 speech vs 28.8 text, a gap of -0.4). Every fine-tuned condition opens a
-   10-point gap in favour of the transcript. Fine-tuning on the 3-task mixture
-   improved the text pathway by about 23 points on held-out MELD while improving
-   the audio pathway by only 11 to 12. Speech fine-tuning taught the model to
-   lean on transcripts more than on acoustics.
+3. **[F] Every fine-tuned model leans lexical, but the origin differs by
+   backbone.** This was initially written up as "fine-tuning creates the lean",
+   on the strength of the Qwen base alone. The AF3 base refutes the general
+   form, and the corrected claim is narrower:
 
-   This is sharper than the framing we started with ("these models lean lexical,
-   as ALME reports for GPT-4o and Gemini"). In our setup the bias is induced by
-   our own training, which makes it something Chapter 2 can plausibly undo.
+   | backbone | base gap | fine-tuned gap | reading |
+   |---|---|---|---|
+   | Qwen2-Audio | **-0.4** | +10.0 to +10.6 | training **induces** the lean |
+   | Audio Flamingo 3 | **+7.2** | +5.4 to +7.2 | lean **pre-exists**; training leaves it alone |
+
+   On Qwen the pre-trained model is balanced (29.2 speech vs 28.8 text) and
+   training opens a 10-point gap, improving the text pathway by about 23 points
+   on held-out MELD against only 11 to 12 for audio. On AF3 the pre-trained
+   model already sits at +7.2 and fine-tuning does not widen it.
+
+   Consequence for Chapter 2: an intervention that works by undoing a bias our
+   own training introduced would be a Qwen story. To claim generality the method
+   has to correct a bias that is already present in the foundation model.
+
+3b. **[F] On held-out MELD, the 3-task mixture bought AF3 nothing.** Base AF3
+   speech is 50.0 and DG-ICL-Sym is also 50.0; IT falls to 47.2 and Flip to
+   44.2. On in-mixture CREMA-D the same training lifts AF3 from 51.6 to 78-82.
+   Large in-domain gains, no held-out transfer, and Flip actively hurts. Chapter 2
+   should not assume training will move MELD numbers on this backbone.
 
 4. **[F] The surrogate-label scheme is not the cause.** On Qwen, IT, Sym and
    Flip sit within 0.6 points of each other on the lexical gap (+10.6, +10.4,
@@ -110,6 +123,10 @@ CREMA-D control:
    vary more among themselves than Qwen's do, so the "training setup, not label
    scheme" conclusion in point 4 is cleanly supported on Qwen and only loosely
    on AF3.
+
+   Method note: this is the second claim in this log that a single backbone made
+   look general. Run both backbones, and the pre-trained baseline, before
+   writing any E0 finding as a headline.
 
 ### Caveats to carry forward
 
@@ -172,9 +189,6 @@ reviewers ask for more on instruction following.
 
 ## Pending
 
-- Pre-trained Audio Flamingo 3 E0a (running 14 Nov). Tests whether the
-  "fine-tuning creates the lean" result holds on the second backbone, which is
-  what finding 3 needs to generalise.
 - SALMONN E0a, optional. It is the scale reference rather than a headline model.
 - E0b, the routing probe: `speech_text` input mode plus routed legends, measured
   on the disagreement subsets saved at `~/training/e0a/disagreement_*.json`.
@@ -184,7 +198,7 @@ reviewers ask for more on instruction following.
 | What | Where |
 |---|---|
 | Prediction dumps | `~/training/e0a/metrics/<date>/<run>/<run>_p.json` |
-| Disagreement subsets | `~/training/e0a/disagreement_{sym,it,flip,base,af_sym,af_it,af_flip}.json` |
+| Disagreement subsets | `~/training/e0a/disagreement_{sym,it,flip,base,af_sym,af_it,af_flip,af_base}.json` |
 | Run logs | `~/training/e0a/logs/` |
 | Inference logs | `~/training/symbol_training/logs_inference/<date>/` |
 
