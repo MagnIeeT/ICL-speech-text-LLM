@@ -435,7 +435,7 @@ def main():
                         help="Directory for metrics/predictions output (dated subfolder recommended)")
     parser.add_argument("--split", type=str, default="test", choices=["test", "validation"],
                         help="Dataset split to run inference on")
-    parser.add_argument("--input_mode", type=str, default="speech_only", choices=["speech_only", "text_only"],
+    parser.add_argument("--input_mode", type=str, default="speech_only", choices=["speech_only", "text_only", "speech_text"],
                         help="Query modality at eval: speech_only (audio) | text_only (transcription as text, no audio)")
 
     args = parser.parse_args()

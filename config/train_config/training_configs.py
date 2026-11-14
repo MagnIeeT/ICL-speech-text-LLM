@@ -341,7 +341,7 @@ def parse_training_args() -> argparse.Namespace:
         help="Size of the pre-computed pool of label->symbol mappings (K in the paper; per_epoch: pool[epoch%%K], per_instance: random.choice(pool))",
     )
 
-    parser.add_argument("--input_mode", type=str, default="speech_only", choices=["speech_only", "text_only"], help="Query input modality")
+    parser.add_argument("--input_mode", type=str, default="speech_only", choices=["speech_only", "text_only", "speech_text"], help="Query input modality; speech_text presents audio and a labelled transcript line together")
     parser.add_argument("--fewshot_mode", type=str, default="text", choices=["text", "speech"], help="Few-shot example modality")
     parser.add_argument("--no_legend", action="store_true", help="Strip label descriptions from the prompt legend (meaning conveyed only by exemplars/symbols; Wei-style)")
     parser.add_argument("--fewshot_per_class", action="store_true", help="Few-shot: num_examples PER class (full coverage) instead of TOTAL (class-balanced)")

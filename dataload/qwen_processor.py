@@ -191,6 +191,12 @@ class QwenProcessor(ModelProcessor):
         user_content.append({"type": "text", "text": "\nNow analyze this input:\n"})
         if input_mode == "text_only":
             user_content.append({"type": "text", "text": text})
+        elif input_mode == "speech_text":
+            # Both modalities in one prompt (Chapter 2, axis B). The transcript is a
+            # separate labelled line so it can be ablated or corrupted independently
+            # of the audio, and so the model cannot mistake it for the instruction.
+            user_content.append({"type": "audio", "audio_url": "dummy_url"})
+            user_content.append({"type": "text", "text": f'\nTranscript: "{text}"'})
         else:
             user_content.append({"type": "audio", "audio_url": "dummy_url"})
 
