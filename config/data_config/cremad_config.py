@@ -2,7 +2,7 @@ from utils.environment import get_env_path
 from .master_config import DatasetType, DatasetSplit, DatasetConfig
 
 # Definition-sensitivity ablation: same task/labels, only the wording after each "- emotion:" changes.
-_PARA = """You are an emotion recognition expert. Based on the audio, respond with EXACTLY ONE WORD from the following options:
+_PARA = """You are an emotion recognition expert. Based on the input, respond with EXACTLY ONE WORD from the following options:
 
 Available emotions:
 - neutral: the speaker shows no clear emotion
@@ -14,9 +14,9 @@ Available emotions:
 
 Guidelines:
 - Choose exactly one emotion from the list above
-- Be precise in identifying the emotion expressed in the audio"""
+- Be precise in identifying the emotion expressed in the input"""
 
-_TERSE = """You are an emotion recognition expert. Based on the audio, respond with EXACTLY ONE WORD from the following options:
+_TERSE = """You are an emotion recognition expert. Based on the input, respond with EXACTLY ONE WORD from the following options:
 
 Available emotions:
 - neutral: no emotion
@@ -28,9 +28,9 @@ Available emotions:
 
 Guidelines:
 - Choose exactly one emotion from the list above
-- Be precise in identifying the emotion expressed in the audio"""
+- Be precise in identifying the emotion expressed in the input"""
 
-_VERBOSE = """You are an emotion recognition expert. Based on the audio, respond with EXACTLY ONE WORD from the following options:
+_VERBOSE = """You are an emotion recognition expert. Based on the input, respond with EXACTLY ONE WORD from the following options:
 
 Available emotions:
 - neutral: the speaker's voice conveys no distinct or pronounced emotional state, sounding calm and matter-of-fact
@@ -42,7 +42,7 @@ Available emotions:
 
 Guidelines:
 - Choose exactly one emotion from the list above
-- Be precise in identifying the emotion expressed in the audio"""
+- Be precise in identifying the emotion expressed in the input"""
 
 CREMAD_CONFIG = DatasetConfig(
     name=DatasetType.CREMAD,
@@ -51,7 +51,7 @@ CREMAD_CONFIG = DatasetConfig(
         DatasetSplit.VAL: get_env_path("CREMAD_VAL_PATH"),
         DatasetSplit.TEST: get_env_path("CREMAD_TEST_PATH"),
     },
-    prompt_template="""You are an emotion recognition expert. Based on the audio, respond with EXACTLY ONE WORD from the following options:
+    prompt_template="""You are an emotion recognition expert. Based on the input, respond with EXACTLY ONE WORD from the following options:
 
 Available emotions:
 - neutral: No distinct emotional state
@@ -63,7 +63,7 @@ Available emotions:
 
 Guidelines:
 - Choose exactly one emotion from the list above
-- Be precise in identifying the emotion expressed in the audio""",
+- Be precise in identifying the emotion expressed in the input""",
     prompt_variants={"paraphrase": _PARA, "terse": _TERSE, "verbose": _VERBOSE},
     valid_labels=[
         "neutral",
