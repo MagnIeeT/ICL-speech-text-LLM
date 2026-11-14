@@ -21,27 +21,42 @@ if [[ -f "${PROJECT_ROOT}/.env" ]]; then
 fi
 
 # ─── Config ──────────────────────────────────────────────────────────────────
-MODEL_TYPE="${MODEL_TYPE:-qwen}"                        # qwen | flamingo | salmonn
 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-5}"       # pick an idle GPU: ssh node1 nvidia-smi
 
 # ─── Which checkpoint to probe: uncomment exactly ONE line ───────────────────
-# Chapter 2 scope is IT, Sym and Flip. The others are kept for reference only.
-# CONDITION="${CONDITION:-sym}"        # DG-ICL-Sym   (ours, surrogate symbols)
-# CONDITION="${CONDITION:-it}"       # Instruction Tuning baseline
-CONDITION="${CONDITION:-flip}"     # DG-ICL-Flip  (ours, permuted real labels)
-# CONDITION="${CONDITION:-base}"     # untrained Qwen2-Audio, no LoRA        [out of scope]
-# CONDITION="${CONDITION:-wei}"      # Symbol Tuning (Wei), no-legend 1-shot [out of scope]
-
+# Chapter 2 scope is IT, Sym and Flip on each backbone, plus the untrained base.
 # The ${CONDITION:-...} form means the uncommented line sets the default while an
 # exported CONDITION still wins, so a batch launch does not need the file edited.
 # If two lines are uncommented the last one wins, and the banner shows which.
+#
+#   Qwen2-Audio (3-task mixture hvb-cremad-minds14_en)
+# CONDITION="${CONDITION:-sym}"       # DG-ICL-Sym
+# CONDITION="${CONDITION:-it}"        # Instruction Tuning
+CONDITION="${CONDITION:-flip}"      # DG-ICL-Flip
+# CONDITION="${CONDITION:-base}"      # untrained Qwen2-Audio, no LoRA
+#
+#   Audio Flamingo 3 (same 3-task mixture, same epoch 4)
+# CONDITION="${CONDITION:-af_sym}"    # DG-ICL-Sym
+# CONDITION="${CONDITION:-af_it}"     # Instruction Tuning
+# CONDITION="${CONDITION:-af_flip}"   # DG-ICL-Flip
+# CONDITION="${CONDITION:-af_base}"   # untrained Audio Flamingo 3, no LoRA
+#
+#   Out of scope, kept so the mapping is recorded
+# CONDITION="${CONDITION:-wei}"       # Symbol Tuning (Wei), no-legend 1-shot
+
 case "${CONDITION}" in
-    sym)  TAG=sym;  CKPT_DATE=2026-08-23; TRAIN_RUN=003002_qa_h-cr-m14en_dpi_ha;                  EPOCH=4; UNTRAINED=false ;;
-    it)   TAG=it;   CKPT_DATE=2026-08-23; TRAIN_RUN=004932_qa_h-cr-m14en_nosym;                   EPOCH=3; UNTRAINED=false ;;
-    flip) TAG=flip; CKPT_DATE=2026-09-03; TRAIN_RUN=014804_qa_h-cr-m14en_nosym_swap_per_instance; EPOCH=4; UNTRAINED=false ;;
-    base) TAG=base; CKPT_DATE=;            TRAIN_RUN=;                                             EPOCH=;  UNTRAINED=true  ;;
-    wei)  TAG=wei;  CKPT_DATE=2026-08-23; TRAIN_RUN=004014_qa_h-cr-m14en_dpi_ha_nl_fs1t;          EPOCH=4; UNTRAINED=false ;;
-    *)    printf 'ERROR: unknown CONDITION=%s (expected sym|it|flip|base|wei)\n' "${CONDITION}"; exit 1 ;;
+    # tag       model      ckpt date     run                                               epoch  untrained
+    sym)     TAG=sym;     MODEL_TYPE=qwen;     CKPT_DATE=2026-08-23; TRAIN_RUN=003002_qa_h-cr-m14en_dpi_ha;                  EPOCH=4; UNTRAINED=false ;;
+    it)      TAG=it;      MODEL_TYPE=qwen;     CKPT_DATE=2026-08-23; TRAIN_RUN=004932_qa_h-cr-m14en_nosym;                   EPOCH=3; UNTRAINED=false ;;
+    flip)    TAG=flip;    MODEL_TYPE=qwen;     CKPT_DATE=2026-09-03; TRAIN_RUN=014804_qa_h-cr-m14en_nosym_swap_per_instance; EPOCH=4; UNTRAINED=false ;;
+    base)    TAG=base;    MODEL_TYPE=qwen;     CKPT_DATE=;           TRAIN_RUN=;                                             EPOCH=;  UNTRAINED=true  ;;
+    af_sym)  TAG=af_sym;  MODEL_TYPE=flamingo; CKPT_DATE=2026-08-02; TRAIN_RUN=112859_af_h-cr-m14en_dpi_ha;                  EPOCH=4; UNTRAINED=false ;;
+    af_it)   TAG=af_it;   MODEL_TYPE=flamingo; CKPT_DATE=2026-08-02; TRAIN_RUN=112544_af_h-cr-m14en_nosym;                   EPOCH=4; UNTRAINED=false ;;
+    af_flip) TAG=af_flip; MODEL_TYPE=flamingo; CKPT_DATE=2026-08-29; TRAIN_RUN=003524_af_h-cr-m14en_nosym_swap_per_instance; EPOCH=4; UNTRAINED=false ;;
+    af_base) TAG=af_base; MODEL_TYPE=flamingo; CKPT_DATE=;           TRAIN_RUN=;                                             EPOCH=;  UNTRAINED=true  ;;
+    wei)     TAG=wei;     MODEL_TYPE=qwen;     CKPT_DATE=2026-08-23; TRAIN_RUN=004014_qa_h-cr-m14en_dpi_ha_nl_fs1t;          EPOCH=4; UNTRAINED=false ;;
+    *)       printf 'ERROR: unknown CONDITION=%s\n' "${CONDITION}"
+             printf 'Expected: sym|it|flip|base|af_sym|af_it|af_flip|af_base|wei\n'; exit 1 ;;
 esac
 
 # MELD is the signal: conversational, never trained on, transcripts carry real
