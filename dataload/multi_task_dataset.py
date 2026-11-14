@@ -65,6 +65,40 @@ def _apply_symbol_mapping_to_prompt(prompt_obj: Any, mapping: Dict[str, str]) ->
     return prompt_obj
 
 
+# Chapter 2 / E0b: routed legends. The definition states which evidence settles
+# the category, so routing is expressed per category rather than as one global
+# instruction (an instruction-level version is the ALME-style baseline we compare
+# against). The two variants differ ONLY in the routing clause; the definition
+# body is carried over verbatim apart from lower-casing its first letter, so any
+# measured difference is attributable to the routing and not to rewording.
+_ROUTING_CLAUSES = {
+    "route_tone":  ("the SPEAKER'S TONE conveys", "regardless of the words spoken"),
+    "route_words": ("the WORDS express", "regardless of the tone of voice"),
+}
+
+
+def _route_legend(template: str, variant: str) -> str:
+    """Rewrite '- label: definition' bullets to name the authoritative modality.
+
+    '- anger: Irritation, rage, or hostility'
+      -> '- anger: utterances where the SPEAKER'S TONE conveys irritation, rage,
+          or hostility, regardless of the words spoken'
+
+    Uses the same bullet contract as _strip_legend: only lines with a colon are
+    legend entries, so guideline bullets are left alone.
+    """
+    lead, qualifier = _ROUTING_CLAUSES[variant]
+
+    def _rewrite(match: "re.Match") -> str:
+        prefix, definition = match.group(1), match.group(2).strip()
+        if not definition:
+            return match.group(0)
+        body = (definition[0].lower() + definition[1:]).rstrip(".")
+        return f"{prefix}: utterances where {lead} {body}, {qualifier}"
+
+    return re.sub(r'(?m)^([ \t]*-[ \t]*[^:\n]+?)[ \t]*:[ \t]*(.*)$', _rewrite, template)
+
+
 def _strip_legend(template: str) -> str:
     """Remove '- label: DESCRIPTION' → '- label' from prompt bullet lines (Wei-style
     no-legend: the class meaning is no longer stated, only the label/symbol remains).
@@ -310,7 +344,11 @@ class BaseMultiTaskDataset(Dataset):
         # Definition-sensitivity ablation: swap in an alternate-wording legend if requested
         # and available for this dataset. Falls back to the original template otherwise.
         _variant = getattr(self, "definition_variant", "orig")
-        if _variant and _variant != "orig" and getattr(current_config, "prompt_variants", None):
+        if _variant in _ROUTING_CLAUSES:
+            # Generated from the active template rather than looked up, so routed
+            # legends exist for every dataset without hand-writing one per class.
+            template = _route_legend(template, _variant)
+        elif _variant and _variant != "orig" and getattr(current_config, "prompt_variants", None):
             template = current_config.prompt_variants.get(_variant, template)
         if getattr(self, "no_legend", False):
             template = _strip_legend(template)
