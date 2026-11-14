@@ -93,12 +93,20 @@ class SymbolTrainingOrchestrator:
             else: device_batch[key] = value
         return device_batch
 
-    def _get_swap_mappings(self, ds_name_str: str, relevant_labels: list, epoch: int, batch_idx: int) -> dict:
-        """Return label→symbol mapping for swap mode — cached per epoch or fresh per instance."""
+    def _get_swap_mappings(self, ds_name_str: str, relevant_labels: list, epoch: int, batch_idx: int,
+                           force_real_labels: bool = False) -> dict:
+        """Return label->surface mapping for swap mode, cached per epoch or fresh per instance.
+
+        force_real_labels=True permutes the REAL label words even when symbols are
+        enabled. The surrogate mixture needs this: its flipped regime must supply
+        real vocabulary, which is the whole reason it preserves canonical ability.
+        Without it, no_symbols=False would permute the synthetic symbols instead and
+        both regimes would be synthetic.
+        """
         per_instance = self.config.symbol_config.update_strategy == SymbolUpdateStrategy.PER_INSTANCE
         if per_instance or ds_name_str not in self._swap_cache:
             base_mapping = None
-            if not self.config.symbol_config.no_symbols:
+            if not self.config.symbol_config.no_symbols and not force_real_labels:
                 full_base = self.symbol_manager._pure_symbol_mappings.get(ds_name_str, {})
                 base_mapping = {l: full_base[l] for l in relevant_labels if l in full_base}
             mapping = self.symbol_manager.generate_swap_mapping_for_labels(
@@ -156,7 +164,10 @@ class SymbolTrainingOrchestrator:
         _use_flip = self.config.symbol_config.swap_labels or (_mix > 0 and random.random() < _mix)
 
         if _use_flip:
-            p_mappings = c_mappings = self._get_swap_mappings(ds_name_str, relevant_labels, epoch, batch_idx)
+            # From the mixture, the flipped regime must use permuted REAL words.
+            _from_mix = not self.config.symbol_config.swap_labels
+            p_mappings = c_mappings = self._get_swap_mappings(
+                ds_name_str, relevant_labels, epoch, batch_idx, force_real_labels=_from_mix)
         else:
             force_new = self.config.symbol_config.update_strategy == SymbolUpdateStrategy.PER_INSTANCE
             all_ds_mappings = self.symbol_manager.get_symbols_for_epoch(epoch, force_new_symbols=force_new)
