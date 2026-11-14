@@ -187,11 +187,95 @@ reviewers ask for more on instruction following.
 
 ---
 
+---
+
+## E0b-1: does the definition decide which evidence the model uses?
+
+**Question.** H3 assumed routing was at least partially present and trainable.
+First, is it there at all? Four passes per checkpoint on the same 500 items, all
+`speech_only` except the text reference, so the audio carries both channels and
+the legend is the only thing that differs between the routed passes.
+
+Launcher `hpc/submit_e0b_routing.sh`, analysis `experiments/e0b_routing.py`.
+Qwen2-Audio, 14 Nov 2026.
+
+### Routing gap on MELD (the measurement)
+
+| condition | items disagreeing | route_tone = P_speech | route_words = P_speech | **gap (toward speech)** | gap (toward text) |
+|---|---|---|---|---|---|
+| Instruction Tuning | 256 (51.2%) | 77.0% | 78.5% | **-1.6** | -0.4 |
+| DG-ICL-Sym | 251 (50.2%) | 67.7% | 65.3% | **+2.4** | +0.0 |
+| DG-ICL-Flip | 195 (39.0%) | 57.9% | 60.0% | **-2.1** | -3.6 |
+| Pre-trained | 390 (78.0%) | 72.3% | 73.8% | **-1.5** | -1.5 |
+
+**[F] The routing gap is zero.** Every condition sits between -3.6 and +2.4
+points, with no consistent sign. Telling the model which modality decides does
+not move its answer toward that modality.
+
+### The CREMA-D control, which is decisive
+
+CREMA-D transcripts carry no emotion: `text_only` scores 14.8 to 15.0 percent.
+So a legend saying "the WORDS express anger, regardless of the tone of voice"
+should collapse accuracy toward that floor if the model follows it. Accuracy on
+all 500 CREMA-D items:
+
+| condition | speech + orig | text + orig | speech + route_tone | speech + **route_words** |
+|---|---|---|---|---|
+| DG-ICL-Sym | 86.0% | 14.8% | 84.4% | **84.2%** |
+| Instruction Tuning | 87.8% | 15.0% | 88.2% | **88.0%** |
+
+**[F] The model ignores the routing clause completely.** Instructed to decide on
+words that demonstrably carry nothing, it keeps reading prosody and loses 0 to 2
+points instead of the ~70 it would lose if it complied. The expected effect is
+enormous and the observed effect is nil, so this is a much stronger null than
+the MELD gap on its own.
+
+### Sanity controls
+
+On the agreement subset, where the two legends have nothing to arbitrate, they
+still disagree on 4.5 percent (base), 7.4 (IT), 10.0 (Sym) and 16.7 (Flip) of
+items; Flip trips the built-in warning. So the routing clause does perturb the
+model, it just does not route. Prompt sensitivity without instruction following.
+
+**[F] Routed legends slightly improve accuracy regardless of direction**, on
+MELD: Sym 23.4 to 27.8/28.6, IT 38.8 to 44.0/43.2, base 28.2 to 32.2/29.6. The
+gain is the same whichever modality is named, so it is a verbosity or
+specificity effect and must be controlled for in later experiments.
+
+### Caveat: these numbers use the normalised MELD template
+
+E0a ran on the old MELD prompt, E0b on the bullet-legend version, so
+`speech_only + orig` differs between them. The drop is uneven and informative:
+Sym falls 40.4 to 23.4 while IT, Flip and base move only 1 to 4 points.
+
+**[F] DG-ICL-Sym is by far the most legend-format-sensitive condition**, which
+is consistent with Chapter 1 Table 5, where Sym lost the most under paraphrase
+(0.663 to 0.571). A model trained to read definitions is also the model most
+disturbed when they are reworded.
+
+### What this means for Chapter 2
+
+This is the "routing gap near zero" branch of the plan, so the problem statement
+is clean and the training result becomes the whole contribution. The negative
+result is also stronger than ALME's: they instruct at the system-prompt level
+and find poor compliance, while we route per category, inside the definition,
+on a model fine-tuned to follow definitions, and get no compliance at all.
+
+Open risk to state plainly: nothing here shows routing is *trainable*. H3 is now
+a bet rather than an extrapolation. The cheapest way to de-risk it before
+building CD-DPO is a small supervised probe, training on routed legends with
+modality-appropriate targets, to see whether the capability can be induced.
+
+---
+
 ## Pending
 
 - SALMONN E0a, optional. It is the scale reference rather than a headline model.
-- E0b, the routing probe: `speech_text` input mode plus routed legends, measured
-  on the disagreement subsets saved at `~/training/e0a/disagreement_*.json`.
+- E0b-1 on AF3, to check the null replicates on the second backbone.
+- E0b-2, `speech_text`, only needed to separate "cannot be routed" from "could
+  not recover the words from audio". The CREMA-D control makes this less urgent,
+  since there the words were irrelevant rather than unrecoverable.
+- A trainability probe for H3, per the risk noted above.
 
 ## Artifacts
 
@@ -199,7 +283,8 @@ reviewers ask for more on instruction following.
 |---|---|
 | Prediction dumps | `~/training/e0a/metrics/<date>/<run>/<run>_p.json` |
 | Disagreement subsets | `~/training/e0a/disagreement_{sym,it,flip,base,af_sym,af_it,af_flip,af_base}.json` |
-| Run logs | `~/training/e0a/logs/` |
+| E0b routing detail | `~/training/e0b/routing_<tag>_<dataset>_<stamp>.json` |
+| Run logs | `~/training/e0a/logs/`, `~/training/e0b/logs/` |
 | Inference logs | `~/training/symbol_training/logs_inference/<date>/` |
 
 Not in git: all of the above live outside the repo. Only the scripts and this
