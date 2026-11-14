@@ -129,6 +129,7 @@ VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-4}"
 VALIDATION_MODES="${VALIDATION_MODES:-original, fresh}"                                           # original,fixed,fresh,flipped
 VAL_FLIP_SEED="${VAL_FLIP_SEED:-0}"                                                       # 'flipped' mode real-label derangement seed (same seed = same flip across models)
 NO_LEGEND="${NO_LEGEND:-false}"                                                           # true = strip label descriptions at eval (ablation: does the description carry the work?)
+DEFINITION_VARIANT="${DEFINITION_VARIANT:-orig}"                                  # legend wording: orig | paraphrase | terse | verbose | route_tone | route_words
 INPUT_MODE="${INPUT_MODE:-text_only}"                                                   # speech_only (audio) | text_only (transcription as text; Wei-style text ablation)
 SPLIT="${SPLIT:-validation}"                                                            # test | validation
 
@@ -253,6 +254,7 @@ python inference.py \
     $( [[ "${NO_LEGEND}" == "true" ]] && printf '%s' "--no_legend" ) \
     --split "${SPLIT}" \
     --input_mode "${INPUT_MODE}" \
+    --definition_variant "${DEFINITION_VARIANT}" \
     --metrics_dir "${METRICS_DIR}" \
     $( [[ -n "${SYMBOL_MAP_FILE}" ]] && printf '%s %s' "--symbol_map_file" "${SYMBOL_MAP_FILE}" ) \
     >> "${LOG_FILE}" 2>&1
