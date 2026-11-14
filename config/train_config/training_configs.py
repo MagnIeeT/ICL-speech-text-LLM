@@ -53,6 +53,11 @@ class SymbolConfig:
     symbol_token_size: int = 2
     validation_modes: str = "fixed,original,fresh"
     swap_labels: bool = False
+    # Per-instance surrogate mixture. 0 keeps the single-regime behaviour. Above 0,
+    # each instance draws the flipped (permuted real label) regime with this
+    # probability and the synthetic-symbol regime otherwise. Dataset size and step
+    # count are unchanged; only the surrogate vocabulary varies per instance.
+    surrogate_mix: float = 0.0
     # Size of the pre-computed pool of bijective label->symbol mappings (K in the paper).
     # Per epoch: pool[epoch % K], per instance: random.choice(pool)
     num_symbol_mappings: int = 100
@@ -220,6 +225,7 @@ class TrainingConfig:
             validation_modes=getattr(args, "validation_modes", "fixed,original,fresh"),
             swap_labels=getattr(args, "swap_labels", False),
             num_symbol_mappings=getattr(args, "num_symbol_mappings", 100),
+            surrogate_mix=getattr(args, "surrogate_mix", 0.0),
             val_flip_seed=getattr(args, "val_flip_seed", 0),
         )
         if symbol_config.no_symbols:
@@ -309,6 +315,10 @@ def parse_training_args() -> argparse.Namespace:
     parser.add_argument("--dynamic_symbols", action="store_true")
     parser.add_argument("--warmup_steps", type=int, default=100, help="LR scheduler warmup steps")
     parser.add_argument("--no_symbols", action="store_true")
+    parser.add_argument("--surrogate_mix", type=float, default=0.0,
+                        help="Probability per instance of using the flipped (permuted real label) "
+                             "regime instead of synthetic symbols. 0 = off. No extra data: the "
+                             "surrogate vocabulary varies per instance within the same budget")
     parser.add_argument("--swap_labels", action="store_true", help="Swap labels (e.g., positive<->negative) during prompt/completion rewriting")
     parser.add_argument(
         "--validation_modes",

@@ -2,6 +2,7 @@
 
 import json
 import logging
+import random
 import os
 import time
 from typing import Any, Dict, List
@@ -148,7 +149,13 @@ class SymbolTrainingOrchestrator:
     def _apply_symbol_replacement(self, batch: Dict[str, Any], epoch: int, batch_idx: int) -> Dict[str, Any]:
         ds_name_str, relevant_labels = get_dataset_info(batch, self.symbol_manager.original_labels)
 
-        if self.config.symbol_config.swap_labels:
+        # Surrogate regime for this instance. Both regimes are surrogate tuning: the
+        # flipped one assigns permuted REAL label words, never the canonical label, so
+        # no instruction-tuning targets enter training.
+        _mix = getattr(self.config.symbol_config, "surrogate_mix", 0.0)
+        _use_flip = self.config.symbol_config.swap_labels or (_mix > 0 and random.random() < _mix)
+
+        if _use_flip:
             p_mappings = c_mappings = self._get_swap_mappings(ds_name_str, relevant_labels, epoch, batch_idx)
         else:
             force_new = self.config.symbol_config.update_strategy == SymbolUpdateStrategy.PER_INSTANCE
@@ -168,7 +175,10 @@ class SymbolTrainingOrchestrator:
 
         # For non-swap modes: push maps onto dataset so workers do substitution.
         # Must happen before progress_bar is created — that's when workers fork.
-        _use_worker_symbols = not self.config.symbol_config.swap_labels
+        # Mixing decides the regime per instance, so the maps cannot be pushed to the
+        # dataloader workers ahead of time; substitute in the main thread as swap mode does.
+        _use_worker_symbols = not (self.config.symbol_config.swap_labels
+                                   or getattr(self.config.symbol_config, "surrogate_mix", 0.0) > 0)
         if _use_worker_symbols:
             self._set_epoch_symbol_maps_on_dataset(epoch)
 
