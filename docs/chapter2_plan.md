@@ -139,6 +139,57 @@ adherence**, the fraction of predictions inside the prompt's label set on an
 unseen task. DG-ICL-Sym scores 0.2 percent out-of-inventory against 8.6 for IT
 and 10.6 for Flip. It is a direct measure of legend-following and it is free.
 
+## 8b. Candidate novelty: the no-legend negative
+
+Recorded 15 Nov 2026, to be pursued only if E1 shows the two surrogate regimes
+compose. Positioning first, because it decides what the contribution can be.
+
+**What is already taken.** [SymDPO][symdpo] (CVPR 2025) replaces text answers in
+multimodal demonstrations with random symbols and applies DPO, so that LMMs stop
+following text patterns and consult the image. "Symbols plus DPO for multimodal
+ICL" is therefore not available as a contribution. But its mechanism *requires*
+demonstrations: strip them and there is nothing to symbolise. DG-ICL is zero-shot
+with definitions and no exemplars, so the preference signal has to be built from
+something else entirely. That is the opening.
+
+**The proposal.** Use the model's own no-legend prediction as the negative.
+
+`--no_legend` already strips definitions and leaves only the label surface, and
+Chapter 1 Figure 2 shows the model reverts to prior bias when it is used
+(0.248 to 0.336). So the no-legend prediction is, empirically, the prior-driven
+answer for that instance. For each training instance:
+
+- `y_w = f(y)`, the surface the definition assigns.
+- `y_l` = the model's answer on the same audio with the legend stripped, kept
+  only when it differs from `y_w`.
+
+This trains "answer from the definition, not from what you would have guessed
+without it".
+
+**Why it fits this setting specifically**
+
+- *Definition-native*: the negative is defined by the presence or absence of
+  definitions, so it has no demonstration analogue and cannot be expressed in
+  SymDPO's formulation.
+- *Zero-shot and automatic*: no exemplars, no annotation. One extra forward pass
+  per instance, mineable offline once per epoch.
+- *Targeted at the diagnosed failure*: Section 4 concluded the canonical loss is
+  prior interference re-engaging when labels are familiar. This penalises exactly
+  that, and only when the prior actually disagrees.
+
+**Relation to contrastive decoding.** [Context-aware decoding][cad] and the CDD
+variant in the thesis plan subtract no-context logits at *decode* time. Using the
+same contrast as a *training* signal appears unclaimed for definition-based
+prompting. Verify with a literature check before writing it up.
+
+**Risks**
+
+| Risk | Note |
+|---|---|
+| Negative mining cost | One forward pass per instance per epoch; cheap for two-token outputs, but it doubles the data pass |
+| Prior-driven answer is sometimes correct | Filtering on `y_l != y_w` handles the common case; if the no-legend answer is right for the wrong reason we would penalise a correct label |
+| Overlaps the conditional negative in Section 6 | They are alternative negatives for the same objective; E2 should compare them rather than assume one |
+
 ## 9. Novelty, stated honestly
 
 "Train on a mixture of surrogate types" is an obvious move and thin on its own.
@@ -202,6 +253,7 @@ Evaluation reuses the existing inference path.
 [alme]: https://arxiv.org/abs/2602.11488
 [circuits]: https://www.alphaxiv.org/abs/2610.25599
 [cad]: https://arxiv.org/pdf/2606.16472
+[symdpo]: https://arxiv.org/abs/2411.11909
 
 **Context faithfulness and knowledge conflict (text)**
 - Context-DPO: Aligning Language Models for Context-Faithfulness. https://openreview.net/pdf/2da95227c6c14c9a45c6a4a068648aca1bc93c37.pdf
@@ -229,6 +281,12 @@ Evaluation reuses the existing inference path.
 - Label-Aware Automatic Verbalizer for Few-Shot Text Classification. https://arxiv.org/pdf/2310.12778
 - Making Pre-trained Language Models Better Few-shot Learners (LM-BFF, automatic label search). https://arxiv.org/pdf/2012.15723
 - Boosting Prompt-Based Self-Training With Mapping-Free Automatic Verbalizer. https://arxiv.org/pdf/2312.04982
+
+**Symbols with preference optimisation (closest prior work)**
+- SymDPO: Boosting In-Context Learning of Large Multimodal Models with Symbol Demonstration Direct Preference Optimization (CVPR 2025). https://arxiv.org/abs/2411.11909
+  Replaces demonstration answers with symbols and applies DPO so LMMs consult
+  visual context. Requires demonstrations, which DG-ICL does not use, and does
+  not address canonical-accuracy preservation.
 
 **Forgetting, anchoring and the alignment tax (relevant to the objective)**
 - Anchored Supervised Fine-Tuning. https://arxiv.org/html/2509.23753v3
