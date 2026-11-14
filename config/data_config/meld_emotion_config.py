@@ -8,16 +8,25 @@ MELD_EMOTION_CONFIG = DatasetConfig(
         DatasetSplit.VAL: get_env_path("MELD_VAL_PATH"),
         DatasetSplit.TEST: get_env_path("MELD_TEST_PATH"),
     },
-    prompt_template="""You are an emotion recognition expert. Based on the input, respond with EXACTLY ONE WORD from these options: neutral, joy, sadness, anger, fear, disgust, or surprise.
+    # Bullet legend in the house format ("- label: definition"), which is what the
+    # paper's prompts use and what _strip_legend and the routed-legend generator in
+    # multi_task_dataset.py both key on. The definitions are the previous
+    # "Choose X if there is Y" guidelines reformatted, not rewritten, so the
+    # semantics are unchanged.
+    prompt_template="""You are an emotion recognition expert. Based on the input, respond with EXACTLY ONE WORD from the following options:
+
+Available emotions:
+- neutral: No distinct emotional state
+- joy: Happiness, excitement, delight, pleasure, or positive enthusiasm
+- sadness: Unhappiness, sorrow, grief, disappointment, or regret
+- anger: Irritation, rage, fury, annoyance, or hostility
+- fear: Terror, anxiety, worry, concern, or nervousness
+- disgust: Repulsion, distaste, revulsion, or strong dislike
+- surprise: Astonishment, shock, amazement, or unexpected reaction
 
 Guidelines:
-- Choose joy if there is happiness, excitement, delight, pleasure, or positive enthusiasm
-- Choose sadness if there is unhappiness, sorrow, grief, disappointment, or regret
-- Choose anger if there is irritation, rage, fury, annoyance, or hostility
-- Choose fear if there is terror, anxiety, worry, concern, or nervousness
-- Choose disgust if there is repulsion, distaste, revulsion, or strong dislike
-- Choose surprise if there is astonishment, shock, amazement, or unexpected reaction
-- Choose neutral ONLY IF the statement expresses no distinct emotional state""",
+- Choose exactly one emotion from the list above
+- Choose neutral ONLY IF the input expresses no distinct emotional state""",
     valid_labels=["neutral", "joy", "sadness", "anger", "fear", "disgust", "surprise"],
     completion_key="emotion_label",
     text_key="text",
