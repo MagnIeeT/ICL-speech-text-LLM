@@ -145,7 +145,17 @@ fi
 printf '\n============================================================\n'
 printf 'E0a analysis\n'
 printf '============================================================\n'
-python experiments/e0a_disagreement.py \
+# The inner script activates conda in its own subshell, so that env does not
+# reach here and a bare `python` is not on PATH. Resolve one explicitly; the
+# analysis needs only the standard library, so python3 is a fine fallback.
+PY_BIN="${HOME}/miniconda3/envs/${CONDA_ENV:-qwen}/bin/python"
+[[ -x "${PY_BIN}" ]] || PY_BIN="$(command -v python3 || true)"
+if [[ -z "${PY_BIN}" ]]; then
+    printf 'ERROR: no python found for the analysis step.\n'
+    printf 'Dumps are intact; run experiments/e0a_disagreement.py by hand.\n'
+    exit 1
+fi
+"${PY_BIN}" experiments/e0a_disagreement.py \
     --speech_preds "${PRED_SPEECH}" \
     --text_preds "${PRED_TEXT}" \
     --mode original \
