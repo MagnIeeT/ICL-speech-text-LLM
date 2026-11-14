@@ -66,17 +66,6 @@ def get_dataset_info(batch: Dict, fallback_labels: Optional[List[str]] = None) -
     return ds_name_str, (fallback_labels or [])
 
 
-def compute_slot_offsets(training_ds_names: set) -> Dict[str, int]:
-    """Return {ds_name: slot_offset} for each training dataset, sorted alphabetically.
-    Guarantees non-overlapping slot ranges across datasets."""
-    offsets, offset = {}, 0
-    for dt_enum, ds_cfg in sorted(DATASET_CONFIGS.items(), key=lambda x: x[0].value):
-        if dt_enum.value in training_ds_names:
-            offsets[dt_enum.value] = offset
-            offset += len(ds_cfg.valid_labels)
-    return offsets
-
-
 def tokenize_batch_with_audio(batch: Dict, processor, completions, padding_side: str = "right") -> Dict:
     """Inject precomputed audio into prompt dicts then tokenize. Shared by training and validation."""
     if processor is None or "prompt" not in batch:
