@@ -14,8 +14,6 @@ shortcut and forces the model to ground audio in the definition it was given. A
 new category can then be introduced at inference just by defining it in the
 prompt, zero-shot.
 
-The repository state at submission is tagged `v1.0-paper-submission`.
-
 ## Supported models
 
 | Model | Params | Backend | `--model_type` | Conda env |
