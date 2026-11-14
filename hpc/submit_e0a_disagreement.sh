@@ -24,11 +24,24 @@ fi
 MODEL_TYPE="${MODEL_TYPE:-qwen}"                        # qwen | flamingo | salmonn
 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-2}"       # pick an idle GPU: ssh node1 nvidia-smi
 
-# Which Chapter 1 checkpoint to probe. Set UNTRAINED=true for the pre-trained baseline.
-CKPT_DATE="${CKPT_DATE:-2026-08-23}"
-TRAIN_RUN="${TRAIN_RUN:-003002_qa_h-cr-m14en_dpi_ha}"   # DG-ICL-Sym, qwen
-EPOCH="${EPOCH:-4}"
-UNTRAINED="${UNTRAINED:-false}"
+# ─── Which checkpoint to probe: uncomment exactly ONE line ───────────────────
+# Chapter 2 scope is IT, Sym and Flip. The others are kept for reference only.
+CONDITION="sym"        # DG-ICL-Sym   (ours, surrogate symbols)
+# CONDITION="it"       # Instruction Tuning baseline
+# CONDITION="flip"     # DG-ICL-Flip  (ours, permuted real labels)
+# CONDITION="base"     # untrained Qwen2-Audio, no LoRA        [out of scope]
+# CONDITION="wei"      # Symbol Tuning (Wei), no-legend 1-shot [out of scope]
+
+# If two lines are uncommented the last one wins, so a mistake is visible in the
+# banner rather than silently evaluating the wrong weights.
+case "${CONDITION}" in
+    sym)  TAG=sym;  CKPT_DATE=2026-08-23; TRAIN_RUN=003002_qa_h-cr-m14en_dpi_ha;                  EPOCH=4; UNTRAINED=false ;;
+    it)   TAG=it;   CKPT_DATE=2026-08-23; TRAIN_RUN=004932_qa_h-cr-m14en_nosym;                   EPOCH=3; UNTRAINED=false ;;
+    flip) TAG=flip; CKPT_DATE=2026-09-03; TRAIN_RUN=014804_qa_h-cr-m14en_nosym_swap_per_instance; EPOCH=4; UNTRAINED=false ;;
+    base) TAG=base; CKPT_DATE=;            TRAIN_RUN=;                                             EPOCH=;  UNTRAINED=true  ;;
+    wei)  TAG=wei;  CKPT_DATE=2026-08-23; TRAIN_RUN=004014_qa_h-cr-m14en_dpi_ha_nl_fs1t;          EPOCH=4; UNTRAINED=false ;;
+    *)    printf 'ERROR: unknown CONDITION=%s (expected sym|it|flip|base|wei)\n' "${CONDITION}"; exit 1 ;;
+esac
 
 # MELD is the signal: conversational, never trained on, transcripts carry real
 # emotion. CREMA-D is the control: its sentences are emotionally neutral, so
@@ -39,7 +52,6 @@ MAX_VAL_SAMPLES="${MAX_VAL_SAMPLES:-500}"
 VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-4}"
 SEED="${SEED:-1}"
 
-TAG="${TAG:-sym}"                                       # short name for this checkpoint
 E0A_DIR="${E0A_DIR:-${HOME}/training/e0a}"
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -74,6 +86,7 @@ fi
 
 printf '%s\n' "============================================================"
 printf '%s\n' "E0a disagreement probe"
+printf '%s\n' "Condition:  ${CONDITION}  (tag=${TAG})"
 printf '%s\n' "Model:      ${MODEL_TYPE}"
 printf '%s\n' "Checkpoint: ${CHECKPOINT_PATH:-<untrained base model>}"
 printf '%s\n' "Datasets:   ${DATASET_TYPE}   split=${SPLIT}  max=${MAX_VAL_SAMPLES}"
