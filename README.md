@@ -8,15 +8,13 @@ Adapting an SLU system to a new or revised label taxonomy normally means new
 labeled data and another round of training. DG-ICL instead fine-tunes a
 speech-text LLM so that a category's meaning is carried by its natural-language
 *definition* rather than its label name. During training every class is renamed
-on the fly — to a synthetic symbol (**DG-ICL-Sym**) or to a permuted real label
-(**DG-ICL-Flip**) — while its definition stays fixed, which removes the lexical
+on the fly, either to a synthetic symbol (**DG-ICL-Sym**) or to a permuted real
+label (**DG-ICL-Flip**), while its definition stays fixed. This removes the lexical
 shortcut and forces the model to ground audio in the definition it was given. A
 new category can then be introduced at inference just by defining it in the
 prompt, zero-shot.
 
-This branch (`main`) contains only what the paper reports. Chapter-2 work
-(Differentiable Symbolic Preference Optimization) lives on `chapter-2-dspo`; the
-exact state at submission is tagged `v1.0-paper-submission`.
+The repository state at submission is tagged `v1.0-paper-submission`.
 
 ## Supported models
 
@@ -32,7 +30,7 @@ and projection for SALMONN).
 
 ## Setup
 
-**1. Environment** — one per backend:
+**1. Environment**, one per backend:
 
 ```bash
 conda env create -f requirements/environment_qwen.yml       # qwen
@@ -41,7 +39,7 @@ conda env create -f requirements/environment_salmonn2.yml   # salmonn
 conda activate qwen
 ```
 
-**2. Paths** — copy the template and fill in real paths:
+**2. Paths**. Copy the template and fill in real paths:
 
 ```bash
 cp .env.example .env
@@ -52,8 +50,8 @@ one `<NAME>_{TRAIN,VAL,TEST}_PATH` per dataset. It is gitignored.
 
 **3. SALMONN weights** (only for `--model_type salmonn`):
 
-- `salmonn_v1.pth` → `SALMONN_CKPT_PATH` — [tsinghua-ee/SALMONN](https://huggingface.co/tsinghua-ee/SALMONN)
-- BEATs `cpt2` → `BEATS_CKPT_PATH` — [WeiChihChen/BEATs_iter3_plus_AS2M_finetuned_on_AS2M_cpt2](https://huggingface.co/WeiChihChen/BEATs_iter3_plus_AS2M_finetuned_on_AS2M_cpt2)
+- `salmonn_v1.pth` → `SALMONN_CKPT_PATH`, from [tsinghua-ee/SALMONN](https://huggingface.co/tsinghua-ee/SALMONN)
+- BEATs `cpt2` → `BEATS_CKPT_PATH`, from [WeiChihChen/BEATs_iter3_plus_AS2M_finetuned_on_AS2M_cpt2](https://huggingface.co/WeiChihChen/BEATs_iter3_plus_AS2M_finetuned_on_AS2M_cpt2)
 - Whisper (`openai/whisper-large-v2`) and Vicuna (`lmsys/vicuna-13b-v1.1`) download from their HF ids on first run.
 
 ## Datasets
@@ -73,14 +71,14 @@ format the loaders expect; each takes `--raw_dir` and `--out_base` and prints th
 | RAVDESS-Song | Sung emotion | 6 | Held-out |
 | MInDS-14 fr / ko | Cross-lingual intent | 14 | Held-out |
 | Google Speech Commands | Keyword spotting | 10 | Capability probe |
-| HeySQuAD | Spoken QA (generative) | — | Capability probe |
+| HeySQuAD | Spoken QA (generative) | n/a | Capability probe |
 
 SLUE VoxCeleb and VoxPopuli are deliberately excluded: both appear in the
 pre-training corpora of the foundation models under test.
 
 For the zero-shot clustering evaluation, `utils/build_custom_taxonomy.py` groups
 the fine-grained Skit-S2I and MInDS-14 fr/ko intents into three coarse
-categories under three naming styles — *meaningful*, *neutral* and *symbolic*
+categories under three naming styles: *meaningful*, *neutral* and *symbolic*
 (`skit_cat_mean`, `minds14_fr_cat_neu`, `minds14_ko_cat_sym`, …).
 
 ## Training
@@ -89,31 +87,31 @@ The four conditions in the paper differ only in how the label surface form is
 chosen; the prompt template, definitions and hyperparameters are identical.
 
 ```bash
-# DG-ICL-Sym — surrogate symbols, one of K=100 bijective maps per instance
+# DG-ICL-Sym: surrogate symbols, one of K=100 bijective maps per instance
 python train.py --model_type qwen --run_name dgicl_sym_seed1 --seed 1 \
   --dataset_type hvb-cremad-minds14_en --val_dataset_type hvb-cremad-minds14_en \
   --dynamic_symbols --symbol_update_strategy per_instance --num_symbol_mappings 100 \
   --num_examples 0 --lora_epochs 5 --max_samples 0
 
-# DG-ICL-Flip — real labels permuted per instance, definitions unchanged
+# DG-ICL-Flip: real labels permuted per instance, definitions unchanged
 python train.py --model_type qwen --run_name dgicl_flip_seed1 --seed 1 \
   --dataset_type hvb-cremad-minds14_en \
   --no_symbols --swap_labels --symbol_update_strategy per_instance \
   --num_examples 0 --lora_epochs 5 --max_samples 0
 
-# Instruction Tuning (IT) baseline — canonical labels, definition-guided prompt
+# Instruction Tuning (IT) baseline: canonical labels, definition-guided prompt
 python train.py --model_type qwen --run_name it_seed1 --seed 1 \
   --dataset_type hvb-cremad-minds14_en \
   --no_symbols --num_examples 0 --lora_epochs 5 --max_samples 0
 
-# Symbol Tuning (Wei et al.) — symbols, NO definitions, meaning from demonstrations
+# Symbol Tuning (Wei et al.): symbols, NO definitions, meaning from demonstrations
 python train.py --model_type qwen --run_name symtune_seed1 --seed 1 \
   --dataset_type hvb-cremad-minds14_en \
   --dynamic_symbols --symbol_update_strategy per_instance --num_symbol_mappings 100 \
   --no_legend --num_examples 5 --num_examples_min 2 --fewshot_per_class \
   --lora_epochs 5 --max_samples 0
 
-# Flipped-Label Tuning (Agrawal et al.) — permuted labels + definitions + 0-5 demos
+# Flipped-Label Tuning (Agrawal et al.): permuted labels + definitions + 0-5 demos
 python train.py --model_type qwen --run_name fliptune_seed1 --seed 1 \
   --dataset_type hvb-cremad-minds14_en \
   --no_symbols --swap_labels --symbol_update_strategy per_instance \
@@ -172,10 +170,10 @@ fixed and change only the label surface form:
 
 | Mode | Description |
 |---|---|
-| `original` | Canonical semantic names — does surrogate tuning cost anything on familiar labels? |
-| `fresh` | Novel symbols never seen in training — prior-free definition following |
-| `fixed` | The symbols seen during training — did the mapping itself get learned? |
-| `flipped` | Real labels deranged against their definitions — counterfactual steerability |
+| `original` | Canonical semantic names. Does surrogate tuning cost anything on familiar labels? |
+| `fresh` | Novel symbols never seen in training. Tests prior-free definition following |
+| `fixed` | The symbols seen during training. Did the mapping itself get learned? |
+| `flipped` | Real labels deranged against their definitions. Tests counterfactual steerability |
 
 `--val_flip_seed` fixes the derangement so the `flipped` legend is identical
 across models. Classification is scored with macro-F1 where generations are
@@ -210,7 +208,7 @@ utils/
 
 Symbols are random lowercase strings kept only if they tokenize to exactly two
 subword units in every prompt position (standalone, leading space, trailing
-comma), so target length is uniform across classes — see
+comma), so target length is uniform across classes. See
 `generate_fresh_symbols()` in `models/symbolAdapter/symbol_manager.py`. Labels
 shared across datasets (e.g. `neutral` in both CREMA-D and RAVDESS-Song) always
 receive independent symbols.
