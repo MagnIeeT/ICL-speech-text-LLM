@@ -81,6 +81,7 @@ DYNAMIC_SYMBOLS="${DYNAMIC_SYMBOLS:-true}"                                      
 SYMBOL_UPDATE_STRATEGY="${SYMBOL_UPDATE_STRATEGY:-per_instance}"                    # when dynamic symbols refresh: per_epoch | per_instance
 SWAP_LABELS="${SWAP_LABELS:-true}"                                               # true = randomly shuffle label↔symbol assignments each epoch
 NUM_SYMBOL_MAPPINGS="${NUM_SYMBOL_MAPPINGS:-100}"                                  # M pre-generated mappings: per_epoch uses pool[epoch%M], per_instance uses random.choice(pool)
+SURROGATE_MIX="${SURROGATE_MIX:-0}"                                                 # per-instance P(flipped regime); 0 = synthetic symbols only
 SEED="${SEED:-}"                                                                  # global seed for python/numpy/torch; empty = unseeded
 
 if [[ "${USE_DPO}" == "true" ]]; then
@@ -93,6 +94,7 @@ else
     _MODE="fix"
 fi
 [[ "${SWAP_LABELS}" == "true" ]] && _MODE="${_MODE}_swap_${SYMBOL_UPDATE_STRATEGY}"
+[[ "${SURROGATE_MIX}" != "0" ]] && _MODE="${_MODE}_mix${SURROGATE_MIX}"
 [[ "${NO_LEGEND}" == "true" ]] && _MODE="${_MODE}_nl"                              # no-legend tag
 [[ "${NUM_EXAMPLES}" != "0" ]] && _MODE="${_MODE}_fs${NUM_EXAMPLES}${FEWSHOT_MODE:0:1}"   # few-shot tag (_fs4s = 4 speech, _fs4t = 4 text)
 
@@ -193,6 +195,7 @@ ${_PYTHON_CMD} train.py \
     $( [[ "${DYNAMIC_SYMBOLS}" == "true" ]] && printf '%s' "--dynamic_symbols" ) \
     $( [[ "${SWAP_LABELS}" == "true" ]] && printf '%s' "--swap_labels" ) \
     --num_symbol_mappings "${NUM_SYMBOL_MAPPINGS}" \
+    --surrogate_mix "${SURROGATE_MIX}" \
     $( [[ "${USE_DPO}" == "true" ]] && printf '%s' "--use_dpo" ) \
     $( [[ "${USE_DPO}" == "true" ]] && printf '%s' "--dpo_beta ${DPO_BETA}" ) \
     --input_mode "${INPUT_MODE}" \
