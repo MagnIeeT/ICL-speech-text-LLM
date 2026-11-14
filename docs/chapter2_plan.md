@@ -1,326 +1,200 @@
-# Chapter 2 Plan: Definition-Governed Evidence Selection
+# Chapter 2 Plan: Removing the Canonical Cost of Surrogate Tuning
 
-Status: draft for discussion, 14 Nov 2026. Supersedes the Chapter 2 section of
-`thesis_chapters_plan.pdf`. Work happens on the `chapter-2` branch, never on `main`.
+Status: rewritten 15 Nov 2026 after the E0 pilot. Supersedes both the Chapter 2
+section of `thesis_chapters_plan.pdf` and the first version of this file, which
+was built around evidence routing. Results log: [`docs/e0_results.md`](e0_results.md).
+Work happens on `chapter-2`, never on `main`.
 
 ---
 
-## 1. One-sentence claim
+## 1. The claim
 
-A category definition should determine not only what a class *means* but which
-*evidence* decides it, and preference training on evidence-routed negatives makes
-speech-text LLMs honor that routing without the canonical-accuracy loss that
-DG-ICL-Sym paid.
+DG-ICL-Sym buys symbolic generalisation by degrading canonical-label
+discrimination. That cost is not inherent: it comes from never seeing real
+label words as training targets. A training scheme that keeps the surrogate
+mechanism while preserving canonical discrimination should match Instruction
+Tuning on canonical labels and DG-ICL-Sym on symbolic ones, in one checkpoint.
 
-## 2. Why this follows from Chapter 1
+## 2. Why this and not evidence routing
 
-Chapter 1 established that definitions alone can drive zero-shot SLU. Its own
-tables then expose two unfinished pieces:
+The first version of this plan proposed making definitions govern which
+modality decides a category. E0b killed it. The routing gap is zero on all four
+Qwen conditions (-3.6 to +2.4 points, no consistent sign), and the CREMA-D
+control is decisive: told to decide on words that score 14.8 percent alone, the
+model held 84 to 88 percent, losing 0 to 2 points instead of about 70. There is
+no partial capability to amplify, so H3 would have been betting a chapter on
+inducing one from zero.
 
-1. **A trade-off.** DG-ICL-Sym buys symbolic generalization with canonical
-   accuracy: 0.836 (IT) to 0.762 (Sym) on AF3 trained tasks, 0.723 to 0.633 on
-   Qwen held-out canonical. Cross-entropy raises the probability of the correct
-   surrogate but applies no gradient against the competing shortcut.
-2. **A second, unmeasured conflict.** Limitation 3 observes that transcripts
-   discard affective information. That is the symptom of a deeper issue: when
-   the words and the prosody disagree, which one wins, and can the prompt
-   control it?
+The canonical gap is the opposite situation: documented in Chapter 1's own
+tables, localised to identifiable tasks, mechanistically explicable, and with
+existence proofs on both sides.
 
-Chapter 1 measured conflict between a *label name* and its definition. Chapter 2
-adds conflict between *modalities*, and proposes one training method for both.
+## 3. The problem, with evidence
 
-## 3. Two conflict axes, one failure mode
+Qwen2-Audio, canonical (Original) macro-F1 from Chapter 1 Table
+`per_task_qwen`:
 
-| Axis | What conflicts | Ch1 status |
-|---|---|---|
-| **A: lexical prior** | the surface label's pre-trained meaning vs its assigned definition | measured; Sym retains 68%, IT 21% |
-| **B: evidence routing** | what the words say vs what the prosody says | unmeasured |
-
-Both are the same failure: the model falls back on something other than the
-definition it was given.
-
-**Positioning against the literature.** Preference optimization for
-context-faithfulness already exists in text ([Context-DPO][ctxdpo], [KnowPO][knowpo],
-[RPO][rpo]), so the objective is not the contribution. Audio-LLM text dominance is
-documented but only diagnostically: [ALME][alme] (arXiv 2602.11488, Mar 2026)
-contributes 57,602 audio-text conflict stimuli across eight languages and the Text
-Dominance Ratio, shows GPT-4o and Gemini 2.0 Flash follow conflicting text 10 to 26x
-more than baseline even when instructed to trust the audio, and **explicitly proposes
-no training fix** (verified: its only fine-tuning is a diagnostic ablation). Related
-work is circuit analysis ([text dominance circuits][circuits]) or decoding-time only
-([context-aware decoding for spoken dialogue][cad]). The gap is a *training* method,
-and routing evidence through per-category definitions rather than a global
-system-prompt instruction.
-
-## 4. Hypotheses
-
-- **H1 (recover the trade-off).** An explicit negative gradient on the
-  prior-implied label recovers canonical accuracy lost by DG-ICL-Sym while
-  keeping symbolic generalization. Target: Pareto, no canonical regression
-  within noise, gains on symbolic and counterfactual.
-- **H2 (two capabilities, not one).** Definition adherence under axis A and
-  under axis B are distinct. Chapter 1 improved A only; DG-ICL-Flip and
-  DG-ICL-Sym show no reliable routing gap on B.
-- **H3 (routing is trainable).** Preference training with evidence-routed
-  negatives produces a measurable routing gap on axis B, where instruction-level
-  prompting alone fails.
-- **H4 (phrasing robustness).** Training across definition phrasings closes the
-  paraphrase gap (0.663 to 0.571 in Ch1 Table 5), measured on **held-out**
-  phrasings, not the four already in that table.
-
-## 5. Method: evidence-routed preference optimization
-
-For every training instance build a preference pair (y_w, y_l), automatically,
-no annotation. The winner is what the active definition points to; the loser is
-the fallback the model is tempted by:
-
-| Axis | y_w | y_l |
-|---|---|---|
-| A | surrogate attached to the correct definition | the canonical word whose pre-trained meaning matches the audio |
-| B | label per the modality the definition names authoritative | label per the other modality |
-
-Objective: DPO with an NLL anchor (Formulation 1 of the original draft). Chosen
-because `symbol_training_dpo.py` already implements it, the reference model is
-free (`disable_adapter_layers()` on the same base, no second model in memory),
-and the NLL term guards against DPO depressing the chosen sequence.
-
-ORPO is a footnote if DPO proves unstable. GRPO is not planned: two-token outputs
-make rollouts cheap but also low-entropy, risking group collapse. **The optimizer
-is an implementation choice, not a contribution, and the paper should say so.**
-
-## 6. Stimulus construction for axis B
-
-CREMA-D and RAVDESS-Song are lexically *uninformative*, not *conflicting*: their
-sentences are emotionally neutral by design ("It's eleven o'clock"), so there is
-nothing for the prosody to disagree with. They are the control, not the test.
-
-Preferred source is **natural** conflict (MELD, conversational speech with its own
-true transcript), because it avoids the artificiality of a transcript that does not
-match the audio. Constructed conflict is the fallback:
-
-- **Audio** from CREMA-D, carrying the prosodic (acted) emotion label.
-- **Transcript** injected from MELD, carrying its own lexical emotion label.
-- Pair them so the two labels disagree. Both ground truths are exact, so both
-  routings are scorable.
-
-**Routed legends.** Same audio, same transcript, same symbols, only the routing
-clause changes:
-
-```
-zeph: utterances where the SPEAKER'S TONE conveys anger, regardless of the words spoken
-qolt: utterances where the WORDS express anger, regardless of the tone of voice
-```
-
-Four prompt conditions per item:
-
-| Condition | Legend | Purpose |
-|---|---|---|
-| `agree` | neutral | ceiling; can the model do the task at all |
-| `neutral` | no routing clause | default modality bias, our TDR analogue |
-| `route_tone` | tone authoritative | routing compliance toward audio |
-| `route_words` | words authoritative | routing compliance toward text |
-| `trap` | routing clause present, modalities agree | answer must not change |
-
-Guards against the legend acting as a keyword trigger rather than real routing:
-symbol labels so the name carries nothing, several paraphrases of the routing
-clause, and the `trap` condition.
-
-## 7. Metrics
-
-- **Routing gap**, the headline:
-  `gap = P(ans = tone-label | route_tone) - P(ans = tone-label | route_words)`.
-  Paired on identical inputs, so it controls for task difficulty and audio quality.
-- **Default bias**, from `neutral`: fraction following text when the modalities
-  disagree. Comparable in spirit to ALME's TDR.
-- **Ceiling**, from `agree`: macro-F1 when nothing conflicts. The routing gap is
-  read against this, since a model that cannot hear prosody cannot route to it.
-- Chapter 1 metrics unchanged for H1: canonical, symbolic, counterfactual
-  macro-F1, `macro_f1_with_invalid`.
-- Three seeds, Welch t-test with Hedges correction, as in Chapter 1.
-
-## 8. Experiment ladder
-
-**E0, pilot. Inference only, no training. Run this before anything else.**
-Split into two steps so that step 1 needs no new code at all.
-
-**E0a, disagreement mining (zero new code).** For each Chapter 1 checkpoint, run the
-same evaluation items twice with the existing flags, `--input_mode speech_only` and
-`--input_mode text_only`, on MELD (natural conversational speech where words and
-prosody genuinely diverge) and CREMA-D (neutral sentences, so the text carries almost
-no emotion signal; this is the control). Then compute, per item, whether the two
-unimodal predictions agree.
-
-Outputs:
-- **disagreement rate** per backbone and condition: how often the two modalities lead
-  the model to different answers. This alone is a reportable number and is the
-  quantitative version of Chapter 1's limitation 3.
-- **the disagreement subset**, the items where P_speech != P_text, which becomes the
-  evaluation set for E0b. Routing is only meaningful where the modalities actually
-  conflict for that model.
-
-**E0b, routing probe (needs the `speech_text` mode and routed legends).** On the
-disagreement subset, present audio and transcript together and vary only the legend:
-
-| Condition | Legend | Measures |
-|---|---|---|
-| `neutral` | no routing clause | default modality bias, our TDR analogue |
-| `route_tone` | tone authoritative | compliance toward audio |
-| `route_words` | words authoritative | compliance toward text |
-| `trap` | routing clause present, modalities agree | must not change the answer |
-| `instr_only` | routing stated in the system instruction, not per category | ALME-style baseline our training must beat |
-
-Headline measure, computed against the model's own unimodal predictions rather than
-an external ground truth, so no new annotation is needed:
-
-```
-routing gap = P(answer = P_speech | route_tone) - P(answer = P_speech | route_words)
-```
-
-A gap near zero means the definition does not control evidence selection, which is
-ALME's finding restated inside our framework. The `instr_only` condition separates
-"the model cannot be routed at all" from "the model can be routed, but only at the
-category level, not by a global instruction".
-
-The checkpoint audit confirms all four Chapter 1 conditions have loadable weights on
-AF3, Qwen2-Audio and SALMONN, so E0 runs entirely on existing weights:
-
-| | IT | DG-ICL-Sym | DG-ICL-Flip | SymbolTuning | FlippedLabel |
+| task | IT | DG-ICL-Sym | gap | DG-ICL-Flip | gap |
 |---|---|---|---|---|---|
-| AF3 | 25 runs | 43 | 6 | 6 | 3 |
-| Qwen2-Audio | 5 | 3 | 3 | 3 | 3 |
-| SALMONN | 4 | 8 | 1 | 1 | 1 |
+| HVB (18-way) | 0.674 | 0.572 | **-0.102** | 0.655 | -0.019 |
+| CREMA-D | 0.867 | 0.832 | -0.035 | 0.854 | -0.013 |
+| MInDS-14 en | 0.974 | 0.865 | **-0.109** | 0.973 | -0.001 |
+| Skit-S2I | 0.851 | 0.798 | -0.053 | 0.762 | -0.089 |
+| RAVDESS-Song | 0.660 | 0.520 | **-0.140** | 0.508 | -0.152 |
+| MInDS-14 fr | 0.848 | 0.765 | -0.083 | 0.878 | +0.030 |
+| MInDS-14 ko | 0.531 | 0.451 | -0.080 | 0.522 | -0.009 |
 
-Every outcome is informative, which is why it is the right first move:
+Aggregate (symbolic / original):
 
-| Pilot outcome | What Chapter 2 becomes |
-|---|---|
-| routing gap ~0 everywhere | clean problem statement; the training result is the whole contribution |
-| DG-ICL-Flip already shows a gap | strong Ch1-to-Ch2 bridge; chapter shifts to hardening and generalization |
-| disagreement rate near zero | the modalities never conflict for these models; axis B drops to a section |
-| `trap` condition shifts answers | the legend is a keyword trigger, not real routing; report as a negative finding |
+| | Qwen trained | Qwen held-out | AF3 trained | AF3 held-out |
+|---|---|---|---|---|
+| IT | 0.636 / **0.838** | 0.620 / **0.723** | 0.508 / **0.836** | 0.449 / 0.772 |
+| DG-ICL-Flip | 0.803 / 0.827 | 0.692 / 0.667 | 0.546 / 0.817 | 0.534 / **0.780** |
+| DG-ICL-Sym | **0.820** / 0.756 | **0.703** / 0.633 | **0.638** / 0.762 | **0.663** / 0.766 |
 
-**E0c, optional, only if E0b is ambiguous.** Constructed conflict in the ALME style:
-CREMA-D audio (prosodic label known) with an injected MELD transcript (lexical label
-known), giving exact dual ground truth at the cost of an artificial prompt. Keep this
-in reserve rather than building it first.
+## 4. The mechanism, and why it is testable
 
-**E1.** Axis-A preference training on real labels only. Tests whether penalizing
-the lexical shortcut recovers canonical accuracy without synthetic symbols. (H1)
+**It is not label-form decay.** Decomposing canonical errors from the E0b dumps:
 
-**E2.** Objective check: SFT on identical pairs vs DPO on identical pairs. This
-must use the *same pair data*, not the Chapter 1 Flip run, or it confounds data
-with objective.
+| condition | dataset | errors | invalid form | wrong-but-valid |
+|---|---|---|---|---|
+| DG-ICL-Sym | CREMA-D | 70 | 0 (0.0%) | 70 (100%) |
+| DG-ICL-Sym | MELD | 383 | 8 (2.1%) | 375 (97.9%) |
+| IT | CREMA-D | 61 | 0 (0.0%) | 61 (100%) |
+| IT | MELD | 306 | 37 (12.1%) | 269 (87.9%) |
 
-**E3.** Hybrid: axis-A plus axis-B routed negatives in one checkpoint. The
-scientific core. (H2, H3)
+Sym produces well-formed, in-inventory labels and picks the wrong category. It
+is *better* than IT at label form. So the loss is in category discrimination.
 
-**E4.** Multi-view phrasing, trained on a phrasing pool, evaluated on held-out
-phrasings generated separately. (H4)
+**The control that identifies the cause.** On the three trained tasks, Flip
+holds canonical almost exactly (-0.019, -0.013, -0.001) while Sym drops 0.102,
+0.035, 0.109. The structural difference between them is the target vocabulary:
+Flip's targets are real English words, permuted; Sym's are synthetic two-token
+strings. So the hypothesis is that **never producing real label words as targets
+degrades the canonical decision boundary.**
 
-**E5.** External validity: natural disagreement on MELD audio, where text and
-prosody genuinely diverge, rather than constructed pairs.
+**Existence proofs that the cost is removable.** AF3 held-out Sym scores 0.766
+canonical against IT's 0.772, a loss of 0.006 while gaining 0.214 symbolic. One
+cell where the trade-off simply does not appear. And Flip shows real-word
+targets preserve canonical without abandoning surrogates.
 
-**Side ablation, not a chapter.** Symbol token properties: length 1 vs 2 vs 3,
-and leading-BPE-token collisions. Measured on the Qwen tokenizer, uniform
-sampling yields a first-token collision in 28% of 18-label HVB draws and 16% of
-14-label MInDS-14 draws, which the Chapter 1 hard pool avoided by construction.
-One run per setting, fills an ablation table.
+## 5. Hypotheses
 
-## 9. Baselines
+- **H1.** Exposing the model to real label words as targets during surrogate
+  training preserves canonical discrimination without costing symbolic
+  generalisation.
+- **H2.** Plain data mixing is not sufficient: cross-entropy raises the
+  probability of the assigned surface but applies no gradient against the
+  pre-trained label prior, so a conditional negative is needed.
+- **H3 (scoped down from the old H3).** Definitions govern what a category
+  means but not which evidence decides it. Already measured, reported as a
+  bounded negative result rather than a target.
 
-Pre-trained, Instruction Tuning, DG-ICL-Sym, DG-ICL-Flip (all from Ch1, weights
-exist), Symbol Tuning (Wei), Flipped-Label Tuning (Agrawal), and SFT-on-identical-pairs
-from E2. Prompt-only routing (instruction says "trust the audio") is the ALME-style
-baseline that our training is meant to beat.
+## 6. Method
 
-## 10. Code changes required
+For each instance the legend maps every class `l` to a surface form `f(l)`,
+drawn per instance from one of three regimes: canonical (`f(l) = l`), synthetic
+symbol, or permuted real label.
 
-Nothing here touches `main`.
+- `y_w = f(y)`, the surface the legend assigns to the true class.
+- `y_l = y`, the canonical name, **only when `f(y) != y`**.
 
-**For E0 (pilot), in rough order:**
+The conditional is the point. Canonical-legend instances carry no negative, so
+canonical ability is trained directly and never penalised. Surrogate-legend
+instances penalise exactly one failure: emitting the trained label name instead
+of the one the legend assigns. Plain SFT cannot express that, and neither can a
+naive mixture, which has no negative gradient at all.
 
-1. **Conflict dataset builder.** New `utils/build_conflict_set.py`: pairs CREMA-D
-   audio with MELD transcripts under a disagreement constraint; emits fields
-   `audio`, `text` (injected), `tone_label`, `word_label`.
-2. **New `input_mode`.** Add `speech_text` alongside `speech_only` and
-   `text_only`, so the prompt renders the audio *and* a transcript line. Touches
-   `training_configs.py` (choices), `multi_task_dataset.py:364`
-   (`_get_main_audio` gates on `"speech" in input_mode`, already compatible), and
-   `format_prompt` in all three processors.
-3. **Routed legends via existing machinery.** No new flag needed: add
-   `route_tone`, `route_words`, `route_none` as entries in the dataset config's
-   `prompt_variants`, selected by the existing `--definition_variant`.
-4. **Two dataset configs** (`cremad_conflict_tone`, `cremad_conflict_words`)
-   differing only in `completion_key`, so the existing evaluation path scores
-   against the right ground truth without touching `evaluation_utils.py`.
-5. **Metrics.** Routing gap and default bias are computed post hoc from the
-   per-condition prediction dumps; a small analysis script, not pipeline code.
+Objective: DPO with an NLL anchor, reusing `symbol_training_dpo.py`, whose
+reference model is the same base with `disable_adapter_layers()`, so no second
+model in memory. The optimiser is an implementation choice, not a contribution.
 
-**For E1 to E4, later:**
+## 7. Experiment ladder
 
-6. Rewrite pair construction in `symbol_training_dpo.py`. `_sample_rejected_symbol()`
-   currently samples a random *other symbol*; it must produce the lexical-prior
-   foil (axis A) and the other-modality label (axis B). The loss, merged batch,
-   and reference-via-adapter-disable scaffolding are reusable as is.
-7. Per-instance phrasing sampling for E4: `--definition_variant` currently fixes
-   one phrasing per run; E4 needs a per-instance draw from a pool.
+The first two stages exist to answer "is there an improvement at all" before any
+novelty is layered on. Nothing here needs new datasets.
 
-**Cleanup before starting:** rename `chapter-2-dspo` to `chapter-2`, and decide
-whether to delete the D-SPO modules there too. They are preserved at
-`v1.0-paper-submission` either way, and nothing in this plan uses the router,
-slot or Gumbel machinery. `symbol_training_dpo.py` must be kept.
+- **E1, naive mixture (the cheap decisive run).** SFT with the legend regime
+  sampled per instance across canonical, synthetic and permuted-real. Does
+  canonical recover while symbolic holds? Qwen, three seeds. If this alone
+  closes the gap, the objective contribution is thin and we say so.
+- **E2, conditional negatives.** The method of Section 6, on identical data to
+  E1 so the comparison isolates the objective rather than the data recipe. (H2)
+- **E3, mixture ablation.** Ratio of the three regimes, and whether permuted-real
+  alone suffices or synthetic symbols are needed too.
+- **E4, replication on AF3.** The backbone where Flip's symbolic transfer fails
+  and where Sym already shows no held-out trade-off. The harder case.
+- **E5, phrasing robustness (the old H4).** Train across definition phrasings,
+  evaluate on **held-out** phrasings, never the four already in Chapter 1
+  Table 5. Train/test overlap on the phrasing axis would invalidate the claim.
 
-## 11. Compute
+## 8. Metrics
 
-One RTX A6000. E0 is inference only: 4 conditions x 2 backbones x 5 prompt
-conditions x 1 seed, roughly 20 minutes per run after a ~6 minute model load, so
-an overnight job. E1 to E4 are LoRA runs on the same three fine-tuning datasets,
-comparable to Chapter 1, roughly 2 to 3 days per stage for AF3 plus Qwen at three
-seeds. SALMONN stays a single-seed scale reference.
+Chapter 1's: canonical and symbolic macro-F1 on trained and held-out tasks,
+`macro_f1_with_invalid`, counterfactual retention under the flipped legend.
+Three seeds, Welch t-test with Hedges correction.
 
-## 12. Risks and kill criteria
+Plus one new metric from E0a, which Chapter 1 never reported: **inventory
+adherence**, the fraction of predictions inside the prompt's label set on an
+unseen task. DG-ICL-Sym scores 0.2 percent out-of-inventory against 8.6 for IT
+and 10.6 for Flip. It is a direct measure of legend-following and it is free.
+
+## 9. Novelty, stated honestly
+
+"Train on a mixture of surrogate types" is an obvious move and thin on its own.
+The contribution has to be:
+
+1. **The diagnosis.** Why surrogate tuning costs canonical accuracy, with the
+   error decomposition and the Flip control. Chapter 1 reported the trade-off;
+   nobody has explained it.
+2. **The conditional negative**, and evidence that it beats the naive mixture
+   on identical data. If it does not, that is a real finding and the chapter
+   leans on the diagnosis plus the scoped negative result instead.
+3. **The bounded negative result on evidence routing**, which scopes what
+   definition-following means and is novel against ALME, who measure
+   instruction-level compliance in proprietary models and propose no fix.
+
+The naive mixture must appear as a baseline, not the method, or a reviewer will
+ask why preference optimisation was needed.
+
+## 10. Risks and kill criteria
 
 | Risk | Signal | Response |
 |---|---|---|
-| Prosody not perceivable enough for routing to matter | low `agree` ceiling in E0 | drop axis B to a short section, make H1 and H4 the chapter |
-| Routing clause acts as keyword trigger, not real routing | `trap` condition changes the answer | report as a negative finding; it is itself interesting |
-| Constructed conflict judged artificial | reviewer risk | E5 on naturally disagreeing MELD audio |
-| DPO instability, chosen logprob collapse | training curves | NLL anchor already in objective; ORPO as fallback |
-| Novelty judged thin vs Context-DPO | reviewer risk | foreground evidence routing and the pair construction, never the optimizer |
-| Ch1 numbers shift in review | revision request | do not hard-code Ch1 numbers into Ch2 drafts |
+| Naive mixture already closes the gap | E1 matches IT canonical and Sym symbolic | Report it; novelty moves to the diagnosis and the negative result |
+| Conditional negative adds nothing over E1 | E2 within noise of E1 | Honest ablation; chapter rests on diagnosis plus H3 |
+| Mixture costs symbolic | symbolic falls below Sym | Tune the ratio in E3; if it is a genuine frontier, report the frontier |
+| Gains are Qwen-only | E4 flat on AF3 | State per backbone; AF3 already shows no held-out trade-off, so it is the weaker case by construction |
+| DPO instability | chosen logprob collapses | NLL anchor is in the objective; ORPO as fallback |
 
-## 13. Dropped from the original draft, with reasons
+## 11. Compute
 
+One RTX A6000 per run. Training is the same shape as Chapter 1: three tasks,
+LoRA, about 2 to 3 days per stage for Qwen at three seeds, AF3 similar.
+Evaluation reuses the existing inference path.
+
+## 12. What was dropped, and why
+
+- **Evidence routing as a chapter target.** E0b showed a hard null with a
+  decisive control. Retained only as a scoped negative result.
 - **RL or learned search over symbol choice.** Verbalizer-search literature
   reports modest gains at cost scaling with class count; RLPrompt shows the
-  optimum is gibberish with no semantic structure; our symbols are already
-  meaningless by construction. Internally falsified twice: the easy/hard H2
-  ablation showed no effect and D-SPO never became a chapter. Low ceiling.
-- **CD-DPO vs CD-ORPO as a headline.** Demoted to an implementation note.
-- **"Beat everything" target table.** Replaced by Pareto claims. The old table
-  asked the method to exceed IT on canonical *and* exceed DG-ICL-Sym on symbolic
-  on every row, which turns a good result into a reported miss.
-- **Stage 4 as drafted.** Training on Original/Paraphrase/Terse/Verbose and then
-  reporting on Ch1 Table 5, which is those same four phrasings, is train/test
-  overlap on the phrasing axis. Held-out phrasings required.
+  optimum is gibberish; our own easy/hard ablation found no effect and D-SPO
+  never became a chapter.
+- **CD-DPO vs CD-ORPO as a headline.** Implementation note.
+- **"Beat everything" target tables.** Replaced by Pareto claims against a
+  named baseline per cell.
 
-## 14. Open questions
+## 13. Open questions
 
-1. Is MELD the right transcript source for injected conflict, or is a text-only
-   emotion corpus (GoEmotions, DailyDialog) cleaner? MELD has the advantage of
-   being conversational and already configured.
-2. Does axis B extend past emotion to intent, or is prosody-vs-words inherently
-   a paralinguistic phenomenon? If it is emotion-only, the chapter narrows.
-3. Target venue: the original draft said Computer Speech & Language, Speech
-   Communication or TASLP. Does the audio-LLM conflict framing push it toward
-   TASLP?
-4. Sequencing: Chapter 3 (open-world, abstention, hierarchy) carries more novelty
-   but more risk. Chapter 2 is faster and closes the weakness a Chapter 1 reviewer
-   is most likely to name. Confirm Chapter 2 goes first.
-
----
-
-## 15. References
+1. Does the canonical loss track class count (HVB 18-way and MInDS-14 14-way
+   are the worst trained-task cells) or task type? That changes what the
+   mixture needs to cover.
+2. Is RAVDESS-Song's -0.140 the same phenomenon or a paralinguistic effect?
+   It is the largest single gap and it is a held-out emotion task.
+3. Target venue, given the chapter is now diagnosis plus method plus a negative
+   result rather than a single new mechanism.
+## 14. References
 
 [ctxdpo]: https://openreview.net/pdf/2da95227c6c14c9a45c6a4a068648aca1bc93c37.pdf
 [knowpo]: https://ojs.aaai.org/index.php/AAAI/article/view/34783/36938
