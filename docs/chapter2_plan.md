@@ -230,6 +230,21 @@ Evaluation reuses the existing inference path.
 - Making Pre-trained Language Models Better Few-shot Learners (LM-BFF, automatic label search). https://arxiv.org/pdf/2012.15723
 - Boosting Prompt-Based Self-Training With Mapping-Free Automatic Verbalizer. https://arxiv.org/pdf/2312.04982
 
+**Forgetting, anchoring and the alignment tax (relevant to the objective)**
+- Anchored Supervised Fine-Tuning. https://arxiv.org/html/2509.23753v3
+- Proximal Supervised Fine-Tuning. https://arxiv.org/pdf/2508.17784
+- Stabilizing LLM Supervised Fine-Tuning via Explicit Distributional Control. https://arxiv.org/html/2605.04468v1
+- Mitigating the Alignment Tax of RLHF. https://arxiv.org/pdf/2309.06256
+- Preference Data Selection for Mitigating the Alignment Tax in LLMs. https://arxiv.org/pdf/2608.24192
+- UFT: Unifying Fine-Tuning of SFT and RLHF/DPO/UNA through a Generalized Implicit Reward Function. https://arxiv.org/html/2410.21438v1
+
+  Note: these establish that a KL/reference anchor mitigates forgetting in text
+  LLMs. "We used a reference-anchored objective and it forgot less" is therefore
+  NOT a contribution on its own. What is ours is the phenomenon (surrogate
+  tuning degrading canonical category discrimination in speech-text LLMs), the
+  claim that the trade-off is an artifact of the objective, and any mechanism
+  tailored to it.
+
 **Our own prior work**
 - Chapter 1: Definition-Guided In-Context Learning for Zero-Shot Spoken Language Understanding (under review).
 - Spoken Language Understanding on Unseen Tasks With In-Context Learning. https://arxiv.org/html/2505.07731

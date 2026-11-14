@@ -253,6 +253,37 @@ is consistent with Chapter 1 Table 5, where Sym lost the most under paraphrase
 (0.663 to 0.571). A model trained to read definitions is also the model most
 disturbed when they are reworded.
 
+### E0b-2: the same test with the transcript supplied (`speech_text`)
+
+E0b-1 left one loophole: with audio only, a null could mean "will not route" or
+"could not recover the words to route to". E0b-2 hands the model a labelled
+transcript alongside the audio, removing the extraction step. Qwen, 15 Nov 2026.
+
+| condition | legend | = P_speech | = P_text | neither | gap (speech) |
+|---|---|---|---|---|---|
+| DG-ICL-Sym | route_tone | 29.1% | 45.0% | 25.9% | **+2.4** |
+| | route_words | 26.7% | 47.4% | 25.9% | |
+| Instruction Tuning | route_tone | 41.8% | 37.5% | 20.7% | **-2.0** |
+| | route_words | 43.8% | 37.1% | 19.1% | |
+| DG-ICL-Flip | route_tone | 29.7% | 49.7% | 20.5% | **-0.5** |
+| | route_words | 30.3% | 50.3% | 19.5% | |
+
+**[F] The loophole is closed and the null holds.** Two facts together:
+
+1. The transcript is legible and highly influential. Supplying it shifts answers
+   massively toward `P_text`: Sym goes from 17.9 percent matching `P_text` with
+   audio only to 45.0 to 47.4 percent with the transcript present, a swing of
+   about 28 points. The model plainly reads and uses it.
+2. The routing gap stays at zero anyway: +2.4, -2.0, -0.5. Identical to E0b-1.
+
+So the model cannot be excused on extraction grounds. Handed both channels in
+legible form, it shifts toward text regardless of which channel the definition
+names as authoritative. Routing fails because the definition does not control
+evidence selection, not because the evidence was unavailable.
+
+This is also a second, independent measurement of text dominance: with both
+modalities present and no routing instruction obeyed, the lexical channel wins.
+
 ### What this means for Chapter 2
 
 This is the "routing gap near zero" branch of the plan, so the problem statement
