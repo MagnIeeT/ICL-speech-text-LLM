@@ -29,25 +29,12 @@ USE_DPO=false
 DPO_BETA=0.1
 NO_SYMBOLS=true
 DYNAMIC_SYMBOLS=false
-DIFF_SYMBOL_ENABLED=false
 SWAP_LABELS=false
 SYMBOL_UPDATE_STRATEGY="per_epoch"                   # per_epoch | per_instance
 VALIDATION_MODES="fixed,original,fresh"              
-SYMBOL_DIFFICULTY="random"
-VAL_SYMBOL_DIFFICULTY="random"
 NUM_SYMBOL_MAPPINGS=20
 
 # --- D-SPO Settings ---
-DSPO_ROUTER_LR=1e-2
-DSPO_TAU_ANNEAL_RATE=0.0001
-DSPO_SLOT_ONLY=false
-DSPO_PHASE0_EPOCHS=0
-DSPO_PHASE1_PATIENCE=3
-DSPO_PHASE1_EPOCHS=5
-DSPO_NUM_SLOTS=20
-DSPO_SLOT_VOCAB_SIZE=25
-DSPO_ROTATION_INTERVAL=200
-DSPO_PHASE2_ROTATION=0
 
 # --- Training Hyperparameters ---
 LORA_LR=1e-5
@@ -86,9 +73,6 @@ fi
 # Run name mode logic (ported from your old script)
 if [[ "${USE_DPO}" == "true" || "${USE_DPO}" == true ]]; then
     _MODE="symdpo"
-elif [[ "${DIFF_SYMBOL_ENABLED}" == "true" || "${DIFF_SYMBOL_ENABLED}" == true ]]; then
-    _MODE="dspo"
-    [[ "${DSPO_SLOT_ONLY}" == "true" || "${DSPO_SLOT_ONLY}" == true ]] && _MODE="dspo_slotonly"
 elif [[ "${NO_SYMBOLS}" == "true" || "${NO_SYMBOLS}" == true ]]; then
     _MODE="nosym"
 elif [[ "${DYNAMIC_SYMBOLS}" == "true" || "${DYNAMIC_SYMBOLS}" == true ]]; then
@@ -119,8 +103,6 @@ mkdir -p "${LOG_DIR}" "${CHECKPOINT_DIR}"
 EXTRA_ARGS=""
 [[ "${NO_SYMBOLS}" == true || "${NO_SYMBOLS}" == "true" ]] && EXTRA_ARGS="${EXTRA_ARGS} --no_symbols"
 [[ "${DYNAMIC_SYMBOLS}" == true || "${DYNAMIC_SYMBOLS}" == "true" ]] && EXTRA_ARGS="${EXTRA_ARGS} --dynamic_symbols"
-[[ "${DIFF_SYMBOL_ENABLED}" == true || "${DIFF_SYMBOL_ENABLED}" == "true" ]] && EXTRA_ARGS="${EXTRA_ARGS} --diff_symbol_enabled"
-[[ "${DSPO_SLOT_ONLY}" == true || "${DSPO_SLOT_ONLY}" == "true" ]] && EXTRA_ARGS="${EXTRA_ARGS} --dspo_slot_only"
 [[ "${SWAP_LABELS}" == true || "${SWAP_LABELS}" == "true" ]] && EXTRA_ARGS="${EXTRA_ARGS} --swap_labels"
 [[ "${USE_DPO}" == true || "${USE_DPO}" == "true" ]] && EXTRA_ARGS="${EXTRA_ARGS} --use_dpo --dpo_beta ${DPO_BETA}"
 [[ "${VALIDATE_BEFORE_TRAINING}" == false || "${VALIDATE_BEFORE_TRAINING}" == "false" ]] && EXTRA_ARGS="${EXTRA_ARGS} --no_validate_before_training"
@@ -179,17 +161,6 @@ python "${PROJECT_ROOT}/train.py" \
     --run_name "${RUN_NAME}" \
     --validation_modes "${VALIDATION_MODES}" \
     --symbol_update_strategy "${SYMBOL_UPDATE_STRATEGY}" \
-    --dspo_router_lr ${DSPO_ROUTER_LR} \
-    --dspo_tau_anneal_rate ${DSPO_TAU_ANNEAL_RATE} \
-    --dspo_phase0_epochs ${DSPO_PHASE0_EPOCHS} \
-    --dspo_phase1_patience ${DSPO_PHASE1_PATIENCE} \
-    --dspo_phase1_epochs ${DSPO_PHASE1_EPOCHS} \
-    --dspo_num_slots ${DSPO_NUM_SLOTS} \
-    --dspo_slot_vocab_size ${DSPO_SLOT_VOCAB_SIZE} \
-    --dspo_rotation_interval ${DSPO_ROTATION_INTERVAL} \
-    --dspo_phase2_rotation ${DSPO_PHASE2_ROTATION} \
-    --symbol_difficulty "${SYMBOL_DIFFICULTY}" \
-    --val_symbol_difficulty "${VAL_SYMBOL_DIFFICULTY}" \
     --num_symbol_mappings ${NUM_SYMBOL_MAPPINGS} \
     --input_mode "${INPUT_MODE}" \
     --fewshot_mode "${FEWSHOT_MODE}" \

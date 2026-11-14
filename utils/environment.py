@@ -1,4 +1,5 @@
 import os
+import random
 import sys
 import logging
 
@@ -7,6 +8,29 @@ try:
     HAS_DOTENV = True
 except ImportError:
     HAS_DOTENV = False
+
+def set_global_seed(seed: int) -> None:
+    """Seed Python, NumPy and torch so a run is reproducible given the same data order.
+
+    The paper reports mean +/- std over three seeds; pass --seed to pick one.
+    Note that cuDNN kernels stay non-deterministic, so runs are repeatable only
+    up to floating-point kernel scheduling, not bit-identical.
+    """
+    random.seed(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    try:
+        import numpy as np
+        np.random.seed(seed)
+    except ImportError:
+        pass
+    try:
+        import torch
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+    except ImportError:
+        pass
+    logging.info("Global seed set to %d", seed)
+
 
 def setup_environment():
     """Load environment variables and setup Python path."""

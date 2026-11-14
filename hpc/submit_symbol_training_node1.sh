@@ -74,46 +74,23 @@ VALIDATION_MODES="${VALIDATION_MODES:-original}"                     # which sym
 USE_DPO="${USE_DPO:-false}"                                                        # true = use SymDPO trainer
 DPO_BETA="${DPO_BETA:-0.1}"                                                       # DPO temperature β: higher = stronger preference margin
 
-# D-SPO: differentiable slot routing (set DIFF_SYMBOL_ENABLED=true to activate)
-DIFF_SYMBOL_ENABLED="${DIFF_SYMBOL_ENABLED:-false}"                               # true = enable D-SPO differentiable slot routing
-DSPO_ROUTER_LR="${DSPO_ROUTER_LR:-1e-2}"                                         # D-SPO router (slot preference matrix) learning rate
-DSPO_TAU_ANNEAL_RATE="${DSPO_TAU_ANNEAL_RATE:-0.0001}"                          # D-SPO Gumbel temperature decay rate per step
-DSPO_SLOT_ONLY="${DSPO_SLOT_ONLY:-false}"                                         # true = freeze LoRA, train only slot matrix (also needs DIFF_SYMBOL_ENABLED=true)
-DSPO_PHASE0_EPOCHS="${DSPO_PHASE0_EPOCHS:-0}"                                    # >0: LoRA-only warmup on original labels before D-SPO starts
-DSPO_PHASE1_PATIENCE="${DSPO_PHASE1_PATIENCE:-3}"                                # >0: auto-switch from slot-only Phase 1 to LoRA Phase 2 when conf_mean plateaus for this many epochs
-DSPO_PHASE1_EPOCHS="${DSPO_PHASE1_EPOCHS:-5}"                                    # >0: hard cap on Phase 1 epochs — switches to Phase 2 even if patience not triggered
-DSPO_NUM_SLOTS="${DSPO_NUM_SLOTS:-20}"                                            # D-SPO total slot pool size (>= num training labels; extra slots used when rotation enabled)
-DSPO_SLOT_VOCAB_SIZE="${DSPO_SLOT_VOCAB_SIZE:-25}"                               # D-SPO private vocab tokens per slot (K)
-DSPO_ROTATION_INTERVAL="${DSPO_ROTATION_INTERVAL:-200}"                           # Phase 1 slot rotation: -1=fixed, 0=per epoch, >0=every N steps
-DSPO_PHASE2_ROTATION="${DSPO_PHASE2_ROTATION:-0}"                               # Phase 2 symbol refresh: -1=fixed, 0=per epoch, 1=per instance, >1=every N steps
 
 # Fixed/dynamic symbols
 NO_SYMBOLS="${NO_SYMBOLS:-true}"                                                 # true = disable symbol replacement, use raw labels (must be false for DPO)
 DYNAMIC_SYMBOLS="${DYNAMIC_SYMBOLS:-true}"                                       # true = regenerate symbol mapping each epoch
 SYMBOL_UPDATE_STRATEGY="${SYMBOL_UPDATE_STRATEGY:-per_instance}"                    # when dynamic symbols refresh: per_epoch | per_instance
 SWAP_LABELS="${SWAP_LABELS:-true}"                                               # true = randomly shuffle label↔symbol assignments each epoch
-SYMBOL_DIFFICULTY="${SYMBOL_DIFFICULTY:-hard}"                                  # training symbol difficulty: easy | hard | random
-VAL_SYMBOL_DIFFICULTY="${VAL_SYMBOL_DIFFICULTY:-random}"                            # fresh validation symbol difficulty: easy | hard | random
 NUM_SYMBOL_MAPPINGS="${NUM_SYMBOL_MAPPINGS:-100}"                                  # M pre-generated mappings: per_epoch uses pool[epoch%M], per_instance uses random.choice(pool)
+SEED="${SEED:-}"                                                                  # global seed for python/numpy/torch; empty = unseeded
 
 if [[ "${USE_DPO}" == "true" ]]; then
     _MODE="symdpo"
-elif [[ "${DIFF_SYMBOL_ENABLED}" == "true" ]]; then
-    _MODE="dspo"
-    [[ "${DSPO_SLOT_ONLY}" == "true" ]] && _MODE="dspo_slotonly"
 elif [[ "${NO_SYMBOLS}" == "true" ]]; then
     _MODE="nosym"
 elif [[ "${DYNAMIC_SYMBOLS}" == "true" ]]; then
     [[ "${SYMBOL_UPDATE_STRATEGY}" == "per_instance" ]] && _MODE="dpi" || _MODE="dpe"
 else
     _MODE="fix"
-fi
-if [[ "${NO_SYMBOLS}" != "true" ]]; then
-    case "${SYMBOL_DIFFICULTY}" in
-        hard)   _MODE="${_MODE}_ha" ;;
-        easy)   _MODE="${_MODE}_ea" ;;
-        random) _MODE="${_MODE}_ra" ;;
-    esac
 fi
 [[ "${SWAP_LABELS}" == "true" ]] && _MODE="${_MODE}_swap_${SYMBOL_UPDATE_STRATEGY}"
 [[ "${NO_LEGEND}" == "true" ]] && _MODE="${_MODE}_nl"                              # no-legend tag
@@ -209,24 +186,12 @@ ${_PYTHON_CMD} train.py \
     --output_dir "${OUTPUT_DIR}" \
     --checkpoint_dir "${CHECKPOINT_DIR}" \
     --run_name "${RUN_NAME}" \
+    $( [[ -n "${SEED}" ]] && printf '%s %s' "--seed" "${SEED}" ) \
     --validation_modes "${VALIDATION_MODES}" \
     --symbol_update_strategy "${SYMBOL_UPDATE_STRATEGY}" \
     $( [[ "${NO_SYMBOLS}" == "true" ]] && printf '%s' "--no_symbols" ) \
     $( [[ "${DYNAMIC_SYMBOLS}" == "true" ]] && printf '%s' "--dynamic_symbols" ) \
-    $( [[ "${DIFF_SYMBOL_ENABLED}" == "true" ]] && printf '%s' "--diff_symbol_enabled" ) \
-    --dspo_router_lr "${DSPO_ROUTER_LR}" \
-    --dspo_tau_anneal_rate "${DSPO_TAU_ANNEAL_RATE}" \
-    $( [[ "${DSPO_SLOT_ONLY}" == "true" ]] && printf '%s' "--dspo_slot_only" ) \
-    --dspo_phase0_epochs "${DSPO_PHASE0_EPOCHS}" \
-    --dspo_phase1_patience "${DSPO_PHASE1_PATIENCE}" \
-    --dspo_phase1_epochs "${DSPO_PHASE1_EPOCHS}" \
-    --dspo_num_slots "${DSPO_NUM_SLOTS}" \
-    --dspo_slot_vocab_size "${DSPO_SLOT_VOCAB_SIZE}" \
-    --dspo_rotation_interval "${DSPO_ROTATION_INTERVAL}" \
-    --dspo_phase2_rotation "${DSPO_PHASE2_ROTATION}" \
     $( [[ "${SWAP_LABELS}" == "true" ]] && printf '%s' "--swap_labels" ) \
-    --symbol_difficulty "${SYMBOL_DIFFICULTY}" \
-    --val_symbol_difficulty "${VAL_SYMBOL_DIFFICULTY}" \
     --num_symbol_mappings "${NUM_SYMBOL_MAPPINGS}" \
     $( [[ "${USE_DPO}" == "true" ]] && printf '%s' "--use_dpo" ) \
     $( [[ "${USE_DPO}" == "true" ]] && printf '%s' "--dpo_beta ${DPO_BETA}" ) \

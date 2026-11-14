@@ -172,7 +172,7 @@ else
 fi
 
 # Extract training dataset from checkpoint dir name (3rd _-separated field)
-# e.g. "173148_qa_me_dspo" → "me"
+# e.g. "173148_qa_me_dpi" -> "me"
 CHECKPOINT_DIR_NAME=$(basename "$(dirname "${CHECKPOINT_PATH}")")
 TRAIN_DATA_RAW=$(echo "${CHECKPOINT_DIR_NAME}" | cut -d'_' -f3)
 TRAIN_DATA="${TRAIN_DATA_RAW//voxceleb/vb}"

@@ -89,11 +89,8 @@ class ValidationManager:
             symbol_mappings_to_use = {}
             mode_name = "Original"
         elif use_dynamic_symbols:
-            diff = self.symbol_manager.val_symbol_difficulty
-            symbol_mappings_to_use = self.symbol_manager._generate_symbol_mappings(
-                force=True, difficulty=diff
-            )
-            mode_name = f"Fresh-Symbols({diff})"
+            symbol_mappings_to_use = self.symbol_manager._generate_symbol_mappings(force=True)
+            mode_name = "Fresh-Symbols"
         elif use_flip:
             seed = int(getattr(self.config.symbol_config, "val_flip_seed", 0))
             symbol_mappings_to_use = self._build_flip_map(seed)
