@@ -1,29 +1,29 @@
+# Data / model artifacts
 =*
 *.pt
 *.ckpt
+
+# Outputs
 results/
 logs/
+
+# Python
 __pycache__/
 
-# Private Configuration
+# Private configuration
 .env
-GEMINI.md
 
-# Private/Local Folders
-archive/
-eval_asr_tasks/
-
-# Evaluation junk
-eval_asr_tasks/data/
-eval_asr_tasks/logs/
-eval_asr_tasks/*.json
-eval_asr_tasks/*.log
-
-# Local docs / paper artifacts (do not push)
+# Local docs (not pushed)
 CLAUDE.md
+GEMINI.md
 RESEARCH_APPROACH.md
 DATASET_CANDIDATES.md
 dgst_overview*
+
+# Local-only folders
+archive/
 .agents/
 figures/
-
+hpc/
+analysis/
+eval_asr_tasks/

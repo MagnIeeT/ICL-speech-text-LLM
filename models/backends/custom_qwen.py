@@ -20,7 +20,7 @@ logging.basicConfig(
 
 class CustomQwen(nn.Module):
     """
-    Custom implementation of Qwen2 Audio model with D-SPO support.
+    Custom implementation of Qwen2 Audio model.
     Provides a standardized interface for training and inference.
     """
 
@@ -56,7 +56,7 @@ class CustomQwen(nn.Module):
 
         if input_processor is not None:
             self.input_processor = input_processor
-            logging.info("CustomQwen: Using unified input_processor with slot tokens.")
+            logging.info("CustomQwen: Using unified input_processor.")
         else:
             self.input_processor = AutoProcessor.from_pretrained(
                 model_path,
@@ -110,7 +110,7 @@ class CustomQwen(nn.Module):
         logging.debug("get_speech_embeddings called but not implemented for Qwen2")
         return None, None, None, None
 
-    def forward(self, samples, router=None, dspo_module=None):
+    def forward(self, samples):
         start_time = time.time()
         logging.debug(f"Starting forward pass for batch {self.batch_counter}")
 
@@ -138,8 +138,6 @@ class CustomQwen(nn.Module):
             decoded_last_labels = self.input_processor.tokenizer.decode([x for x in labels[0][-30:] if x != -100])
             logging.info(f"Last 30 input tokens decoded: {decoded_last_input}")
             logging.info(f"Last 30 labels decoded: {decoded_last_labels}")
-            if router is not None:
-                logging.info("D-SPO: Router detected in forward pass. Enabling differentiable injection.")
             logging.info("==============================")
 
         if input_features is not None:
@@ -158,26 +156,9 @@ class CustomQwen(nn.Module):
         if feature_attention_mask is not None:
             feature_attention_mask = feature_attention_mask.to(self.device)
 
-        # D-SPO Injection
-        inputs_embeds = None
-        if router is not None and dspo_module is not None:
-            embedding_layer = self.model.get_input_embeddings()
-            inputs_embeds = embedding_layer(input_ids)
-            inputs_embeds = dspo_module.inject_differentiable_symbols(
-                input_ids=input_ids,
-                input_embeds=inputs_embeds,
-                router=router,
-                embedding_layer=embedding_layer,
-                pre_computed_probs=samples.get("dspo_probs"),
-            )
-            input_ids_to_pass = None
-        else:
-            input_ids_to_pass = input_ids
-
         with torch.cuda.amp.autocast(enabled=self.use_fp16):
             outputs = self.model(
-                input_ids=input_ids_to_pass,
-                inputs_embeds=inputs_embeds,
+                input_ids=input_ids,
                 attention_mask=attention_mask,
                 input_features=input_features,
                 feature_attention_mask=feature_attention_mask,
@@ -191,7 +172,7 @@ class CustomQwen(nn.Module):
         self.batch_counter += 1
         return {"loss": outputs.loss, "logits": outputs.logits, "labels": labels}
 
-    def generate_output(self, batch, slot_replacement=None, max_new_tokens: int = 20):
+    def generate_output(self, batch, max_new_tokens: int = 20):
         input_ids = batch["input_ids"].to(self.device).long()
         attention_mask = batch["attention_mask"].to(self.device)
         input_features = batch.get("input_features")
@@ -205,20 +186,6 @@ class CustomQwen(nn.Module):
                 input_features = input_features.float()
         if feature_attention_mask is not None:
             feature_attention_mask = feature_attention_mask.to(self.device)
-
-        # D-SPO inference: swap placeholder token IDs with the hard vocab tokens
-        # chosen by the router. slot_replacement = {placeholder_id: hard_vocab_id}
-        # Soft embeddings are training-only; generation always uses discrete tokens.
-        if slot_replacement:
-            input_ids = input_ids.clone()
-            for placeholder_id, hard_vocab_id in slot_replacement.items():
-                n_replaced = (input_ids == placeholder_id).sum().item()
-                if n_replaced:
-                    placeholder_txt = self.input_processor.tokenizer.decode([placeholder_id])
-                    hard_txt = self.input_processor.tokenizer.decode([hard_vocab_id])
-                    logging.debug("D-SPO swap: %r(id=%d) -> %r(id=%d) at %d positions",
-                                  placeholder_txt, placeholder_id, hard_txt, hard_vocab_id, n_replaced)
-                input_ids[input_ids == placeholder_id] = hard_vocab_id
 
         import torch.nn.functional as F
         with torch.cuda.amp.autocast(enabled=self.use_fp16):

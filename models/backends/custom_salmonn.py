@@ -15,7 +15,7 @@ from SALMONN.models.salmonn import SALMONN
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', stream=sys.stdout, force=True)
 
 class CustomSalmonn(nn.Module):
-    """CLEAN SALMONN with LoRA Symbol Adapter Architecture and D-SPO Support"""
+    """CLEAN SALMONN with LoRA Symbol Adapter Architecture"""
     
     def __init__(
         self,
@@ -92,9 +92,9 @@ class CustomSalmonn(nn.Module):
         else:
             self.embed_module = self.llama_model.embed_tokens
 
-    def forward(self, samples, router=None, dspo_module=None):
+    def forward(self, samples):
         """
-        Forward pass for training. Supports D-SPO injection.
+        Forward pass for training.
         """
         start_time = time.time()
         
@@ -111,15 +111,11 @@ class CustomSalmonn(nn.Module):
             
             logging.info(f"Prompt example:\n{samples['prompt'][0]}")
             logging.info(f"Output:\n{samples['completion'][0]}")
-            
-            if router is not None:
-                logging.info("D-SPO: Router detected in forward pass. Enabling differentiable injection.")
 
         wrapped_embeds, wrapped_atts = self.custom_prompt_wrap(
             speech_embeds, speech_atts, samples["prompt"],
             samples.get("num_examples", torch.zeros(len(samples["prompt"]), dtype=torch.long)),
             example_embeds, example_atts,
-            router=router, dspo_module=dspo_module
         )
         
         if self.batch_counter == 0:
@@ -217,8 +213,8 @@ class CustomSalmonn(nn.Module):
         
         return speech_embeds, speech_atts, example_embeds, example_atts
         
-    def custom_prompt_wrap(self, embeds, atts, prompts, num_examples=None, example_embeds=None, example_atts=None, router=None, dspo_module=None):
-        """Wrap speech embeddings with text prompts and examples - supports D-SPO."""
+    def custom_prompt_wrap(self, embeds, atts, prompts, num_examples=None, example_embeds=None, example_atts=None):
+        """Wrap speech embeddings with text prompts and examples."""
         device = next(self.parameters()).device
         batch_size = len(prompts)
         max_examples = num_examples.max().item() if num_examples is not None else 0
@@ -264,21 +260,10 @@ class CustomSalmonn(nn.Module):
                 
                 # Get base embeddings
                 embeds_base = self.embed_module(input_ids)
-                
-                # D-SPO Injection if available
-                if router is not None and dspo_module is not None:
-                    embeds_base = dspo_module.inject_differentiable_symbols(
-                        input_ids=input_ids,
-                        input_embeds=embeds_base,
-                        router=router,
-                        embedding_layer=self.embed_module
-                    )
-                
+
                 if self.batch_counter < 3:
                     part_text = self.llama_tokenizer.decode(input_ids.squeeze(0), skip_special_tokens=True)
                     logging.info(f"Processing prompt part: '{part_text[:50]}...' ({input_ids.size(1)} tokens)")
-                    if router is not None:
-                        logging.debug("D-SPO: Injected soft embeddings for prompt part.")
 
                 part_embeds.append(embeds_base.squeeze(0))
                 

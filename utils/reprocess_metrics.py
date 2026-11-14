@@ -2,7 +2,7 @@ import json
 import os
 import traceback
 
-from config.data_config.master_config import DatasetType
+from config.data_config.master_config import DATASET_CONFIGS
 from utils.evaluation_utils import evaluate_predictions
 
 
@@ -30,12 +30,7 @@ def reprocess_results(results_file: str):
         if not results:
             raise ValueError("No valid predictions found in file")
 
-        dataset_types = {
-            "voxceleb": DatasetType.VOXCELEB,
-            "hvb": DatasetType.HVB,
-            "voxpopuli": DatasetType.VOXPOPULI,
-            "meld_emotion": DatasetType.MELD_EMOTION,
-        }
+        dataset_types = {ds_type.value: ds_type for ds_type in DATASET_CONFIGS}
 
         combined_metrics = {}
         for dataset_name, dataset_type in dataset_types.items():

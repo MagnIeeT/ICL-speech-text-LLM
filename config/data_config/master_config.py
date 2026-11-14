@@ -4,12 +4,7 @@ from typing import Dict, List, Optional
 
 
 class DatasetType(str, Enum):
-    VOXCELEB = "voxceleb"
     HVB = "hvb"
-    VOXPOPULI = "voxpopuli"
-    MELD_EMOTION = "meld_emotion"
-    RAVDESS = "ravdess" 
-    ESD = "esd"
     CREMAD = "cremad"
     RAVDESS_SONG = "ravdess_song"
     SKIT_S2I = "skit_s2i"
@@ -17,7 +12,6 @@ class DatasetType(str, Enum):
     MINDS14_EN = "minds14_en"
     MINDS14_FR = "minds14_fr"
     MINDS14_KO = "minds14_ko"
-    SPRSOUND = "sprsound"
     HEYSQUAD = "heysquad"
     # custom-taxonomy eval (LLM clustering into user-defined clusters) — 3 datasets × 3 label styles
     MINDS14_FR_CAT_MEAN = "minds14_fr_cat_mean"
@@ -64,28 +58,17 @@ class DatasetConfig:
         return self.audio_lookup_paths.get(split)
 
 
-from .voxceleb_config import VOXCELEB_CONFIG
 from .hvb_config import HVB_CONFIG
-from .voxpopuli_config import VOXPOPULI_CONFIG
-from .meld_emotion_config import MELD_EMOTION_CONFIG
-from .ravdess_config import RAVDESS_CONFIG 
-from .esd_config import ESD_CONFIG
 from .cremad_config import CREMAD_CONFIG
 from .ravdess_song_config import RAVDESS_SONG_CONFIG
 from .skit_s2i_config import SKIT_S2I_CONFIG
 from .speech_commands_config import SPEECH_COMMANDS_CONFIG
 from .minds14_config import MINDS14_EN_CONFIG, MINDS14_FR_CONFIG, MINDS14_KO_CONFIG
-from .sprsound_config import SPRSOUND_CONFIG
 from .heysquad_config import HEYSQUAD_CONFIG
 from .custom_taxonomy_config import build_configs as _build_cat_configs
 
 DATASET_CONFIGS: Dict[DatasetType, DatasetConfig] = {
-    DatasetType.VOXCELEB: VOXCELEB_CONFIG,
     DatasetType.HVB: HVB_CONFIG,
-    DatasetType.VOXPOPULI: VOXPOPULI_CONFIG,
-    DatasetType.MELD_EMOTION: MELD_EMOTION_CONFIG,
-    DatasetType.RAVDESS: RAVDESS_CONFIG,
-    DatasetType.ESD: ESD_CONFIG,
     DatasetType.CREMAD: CREMAD_CONFIG,
     DatasetType.RAVDESS_SONG: RAVDESS_SONG_CONFIG,
     DatasetType.SKIT_S2I: SKIT_S2I_CONFIG,
@@ -93,7 +76,6 @@ DATASET_CONFIGS: Dict[DatasetType, DatasetConfig] = {
     DatasetType.MINDS14_EN: MINDS14_EN_CONFIG,
     DatasetType.MINDS14_FR: MINDS14_FR_CONFIG,
     DatasetType.MINDS14_KO: MINDS14_KO_CONFIG,
-    DatasetType.SPRSOUND: SPRSOUND_CONFIG,
     DatasetType.HEYSQUAD: HEYSQUAD_CONFIG,
     **_build_cat_configs(),
 }

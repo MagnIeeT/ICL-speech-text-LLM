@@ -5,19 +5,16 @@ import argparse
 import json
 import logging
 import os
-import random
 from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 
-from utils.environment import setup_environment
+from utils.environment import setup_environment, set_global_seed
 setup_environment()
 
 from config.train_config.training_configs import ModelType, TrainingConfig
 from models.symbolAdapter.symbol_manager import SymbolManager
 from models.symbolAdapter.validation import ValidationManager
-from models.symbolAdapter.dspo_module import setup_dspo_model, DspoModule
-from models.symbolAdapter.symbol_router import SymbolRouter
 from dataload.data_utils import create_combined_dataloader, load_datasets_for_config
 from train import (
     extract_dataset_labels,
@@ -90,7 +87,6 @@ class InferenceOrchestrator:
         self.symbol_manager = None
         self.validator = None
         self.val_dataloader = None
-        self._slot_symbol_map = None
 
     def _setup_logging(self):
         # Shell script captures stdout via nohup redirect to logs_inference/.
@@ -152,11 +148,6 @@ class InferenceOrchestrator:
             self.config.data_config.fewshot_per_class = self.fewshot_per_class
             self.config.data_config.input_mode = self.input_mode
             self.config.data_config.definition_variant = self.definition_variant
-
-            # Auto-detect D-SPO from checkpoint — no flag needed
-            if checkpoint.get("router_state") is not None:
-                self.config.diff_symbol_config.enabled = True
-                logging.info("D-SPO detected in checkpoint — will restore router")
 
             return checkpoint
 
@@ -269,10 +260,6 @@ class InferenceOrchestrator:
             else:
                 raise ValueError(f"Unknown model_type: {self.model_type}")
 
-            # Resize embeddings for D-SPO slot tokens before loading weights
-            if self.config.diff_symbol_config.enabled:
-                setup_dspo_model(self.model, tokenizer, self.config)
-
             if "model_state" in checkpoint:
                 self.model.load_state_dict(
                     checkpoint["model_state"],
@@ -281,76 +268,6 @@ class InferenceOrchestrator:
 
             self.model.to(self.device)
             self.model.eval()
-
-            # Restore D-SPO router from checkpoint
-            if self.config.diff_symbol_config.enabled:
-                router_state = checkpoint.get("router_state")
-                if router_state is not None:
-                    cfg = self.config.diff_symbol_config
-                    dummy_indices = [[0] * cfg.slot_vocab_size for _ in range(cfg.num_slots)]
-                    router = SymbolRouter(
-                        num_slots=cfg.num_slots,
-                        slot_vocab_size=cfg.slot_vocab_size,
-                        slot_vocab_indices=dummy_indices,
-                        initial_tau=cfg.tau,
-                        tau_min=cfg.tau_min,
-                    )
-                    router.load_state_dict(router_state)
-                    router.eval()
-                    slot_token_ids = torch.tensor(
-                        [tokenizer.convert_tokens_to_ids(f"<slot_{i}>") for i in range(cfg.num_slots)],
-                        dtype=torch.long,
-                    )
-                    dspo_module = DspoModule(slot_token_ids).to(self.device)
-                    self.model.router = router
-                    self.model.dspo_module = dspo_module
-                    logging.info("D-SPO router restored from checkpoint (%d slots, K=%d)", cfg.num_slots, cfg.slot_vocab_size)
-
-                    # Use saved Phase 2 label→symbol map if available; otherwise decode from router
-                    from config.data_config.master_config import DATASET_CONFIGS, DatasetType as _DT
-                    from models.symbolAdapter.symbol_manager import compute_slot_offsets
-                    train_ds_names = set(self.config.data_config.dataset_type.split("-"))
-
-                    phase2_map = checkpoint.get("dspo_phase2_label_map")
-                    if phase2_map:
-                        first_val = next(iter(phase2_map.values()))
-                        if isinstance(first_val, dict):
-                            self.current_mappings = phase2_map  # already per-dataset
-                        else:
-                            # old flat format → convert to per-dataset
-                            for ds_name in train_ds_names:
-                                try:
-                                    labels = list(DATASET_CONFIGS[_DT(ds_name)].valid_labels or [])
-                                except (ValueError, KeyError):
-                                    continue
-                                if not labels:      # QA / label-free datasets have no symbols
-                                    continue
-                                self.current_mappings[ds_name] = {l: phase2_map[l] for l in labels if l in phase2_map}
-                        total = sum(len(m) for m in self.current_mappings.values())
-                        logging.info("D-SPO: using saved phase2_label_map (%d labels across %d datasets)", total, len(self.current_mappings))
-                    else:
-                        # decode per-dataset label→symbol from router (Phase 0/1 path)
-                        slot_offsets = compute_slot_offsets(train_ds_names)
-                        for ds_name in train_ds_names:
-                            try:
-                                labels = list(DATASET_CONFIGS[_DT(ds_name)].valid_labels or [])
-                            except (ValueError, KeyError):
-                                continue
-                            if not labels:      # QA / label-free datasets have no symbols
-                                continue
-                            offset = slot_offsets.get(ds_name, 0)
-                            slot_indices = list(range(offset, offset + len(labels)))
-                            vocab_indices, _ = router.get_slot_mappings(slot_indices, hard=True, deterministic=True)
-                            self.current_mappings[ds_name] = {
-                                label: tokenizer.decode(idx.tolist()).strip() or f"<tok_{idx.tolist()}>"
-                                for label, idx in zip(labels, vocab_indices)
-                            }
-                        total = sum(len(m) for m in self.current_mappings.values())
-                        logging.info("D-SPO: decoded symbol_map from router (%d labels across %d datasets)", total, len(self.current_mappings))
-                    # store slot pool for cross-task extension in run_comprehensive_inference
-                    self._slot_symbol_map = checkpoint.get("dspo_slot_symbol_map")
-                else:
-                    logging.warning("D-SPO enabled but no router_state in checkpoint — router not restored")
 
             self.validator = ValidationManager(
                 config=self.config,
@@ -371,21 +288,6 @@ class InferenceOrchestrator:
         self.validator.is_inference_mode = True  # ValidationManager captures this at init; set it directly
 
         symbol_map: Dict[str, Dict[str, str]] = dict(self.current_mappings)
-        if self._slot_symbol_map:
-            from config.data_config.master_config import DATASET_CONFIGS as _DC
-            pool = list(self._slot_symbol_map.values())
-            train_ds_names = set(self.config.data_config.dataset_type.split("-"))
-            for ds_type, ds_cfg in _DC.items():
-                ds_name = ds_type.value
-                labels = list(ds_cfg.valid_labels or [])
-                if not labels:
-                    continue
-                if ds_name in train_ds_names:
-                    symbol_map[ds_name] = dict(self.current_mappings.get(ds_name, {}))
-                else:
-                    chosen = random.sample(pool, k=min(len(labels), len(pool)))
-                    symbol_map[ds_name] = dict(zip(labels, chosen))
-            logging.info("Inference: extended symbol_map for cross-task from slot pool (%d slots)", len(pool))
 
         results = self.validator.run_comprehensive_validation(
             model=self.model,
@@ -515,6 +417,8 @@ def main():
     parser.add_argument("--run_name", type=str, required=True)
     parser.add_argument("--validation_modes", type=str, default=None,
                         help="Override validation modes from checkpoint (e.g. original,fixed,fresh,flipped)")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="Global seed for Python/NumPy/torch — fixes fresh-symbol draws and few-shot sampling")
     parser.add_argument("--val_flip_seed", type=int, default=0,
                         help="Seed for 'flipped' validation mode real-label derangement (same seed = same flip across models)")
     parser.add_argument("--no_legend", action="store_true",
@@ -535,6 +439,9 @@ def main():
                         help="Query modality at eval: speech_only (audio) | text_only (transcription as text, no audio)")
 
     args = parser.parse_args()
+
+    if args.seed is not None:
+        set_global_seed(args.seed)
 
     try:
         orchestrator = InferenceOrchestrator(

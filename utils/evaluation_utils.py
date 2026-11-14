@@ -37,7 +37,7 @@ def clean_prediction(prediction: str, dataset_type: DatasetType = None) -> str:
             text = text[len(prefix) :].strip()
 
     # Keep only first answer segment for single-label tasks.
-    if dataset_type in [DatasetType.VOXCELEB, DatasetType.MELD_EMOTION, DatasetType.RAVDESS, DatasetType.ESD, DatasetType.CREMAD, DatasetType.RAVDESS_SONG]:
+    if dataset_type in [DatasetType.CREMAD, DatasetType.RAVDESS_SONG]:
         text = re.split(r"[,;|]", text)[0].strip()
 
     return text
@@ -222,7 +222,7 @@ def _evaluate_qa(predictions: List[Dict[str, Any]], max_answer_words: int = 2) -
 
 
 def evaluate_predictions(predictions: List[Dict[str, Any]], dataset_type: DatasetType) -> Dict[str, Any]:
-    """Evaluate predictions for active dataset types: voxceleb, hvb, voxpopuli, meld_emotion."""
+    """Evaluate predictions for any configured dataset type."""
     if not predictions:
         return {"error": "Empty predictions list", "accuracy": 0.0}
 
@@ -246,8 +246,6 @@ def evaluate_predictions(predictions: List[Dict[str, Any]], dataset_type: Datase
             return _evaluate_single_label(normalized_rows, valid_labels, config.label_mapping)
 
         if config.is_multi_label:
-            if dataset_type == DatasetType.VOXPOPULI and "none" not in valid_labels:
-                valid_labels = valid_labels + ["none"]
             return _evaluate_multi_label(normalized_rows, valid_labels)
 
         return {"accuracy": 0.0, "error": f"Unsupported dataset configuration for: {dataset_type}"}

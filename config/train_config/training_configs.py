@@ -51,16 +51,11 @@ class SymbolConfig:
     no_symbols: bool = False
     update_strategy: SymbolUpdateStrategy = SymbolUpdateStrategy.PER_EPOCH
     symbol_token_size: int = 2
-    seed: Optional[int] = None
     validation_modes: str = "fixed,original,fresh"
     swap_labels: bool = False
-    # Difficulty of symbols used during training: easy | hard | random
-    symbol_difficulty: str = "random"
-    # Difficulty of symbols used for fresh validation mode: easy | hard | random
-    val_symbol_difficulty: str = "easy"
-    # Number of symbol mappings pre-generated at init for dynamic modes
-    # Per epoch: pool[epoch % M], per instance: random.choice(pool)
-    num_symbol_mappings: int = 20
+    # Size of the pre-computed pool of bijective label->symbol mappings (K in the paper).
+    # Per epoch: pool[epoch % K], per instance: random.choice(pool)
+    num_symbol_mappings: int = 100
     # Seed for the 'flipped' validation mode's real-label derangement.
     # Same seed → identical flipped legend across models (fair comparison).
     val_flip_seed: int = 0
@@ -68,7 +63,7 @@ class SymbolConfig:
 
 @dataclass
 class DataConfig:
-    dataset_type: str = "voxceleb"
+    dataset_type: str = "hvb-cremad-minds14_en"
     batch_size: int = 1
     max_samples: int = 10
     split: str = "test"
@@ -89,30 +84,26 @@ class DataConfig:
 
 from utils.environment import get_env_path
 
-@dataclass
-class DifferentiableSymbolConfig:
-    enabled: bool = False
-    num_slots: int = 25
-    slot_vocab_size: int = 100     # K: private vocab tokens per slot (non-overlapping)
-    slot_only: bool = False        # freeze LoRA, train router only
-    tau: float = 1.0
-    tau_min: float = 0.1
-    tau_anneal_rate: float = 0.0001
-    router_lr: float = 1e-2
-    rotation_interval: int = -1     # Phase 1 slot rotation: -1 = fixed assignment; 0 = per epoch; >0 = every N steps
-    phase2_rotation: int = -1       # Phase 2 symbol refresh: -1 = fixed; 0 = per epoch; 1 = per instance; >1 = every N steps
-    integrity_alpha: float = 1.0
-    integrity_beta: float = 1.0
-    phase0_epochs: int = 0      # >0: LoRA-only warmup on original labels before D-SPO starts
-    phase1_patience: int = 0    # >0: slot-only Phase 1 → auto-switch to LoRA when conf_mean plateaus
-    phase1_epochs: int = 0      # >0: max Phase 1 epochs — switch to Phase 2 after this many epochs even if patience not triggered
-    use_fresh_symbols: bool = True  # True = generate fresh random symbols; False = BPE vocab scan
-    symbol_token_size: int = 2      # tokens per symbol: 1 = single-token, 2 = two-token (future)
 
-    @property
-    def pool_size(self) -> int:
-        """Total tokens needed: one private vocab per slot."""
-        return self.num_slots * self.slot_vocab_size
+class _LegacyDSPOConfig:
+    """Unpickling shim for checkpoints written before D-SPO was removed from main.
+
+    Checkpoints at or before v1.0-paper-submission pickled a TrainingConfig whose
+    `diff_symbol_config` field held a DifferentiableSymbolConfig instance. Pickle
+    resolves that class by name against this module at load time, so without a
+    binding under the historical name torch.load raises
+
+        Can't get attribute 'DifferentiableSymbolConfig' on <module
+        'config.train_config.training_configs'>
+
+    and every existing checkpoint becomes unloadable. D-SPO itself lives on
+    chapter-2-dspo; the restored attribute is inert and nothing on main reads it.
+    Do not add fields here or use this class for anything else.
+    """
+
+
+# Historical name, kept bound for pickle compatibility only.
+DifferentiableSymbolConfig = _LegacyDSPOConfig
 
 
 @dataclass
@@ -124,7 +115,6 @@ class TrainingConfig:
 
     lora_config: LoRAConfig = field(default_factory=LoRAConfig)
     symbol_config: SymbolConfig = field(default_factory=SymbolConfig)
-    diff_symbol_config: DifferentiableSymbolConfig = field(default_factory=DifferentiableSymbolConfig)
     data_config: DataConfig = field(default_factory=DataConfig)
 
     output_dir: str = field(default_factory=lambda: get_env_path("BASE_OUTPUT_DIR"))
@@ -133,6 +123,7 @@ class TrainingConfig:
     logs_dir: str = field(default_factory=lambda: get_env_path("LOGS_DIR"))
     
     run_name: str = "symbol_training_run"
+    seed: Optional[int] = None
     checkpoint_frequency: int = 1
     validate_before_training: bool = True
     torch_profile: bool = False
@@ -228,27 +219,11 @@ class TrainingConfig:
             symbol_token_size=2,
             validation_modes=getattr(args, "validation_modes", "fixed,original,fresh"),
             swap_labels=getattr(args, "swap_labels", False),
-            symbol_difficulty=getattr(args, "symbol_difficulty", "random"),
-            val_symbol_difficulty=getattr(args, "val_symbol_difficulty", "easy"),
-            num_symbol_mappings=getattr(args, "num_symbol_mappings", 20),
+            num_symbol_mappings=getattr(args, "num_symbol_mappings", 100),
             val_flip_seed=getattr(args, "val_flip_seed", 0),
         )
         if symbol_config.no_symbols:
             symbol_config.dynamic_symbols = False
-
-        diff_symbol_config = DifferentiableSymbolConfig(
-            enabled=getattr(args, "diff_symbol_enabled", False),
-            num_slots=getattr(args, "dspo_num_slots", 25),
-            slot_vocab_size=getattr(args, "dspo_slot_vocab_size", 100),
-            router_lr=getattr(args, "dspo_router_lr", 1e-2),
-            tau_anneal_rate=getattr(args, "dspo_tau_anneal_rate", 0.0001),
-            slot_only=getattr(args, "dspo_slot_only", False),
-            phase0_epochs=getattr(args, "dspo_phase0_epochs", 0),
-            phase1_patience=getattr(args, "dspo_phase1_patience", 0),
-            phase1_epochs=getattr(args, "dspo_phase1_epochs", 0),
-            rotation_interval=getattr(args, "dspo_rotation_interval", -1),
-            phase2_rotation=getattr(args, "dspo_phase2_rotation", -1),
-        )
 
         data_config = DataConfig(
             dataset_type=args.dataset_type,
@@ -282,13 +257,15 @@ class TrainingConfig:
             flamingo_model_name=getattr(args, "flamingo_model_name", "nvidia/audio-flamingo-3-hf"),
             lora_config=lora_config,
             symbol_config=symbol_config,
-            diff_symbol_config=diff_symbol_config,
             data_config=data_config,
-            output_dir=getattr(args, "output_dir", get_env_path("BASE_OUTPUT_DIR")),
-            checkpoint_dir=getattr(args, "checkpoint_dir", get_env_path("CHECKPOINT_DIR")),
-            metrics_dir=getattr(args, "metrics_dir", get_env_path("METRICS_DIR")),
-            logs_dir=getattr(args, "logs_dir", get_env_path("LOGS_DIR")),
+            # argparse defines these with default None, so getattr always finds the
+            # attribute -- fall back to the .env value only when the flag is unset.
+            output_dir=getattr(args, "output_dir", None) or get_env_path("BASE_OUTPUT_DIR"),
+            checkpoint_dir=getattr(args, "checkpoint_dir", None) or get_env_path("CHECKPOINT_DIR"),
+            metrics_dir=getattr(args, "metrics_dir", None) or get_env_path("METRICS_DIR"),
+            logs_dir=getattr(args, "logs_dir", None) or get_env_path("LOGS_DIR"),
             run_name=args.run_name,
+            seed=getattr(args, "seed", None),
             device=args.device,
         )
 
@@ -311,7 +288,8 @@ def parse_training_args() -> argparse.Namespace:
     parser.add_argument("--salmonn_tokenizer_name", type=str, default="lmsys/vicuna-13b-v1.1")
     parser.add_argument("--qwen_model_name", type=str, default="Qwen/Qwen2-Audio-7B-Instruct")
     parser.add_argument("--flamingo_model_name", type=str, default="nvidia/audio-flamingo-3-hf")
-    parser.add_argument("--dataset_type", type=str, default="voxceleb")
+    parser.add_argument("--dataset_type", type=str, default="hvb-cremad-minds14_en",
+                        help="Training dataset(s), dash-separated. Default = the paper's fine-tuning mixture")
     parser.add_argument("--val_dataset_type", type=str, default=None)
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--batch_size", type=int, default=1)
@@ -329,17 +307,6 @@ def parse_training_args() -> argparse.Namespace:
     parser.add_argument("--max_grad_norm", type=float, default=1.0)
 
     parser.add_argument("--dynamic_symbols", action="store_true")
-    parser.add_argument("--diff_symbol_enabled", action="store_true", help="Enable Differentiable Symbolic Preference Optimization (D-SPO)")
-    parser.add_argument("--dspo_slot_only", action="store_true", help="D-SPO: freeze LoRA, train router/slot matrix only")
-    parser.add_argument("--dspo_phase0_epochs", type=int, default=0, help="D-SPO: LoRA-only warmup epochs before D-SPO starts (0=disabled)")
-    parser.add_argument("--dspo_phase1_patience", type=int, default=0, help="D-SPO: epochs without conf_mean improvement before switching Phase 1→2 (0=disabled)")
-    parser.add_argument("--dspo_phase1_epochs", type=int, default=0, help="D-SPO: max Phase 1 epochs hard cap (0=disabled)")
-    parser.add_argument("--dspo_num_slots", type=int, default=25, help="D-SPO: total slot pool size (>= num training labels)")
-    parser.add_argument("--dspo_slot_vocab_size", type=int, default=100, help="D-SPO: private vocab tokens per slot (K)")
-    parser.add_argument("--dspo_rotation_interval", type=int, default=-1, help="D-SPO Phase 1 slot rotation: -1=fixed, 0=per epoch, >0=every N steps")
-    parser.add_argument("--dspo_phase2_rotation", type=int, default=-1, help="D-SPO Phase 2 symbol refresh: -1=fixed, 0=per epoch, 1=per instance, >1=every N steps")
-    parser.add_argument("--dspo_router_lr", type=float, default=None, help="D-SPO: router learning rate")
-    parser.add_argument("--dspo_tau_anneal_rate", type=float, default=None, help="D-SPO: tau annealing rate per step")
     parser.add_argument("--warmup_steps", type=int, default=100, help="LR scheduler warmup steps")
     parser.add_argument("--no_symbols", action="store_true")
     parser.add_argument("--swap_labels", action="store_true", help="Swap labels (e.g., positive<->negative) during prompt/completion rewriting")
@@ -356,18 +323,10 @@ def parse_training_args() -> argparse.Namespace:
         choices=["per_epoch", "per_instance"],
     )
     parser.add_argument(
-        "--symbol_difficulty",
-        type=str,
-        default="random",
-        choices=["easy", "hard", "random"],
-        help="Difficulty of symbols used during training (easy=high H2, hard=low H2, random=current behaviour)",
-    )
-    parser.add_argument(
-        "--val_symbol_difficulty",
-        type=str,
-        default="easy",
-        choices=["easy", "hard", "random"],
-        help="Difficulty of symbols used for fresh validation mode",
+        "--seed",
+        type=int,
+        default=None,
+        help="Global seed for Python/NumPy/torch. The paper reports mean +/- std over three seeds; omit for an unseeded run",
     )
     parser.add_argument(
         "--val_flip_seed",
@@ -378,8 +337,8 @@ def parse_training_args() -> argparse.Namespace:
     parser.add_argument(
         "--num_symbol_mappings",
         type=int,
-        default=20,
-        help="Number of symbol mappings pre-generated at init for dynamic modes (per_epoch: pool[epoch%%M], per_instance: random.choice(pool))",
+        default=100,
+        help="Size of the pre-computed pool of label->symbol mappings (K in the paper; per_epoch: pool[epoch%%K], per_instance: random.choice(pool))",
     )
 
     parser.add_argument("--input_mode", type=str, default="speech_only", choices=["speech_only", "text_only"], help="Query input modality")
@@ -387,8 +346,6 @@ def parse_training_args() -> argparse.Namespace:
     parser.add_argument("--no_legend", action="store_true", help="Strip label descriptions from the prompt legend (meaning conveyed only by exemplars/symbols; Wei-style)")
     parser.add_argument("--fewshot_per_class", action="store_true", help="Few-shot: num_examples PER class (full coverage) instead of TOTAL (class-balanced)")
     parser.add_argument("--definition_variant", type=str, default="orig", help="Definition-sensitivity ablation: select an alternate-wording legend from a dataset's prompt_variants (e.g. paraphrase, terse); 'orig' uses the default template")
-    parser.add_argument("--use_dpo", action="store_true", help="Use SymDPO trainer instead of cross-entropy")
-    parser.add_argument("--dpo_beta", type=float, default=0.1, help="DPO beta (preference margin temperature)")
     parser.add_argument("--no_validate_before_training", action="store_true", help="Skip baseline validation before epoch 1")
     parser.add_argument("--torch_profile", action="store_true", help="Enable PyTorch profiler on epoch 1")
     parser.add_argument("--output_dir", type=str, default=None)

@@ -1,11 +1,10 @@
+import argparse
 import os
 import glob
 import random
 from datasets import Dataset, Audio
 
 # --- Configuration ---
-RAW_DATA_DIR = "/home/anmola/data/raw/cremad"
-OUTPUT_BASE_DIR = "/home/anmola/data/data"
 SAMPLING_RATE = 16000
 
 # CREMA-D mapping based on filename specs
@@ -78,6 +77,14 @@ def create_audio_lookup(dataset, num_fewshots=5):
     return Dataset.from_list(lookup_data)
 
 def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--raw_dir", required=True, help="path to raw CREMA-D directory containing .wav files")
+    p.add_argument("--out_base", required=True, help="output base directory for processed datasets")
+    args = p.parse_args()
+
+    RAW_DATA_DIR = args.raw_dir
+    OUTPUT_BASE_DIR = args.out_base
+
     wav_files = glob.glob(os.path.join(RAW_DATA_DIR, "**", "*.wav"), recursive=True)
     print(f"Found {len(wav_files)} .wav files.")
     

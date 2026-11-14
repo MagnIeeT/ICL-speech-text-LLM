@@ -1,11 +1,10 @@
+import argparse
 import os
 import glob
 import random
 from datasets import Dataset, Audio
 
 # --- Configuration ---
-RAW_DATA_DIR = "/home/anmola/data/raw/ravdess_song" 
-OUTPUT_BASE_DIR = "/home/anmola/data/data"
 SAMPLING_RATE = 16000 
 
 # Note: Disgust and Surprise are excluded from the Song dataset
@@ -58,6 +57,14 @@ def create_audio_lookup(dataset, num_fewshots=5):
     return Dataset.from_list(lookup_data)
 
 def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--raw_dir", required=True, help="path to raw RAVDESS directory containing Song .wav files")
+    p.add_argument("--out_base", required=True, help="output base directory for processed datasets")
+    args = p.parse_args()
+
+    RAW_DATA_DIR = args.raw_dir
+    OUTPUT_BASE_DIR = args.out_base
+
     wav_files = glob.glob(os.path.join(RAW_DATA_DIR, "**", "*.wav"), recursive=True)
     print(f"Found {len(wav_files)} .wav files.")
     
@@ -96,7 +103,7 @@ def main():
     val_lookup.save_to_disk(os.path.join(OUTPUT_BASE_DIR, "ravdess_song_validation_audio_lookup"))
     test_lookup.save_to_disk(os.path.join(OUTPUT_BASE_DIR, "ravdess_song_test_audio_lookup"))
     
-    print("Done! RAVDESS Song is ready for training.")
+    print("Done. Set in .env: RAVDESS_SONG_{TRAIN,VAL,TEST}_PATH and _LOOKUP -> these dirs.")
 
 if __name__ == "__main__":
     main()

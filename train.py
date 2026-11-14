@@ -8,7 +8,7 @@ from typing import Dict, List
 import torch
 from transformers import LlamaTokenizer
 
-from utils.environment import setup_environment
+from utils.environment import setup_environment, set_global_seed
 setup_environment()
 
 from config.data_config.master_config import DatasetType, get_dataset_config
@@ -16,8 +16,6 @@ from config.train_config.training_configs import TrainingConfig, parse_training_
 from dataload.model_processors import get_processor
 from models.symbolAdapter.symbol_manager import SymbolManager
 from models.symbolAdapter.symbol_training import SymbolTrainingOrchestrator
-from models.symbolAdapter.symbol_training_dpo import SymbolDPOOrchestrator
-from models.symbolAdapter.dspo_module import setup_dspo_tokenizer, setup_dspo_model
 from dataload.data_utils import create_combined_dataloader, load_datasets_for_config
 
 def setup_tokenizer_and_processor(config):
@@ -28,7 +26,6 @@ def setup_tokenizer_and_processor(config):
     if model_type == "salmonn":
         tokenizer = LlamaTokenizer.from_pretrained(config.salmonn_tokenizer_name, use_fast=False)
         tokenizer.add_special_tokens({"pad_token": "[PAD]"})
-        tokenizer = setup_dspo_tokenizer(tokenizer, config)
         tokenizer.padding_side = "right"
         processor = get_processor(config.model_type.value, tokenizer=tokenizer)
         return tokenizer, processor
@@ -41,7 +38,6 @@ def setup_tokenizer_and_processor(config):
         input_processor = Qwen2AudioProcessor.from_pretrained(config.qwen_model_name, trust_remote_code=True)
         tokenizer = input_processor.tokenizer
         tokenizer.add_special_tokens({"pad_token": "[PAD]"})
-        tokenizer = setup_dspo_tokenizer(tokenizer, config)
         tokenizer.padding_side = "right"
         processor = get_processor(config.model_type.value, processor=input_processor, tokenizer=tokenizer)
         return tokenizer, processor
@@ -52,7 +48,6 @@ def setup_tokenizer_and_processor(config):
         processor = get_processor(config.model_type.value, processor=input_processor)
         tokenizer = input_processor.tokenizer
         tokenizer.add_special_tokens({"pad_token": "[PAD]"})
-        tokenizer = setup_dspo_tokenizer(tokenizer, config)
         tokenizer.padding_side = "right"
         return tokenizer, processor
 
@@ -86,21 +81,21 @@ def initialize_model(config: TrainingConfig, tokenizer, symbol_manager, raw_proc
         from models.backends.custom_salmonn import CustomSalmonn
         model = CustomSalmonn(device=config.device, lora=True, lora_rank=config.lora_config.rank,
                               lora_alpha=config.lora_config.alpha, lora_dropout=config.lora_config.dropout)
-        return setup_dspo_model(model, tokenizer, config)
+        return model
     
     if model_type == "qwen":
         from models.backends.custom_qwen import CustomQwen
         model = CustomQwen(model_path=config.qwen_model_name, input_processor=raw_processor, 
                            device=config.device, lora=True, lora_rank=config.lora_config.rank, 
                            lora_alpha=config.lora_config.alpha, lora_dropout=config.lora_config.dropout)
-        return setup_dspo_model(model, tokenizer, config)
+        return model
 
     if model_type == "flamingo":
         from models.backends.custom_flamingo import CustomFlamingo
         model = CustomFlamingo(model_path=config.flamingo_model_name, device=config.device, lora=True,
                                lora_rank=config.lora_config.rank, lora_alpha=config.lora_config.alpha,
                                lora_dropout=config.lora_config.dropout)
-        return setup_dspo_model(model, tokenizer, config)
+        return model
 
     raise ValueError(f"Unknown model_type: {model_type}")
 
@@ -115,20 +110,8 @@ def main():
         args = parse_training_args()
         config = TrainingConfig.from_args(args)
         logging.info("Starting training with config: %s", config.run_name)
-
-        if config.diff_symbol_config.enabled:
-            from config.data_config.master_config import DATASET_CONFIGS
-            ds_names = set(config.data_config.dataset_type.split("-"))
-            total_training_labels = sum(
-                len(ds_cfg.valid_labels)
-                for dt, ds_cfg in DATASET_CONFIGS.items()
-                if dt.value in ds_names
-            )
-            if config.diff_symbol_config.num_slots < total_training_labels:
-                config.diff_symbol_config.num_slots = total_training_labels
-                logging.info("D-SPO: num_slots raised to %d (minimum = total training labels)", total_training_labels)
-            else:
-                logging.info("D-SPO: num_slots=%d (pool), %d training labels", config.diff_symbol_config.num_slots, total_training_labels)
+        if config.seed is not None:
+            set_global_seed(config.seed)
 
         tokenizer, processor = setup_tokenizer_and_processor(config)
         
@@ -141,8 +124,6 @@ def main():
             no_symbols=config.symbol_config.no_symbols,
             swap_labels=config.symbol_config.swap_labels,
             labels_per_dataset=extract_dataset_labels_dict(config),
-            symbol_difficulty=config.symbol_config.symbol_difficulty,
-            val_symbol_difficulty=config.symbol_config.val_symbol_difficulty,
             num_symbol_mappings=config.symbol_config.num_symbol_mappings,
             model_type=config.model_type.value,
         )
@@ -157,20 +138,11 @@ def main():
         raw_processor = processor.processor if hasattr(processor, "processor") else None
         model = initialize_model(config, tokenizer, symbol_manager, raw_processor)
 
-        if getattr(args, "use_dpo", False):
-            orchestrator = SymbolDPOOrchestrator(
-                config=config, model=model, processor=processor,
-                train_dataloader=train_dataloader, val_dataloader=val_dataloader,
-                tokenizer=tokenizer, symbol_manager=symbol_manager,
-                train_dataset_names=train_dataset_names,
-                beta=getattr(args, "dpo_beta", 0.1),
-            )
-        else:
-            orchestrator = SymbolTrainingOrchestrator(
-                config=config, model=model, train_dataloader=train_dataloader, val_dataloader=val_dataloader,
-                tokenizer=tokenizer, symbol_manager=symbol_manager, train_dataset_names=train_dataset_names,
-                processor=processor
-            )
+        orchestrator = SymbolTrainingOrchestrator(
+            config=config, model=model, train_dataloader=train_dataloader, val_dataloader=val_dataloader,
+            tokenizer=tokenizer, symbol_manager=symbol_manager, train_dataset_names=train_dataset_names,
+            processor=processor
+        )
         orchestrator.run_complete_training()
         logging.info("Training completed successfully")
 

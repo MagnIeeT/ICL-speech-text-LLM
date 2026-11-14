@@ -72,16 +72,6 @@ def _strip_legend(template: str) -> str:
     return re.sub(r'(?m)^([ \t]*-[ \t]*[^:\n]+?)[ \t]*:.*$', r'\1', template)
 
 
-def convert_ner_to_dict(text: str, ner_data: Dict) -> Dict[str, List[str]]:
-    """Convert NER span annotations into a compact tag-to-phrases dictionary."""
-    result: Dict[str, List[str]] = {}
-    for tag, start, length in zip(ner_data["type"], ner_data["start"], ner_data["length"]):
-        phrase = text[start : start + length]
-        if phrase.strip():
-            result.setdefault(tag, []).append(phrase)
-    return result
-
-
 class BaseMultiTaskDataset(Dataset):
     """Base class for single-task formatting with optional few-shot support."""
 
@@ -252,11 +242,6 @@ class BaseMultiTaskDataset(Dataset):
     def _format_label(self, example_or_label, is_example: bool = True, current_mapping=None, text: str = None):
         label = example_or_label["label"] if is_example else example_or_label
 
-        if self.dataset_type == DatasetType.VOXPOPULI and isinstance(label, dict):
-            if not is_example:
-                label = convert_ner_to_dict(text or "", label)
-            label_keys = [k for k, v in label.items() if v]
-            label = ", ".join(label_keys) if label_keys else "none"
 
         if isinstance(label, list):
             label = ", ".join(label)
