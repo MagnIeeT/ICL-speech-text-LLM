@@ -36,6 +36,7 @@ MELD (the measurement):
 | Instruction Tuning | `004932_qa_h-cr-m14en_nosym` ep3 | 41.8% | 52.4% | **47.6%** | 166 | 43 | 96 | 195 |
 | DG-ICL-Sym | `003002_qa_h-cr-m14en_dpi_ha` ep4 | 40.4% | 50.8% | **51.6%** | 154 | 48 | 100 | 198 |
 | DG-ICL-Flip | `014804_qa_h-cr-m14en_nosym_swap_per_instance` ep4 | 41.2% | 51.2% | **49.0%** | 158 | 48 | 98 | 196 |
+| **Pre-trained** | no LoRA | **29.2%** | **28.8%** | **75.8%** | 81 | 65 | 63 | 291 |
 
 CREMA-D (the control):
 
@@ -44,33 +45,84 @@ CREMA-D (the control):
 | Instruction Tuning | 87.4% | 15.0% | 86.2% | 370 | 8 |
 | DG-ICL-Sym | 86.2% | 14.4% | 85.8% | 365 | 6 |
 | DG-ICL-Flip | 85.6% | 14.4% | 85.6% | 361 | 5 |
+| Pre-trained | 55.4% | 9.4% | 86.2% | 236 | 6 |
 
-Pre-trained Qwen2-Audio: pending.
+
+### Audio Flamingo 3, 14 Nov 2026
+
+Same 3-task mixture, same epoch 4, same items.
+
+MELD:
+
+| condition | checkpoint | speech | text | text - speech | **disagree** | speech only | text only |
+|---|---|---|---|---|---|---|---|
+| Instruction Tuning | `112544_af_h-cr-m14en_nosym` ep4 | 47.2% | 54.4% | +7.2 | **43.2%** | 43 | 79 |
+| DG-ICL-Sym | `112859_af_h-cr-m14en_dpi_ha` ep4 | 50.0% | 56.8% | +6.8 | **29.6%** | 32 | 66 |
+| DG-ICL-Flip | `003524_af_h-cr-m14en_nosym_swap_per_instance` ep4 | 44.2% | 49.6% | +5.4 | **39.2%** | 45 | 72 |
+
+Pre-trained AF3: running.
+
+CREMA-D control:
+
+| condition | speech | text | disagree | speech only | text only |
+|---|---|---|---|---|---|
+| Instruction Tuning | 82.2% | 17.4% | 82.6% | 335 | 11 |
+| DG-ICL-Sym | 77.6% | 16.2% | 82.2% | 310 | 3 |
+| DG-ICL-Flip | 79.8% | 17.0% | 84.6% | 324 | 10 |
 
 ### What it shows
 
 1. **The control validates the setup.** On CREMA-D the transcript carries
-   nothing: text collapses to ~14% against ~86% from audio, and `speech only
-   correct` beats `text only` by roughly 365 to 6. The pipeline measures what we
-   intend it to.
+   nothing: text collapses to 14 to 17 percent against 78 to 87 percent from
+   audio, and `speech only correct` beats `text only` by two orders of
+   magnitude. The pipeline measures what we intend it to.
 
-2. **[F] Axis B has ample headroom; the kill criterion is cleared.** On MELD,
-   48 to 52 percent of items yield different answers from the two modalities.
-   The plan's abort condition was disagreement near zero. E0b is worth building.
+2. **[F] Axis B has headroom on both backbones; the kill criterion is cleared.**
+   MELD disagreement is 48 to 52 percent on Qwen and 30 to 43 percent on AF3.
+   The plan's abort condition was disagreement near zero. E0b is worth building,
+   on both backbones.
 
-3. **[F] On conversational speech these models lean lexical.** The transcript
-   beats the audio by 8 to 10 points in every condition, and `text only correct`
-   roughly doubles `speech only correct` (96 vs 43 for IT). This is the text
-   dominance that ALME documents in GPT-4o and Gemini, now measured in an open
-   model we can train.
+3. **[F] The lexical lean is created by fine-tuning, not inherited.** This is
+   the most important result so far. Pre-trained Qwen2-Audio is balanced
+   (29.2 speech vs 28.8 text, a gap of -0.4). Every fine-tuned condition opens a
+   10-point gap in favour of the transcript. Fine-tuning on the 3-task mixture
+   improved the text pathway by about 23 points on held-out MELD while improving
+   the audio pathway by only 11 to 12. Speech fine-tuning taught the model to
+   lean on transcripts more than on acoustics.
 
-4. **[F] Chapter 1 training did not touch modality arbitration.** The three
-   conditions sit within 4 points of each other on disagreement and within 1.5
-   on accuracy. This supports H2: definition-guided tuning changed behaviour
-   under label-name conflict and left evidence selection essentially unchanged.
-   They are separate capabilities. (Confirmation pending the pre-trained
-   baseline, which distinguishes "training left it untouched" from "all three
-   moved it the same way".)
+   This is sharper than the framing we started with ("these models lean lexical,
+   as ALME reports for GPT-4o and Gemini"). In our setup the bias is induced by
+   our own training, which makes it something Chapter 2 can plausibly undo.
+
+4. **[F] The surrogate-label scheme is not the cause.** On Qwen, IT, Sym and
+   Flip sit within 0.6 points of each other on the lexical gap (+10.6, +10.4,
+   +10.0) and within 4 points on disagreement. The lean is a property of the
+   training setup, not of how labels are represented. This supports H2:
+   Chapter 1 changed behaviour under label-name conflict and did not touch
+   evidence selection.
+
+5. **[F] Magnitude is backbone dependent, so claims must be per backbone.** AF3
+   leans lexically too, but less (+5.4 to +7.2 against Qwen's +10.0 to +10.6),
+   is much better on audio (44 to 50 percent against 40 to 42), and disagrees
+   far less (29.6 to 43.2 percent against 47.6 to 51.6). AF3 fuses audio by
+   cross-attention while Qwen concatenates audio tokens, which is a plausible
+   mechanism and worth a sentence in the paper. Note also that AF3 conditions
+   vary more among themselves than Qwen's do, so the "training setup, not label
+   scheme" conclusion in point 4 is cleanly supported on Qwen and only loosely
+   on AF3.
+
+### Caveats to carry forward
+
+- **High disagreement in a weak model is noise, not arbitration.** Pre-trained
+  Qwen disagrees on 75.8 percent of MELD items but gets 58 percent of them wrong
+  with both modalities. Its two views differ because both are unreliable. Only
+  the fine-tuned disagreement figures (~50 percent on Qwen, ~30 to 43 on AF3)
+  describe genuine conflict, because accuracy there is much higher.
+- **Fine-tuning reduced disagreement** (75.8 to about 50 on Qwen) while making
+  one modality dominant. Training made the two views more consistent and more
+  skewed at the same time.
+- MELD was never in any training mixture, so these are held-out numbers for
+  every fine-tuned condition.
 
 ---
 
@@ -120,12 +172,10 @@ reviewers ask for more on instruction following.
 
 ## Pending
 
-- Pre-trained Qwen2-Audio E0a (running 14 Nov). Distinguishes "Chapter 1
-  training left arbitration untouched" from "all three conditions moved it
-  identically".
-- E0a on Audio Flamingo 3. AF3 fuses audio by cross-attention rather than token
-  concatenation, so arbitration may differ. If axis B is Qwen-specific the
-  chapter changes, so this gates E0b rather than following it.
+- Pre-trained Audio Flamingo 3 E0a (running 14 Nov). Tests whether the
+  "fine-tuning creates the lean" result holds on the second backbone, which is
+  what finding 3 needs to generalise.
+- SALMONN E0a, optional. It is the scale reference rather than a headline model.
 - E0b, the routing probe: `speech_text` input mode plus routed legends, measured
   on the disagreement subsets saved at `~/training/e0a/disagreement_*.json`.
 
@@ -134,7 +184,7 @@ reviewers ask for more on instruction following.
 | What | Where |
 |---|---|
 | Prediction dumps | `~/training/e0a/metrics/<date>/<run>/<run>_p.json` |
-| Disagreement subsets | `~/training/e0a/disagreement_{sym,it,flip}.json` |
+| Disagreement subsets | `~/training/e0a/disagreement_{sym,it,flip,base,af_sym,af_it,af_flip}.json` |
 | Run logs | `~/training/e0a/logs/` |
 | Inference logs | `~/training/symbol_training/logs_inference/<date>/` |
 
