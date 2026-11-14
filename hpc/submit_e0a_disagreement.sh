@@ -59,10 +59,23 @@ if [[ "${_E0A_LAUNCHED:-0}" != "1" ]]; then
     exit 0
 fi
 
+# Resolve the checkpoint here and pass it explicitly. The inner script contains a
+# block of preset CKPT_DATE/TRAIN_RUN/EPOCH lines; if one is left uncommented it
+# overrides exported values. Passing CHECKPOINT_PATH bypasses that entirely.
+if [[ "${UNTRAINED}" == "true" ]]; then
+    CHECKPOINT_PATH=""
+else
+    CHECKPOINT_PATH="$(ls "${HOME}/training/symbol_training/checkpoints/${CKPT_DATE}/${TRAIN_RUN}/lora_epoch${EPOCH}"*.pt 2>/dev/null | head -1)"
+    if [[ -z "${CHECKPOINT_PATH}" ]]; then
+        printf 'ERROR: no checkpoint at %s/%s/lora_epoch%s*.pt\n' "${CKPT_DATE}" "${TRAIN_RUN}" "${EPOCH}"
+        exit 1
+    fi
+fi
+
 printf '%s\n' "============================================================"
 printf '%s\n' "E0a disagreement probe"
 printf '%s\n' "Model:      ${MODEL_TYPE}"
-printf '%s\n' "Checkpoint: ${CKPT_DATE}/${TRAIN_RUN} epoch ${EPOCH} (untrained=${UNTRAINED})"
+printf '%s\n' "Checkpoint: ${CHECKPOINT_PATH:-<untrained base model>}"
 printf '%s\n' "Datasets:   ${DATASET_TYPE}   split=${SPLIT}  max=${MAX_VAL_SAMPLES}"
 printf '%s\n' "GPU:        ${CUDA_VISIBLE_DEVICES}"
 printf '%s\n' "============================================================"
@@ -87,6 +100,7 @@ run_one_mode () {
     TRAIN_RUN="${TRAIN_RUN}" \
     EPOCH="${EPOCH}" \
     UNTRAINED="${UNTRAINED}" \
+    CHECKPOINT_PATH="${CHECKPOINT_PATH}" \
     SEED="${SEED}" \
     CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" \
     METRICS_BASE="${E0A_DIR}/metrics" \

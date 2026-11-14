@@ -91,8 +91,10 @@ DEVICE="${DEVICE:-cuda:0}"
 #  QWEN2-AUDIO 3-TASK (hvb+cremad+minds14_en) — main table, eval-A (val).
 #  Run each with:  MODEL_TYPE=qwen VALIDATION_MODES=original,fresh NUM_EXAMPLES=0 NO_LEGEND=false SPLIT=validation
 #  (eval-A = legend ON, zero-shot; NO_LEGEND=false forces the definition into the prompt even for the no-legend Wei ckpts.)
-#  Wei (Symbol Tuning) — RUN THESE NOW for the pending eval-A cell:
-CKPT_DATE=2026-08-23 TRAIN_RUN=004014_qa_h-cr-m14en_dpi_ha_nl_fs1t EPOCH=4  # qwen Wei  seed1
+#  Wei (Symbol Tuning). NOTE: keep every line in this block commented.
+#  An active assignment here runs before the TRAIN_RUN=${TRAIN_RUN:-...}
+#  default below, so it silently overrides anything you export.
+# CKPT_DATE=2026-08-23 TRAIN_RUN=004014_qa_h-cr-m14en_dpi_ha_nl_fs1t EPOCH=4  # qwen Wei  seed1
 # CKPT_DATE=2026-08-23 TRAIN_RUN=004029_qa_h-cr-m14en_dpi_ha_nl_fs1t EPOCH=3  # qwen Wei  seed2
 #  DGST (n=3)
 # CKPT_DATE=2026-08-23 TRAIN_RUN=003002_qa_h-cr-m14en_dpi_ha EPOCH=3  # qwen DGST seed1
