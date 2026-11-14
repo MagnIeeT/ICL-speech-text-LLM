@@ -64,6 +64,10 @@ MAX_VAL_SAMPLES="${MAX_VAL_SAMPLES:-500}"
 VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-4}"
 SEED="${SEED:-1}"
 E0B_DIR="${E0B_DIR:-${HOME}/training/e0b}"
+# E0b-1 (speech): routed passes get audio only, so the model must recover the
+# words itself. E0b-2 (speech_text): routed passes also get a labelled
+# transcript, which removes that extraction step and isolates routing.
+ROUTED_INPUT_MODE="${ROUTED_INPUT_MODE:-speech_only}"   # speech_only | speech_text
 # ─────────────────────────────────────────────────────────────────────────────
 
 STAMP="$(date +%Y%m%d_%H%M%S)"
@@ -98,6 +102,7 @@ printf '%s\n' "Model:      ${MODEL_TYPE}"
 printf '%s\n' "Checkpoint: ${CHECKPOINT_PATH:-<untrained base model>}"
 printf '%s\n' "Datasets:   ${DATASET_TYPE}   split=${SPLIT}  max=${MAX_VAL_SAMPLES}"
 printf '%s\n' "Analyse:    ${ANALYSE_DATASET}"
+printf '%s\n' "Routed input: ${ROUTED_INPUT_MODE}"
 printf '%s\n' "GPU:        ${CUDA_VISIBLE_DEVICES}"
 printf '%s\n' "============================================================"
 
@@ -130,13 +135,14 @@ run_pass () {
 
 R_SP="e0b_${TAG}_sp_orig_${STAMP}"
 R_TX="e0b_${TAG}_tx_orig_${STAMP}"
-R_TONE="e0b_${TAG}_sp_tone_${STAMP}"
-R_WORDS="e0b_${TAG}_sp_words_${STAMP}"
+_MT="$( [[ "${ROUTED_INPUT_MODE}" == "speech_text" ]] && echo st || echo sp )"
+R_TONE="e0b_${TAG}_${_MT}_tone_${STAMP}"
+R_WORDS="e0b_${TAG}_${_MT}_words_${STAMP}"
 
 run_pass "${R_SP}"    "speech_only" "orig"
 run_pass "${R_TX}"    "text_only"   "orig"
-run_pass "${R_TONE}"  "speech_only" "route_tone"
-run_pass "${R_WORDS}" "speech_only" "route_words"
+run_pass "${R_TONE}"  "${ROUTED_INPUT_MODE}" "route_tone"
+run_pass "${R_WORDS}" "${ROUTED_INPUT_MODE}" "route_words"
 
 find_preds () { find "${E0B_DIR}/metrics" -name "$1_p.json" -type f 2>/dev/null | head -1; }
 P_SP="$(find_preds "${R_SP}")"
