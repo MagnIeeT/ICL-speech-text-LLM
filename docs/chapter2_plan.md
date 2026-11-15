@@ -139,6 +139,55 @@ adherence**, the fraction of predictions inside the prompt's label set on an
 unseen task. DG-ICL-Sym scores 0.2 percent out-of-inventory against 8.6 for IT
 and 10.6 for Flip. It is a direct measure of legend-following and it is free.
 
+## 8a. The aim, and the measurement problem that constrains it
+
+**Aim.** A definition follower that is invariant to the label surface form used
+at inference: canonical names, synthetic symbols, permuted real words, or forms
+never seen in training. Chapter 1 showed definitions can replace demonstrations.
+Chapter 2 asks whether definition-following is a surface-form invariant
+capability or an artifact of the single form a model was trained on.
+
+**The measurement problem.** Retention under relabelling is only evidence of
+instruction-following when the relabelling scheme is one the model never trained
+on. DG-ICL-Flip reaches ~100% retention on AF3 held-out, but it trained on
+derangements, so that evaluation is in-distribution for it. The paper correctly
+labels it a matched-training ceiling, and its mediocre held-out original (0.667
+on Qwen against IT's 0.723) confirms it bought no general capability. Sym's 68%
+is meaningful for the opposite reason: deranged real words were never in its
+training.
+
+**This constrains our own method.** The mixture trains on synthetic symbols AND
+permuted real words, so both `fresh` and `flipped` evaluations are
+in-distribution for it. Any retention number it produces under those is a
+matched-training ceiling and cannot support an instruction-following claim. This
+invalidates the obvious evaluation, not the method.
+
+**Consequence: hold out the relabelling TYPE, not just the task.** Evaluate every
+condition under surrogate forms none of them trained on, so all are
+out-of-distribution on equal footing:
+
+| unseen type | example |
+|---|---|
+| digit strings | `07`, `42` |
+| other-language real words | `colere`, `joie` |
+| one-token or three-token synthetic | `qep`, `vfeldra` |
+| mixed alphanumerics | `k7m2` |
+
+Then "better instruction follower" becomes a conjunction, both halves necessary:
+
+1. **Absolute original accuracy at or near IT's**, so the model is capable at all.
+2. **Retention under unseen relabelling types**, so consistency is generalisation
+   rather than a memorised scheme.
+
+IT fails (2) outright at 21%. Flip fails (1) on held-out and only passes a
+mismeasured (2). Sym passes (2) honestly at 68% and nearly passes (1). Whether
+the mixture passes both is the open question, and the unseen-type evaluation is
+the only way to answer it.
+
+Implementation: a surrogate-type generator in `symbol_manager.py` alongside
+`generate_fresh_symbols`, plus a `--surrogate_type` eval flag. Inference only on
+existing checkpoints.
+
 ## 8b. Candidate novelty: the no-legend negative
 
 Recorded 15 Nov 2026, to be pursued only if E1 shows the two surrogate regimes
@@ -189,6 +238,35 @@ prompting. Verify with a literature check before writing it up.
 | Negative mining cost | One forward pass per instance per epoch; cheap for two-token outputs, but it doubles the data pass |
 | Prior-driven answer is sometimes correct | Filtering on `y_l != y_w` handles the common case; if the no-legend answer is right for the wrong reason we would penalise a correct label |
 | Overlaps the conditional negative in Section 6 | They are alternative negatives for the same objective; E2 should compare them rather than assume one |
+
+## 8c. RL / preference direction: adversarial relabelling
+
+Recorded 16 Nov 2026. The mixture is a data recipe and thin as a contribution.
+This is the candidate that could carry the chapter, but note what is and is not
+new in it.
+
+**Already done by Chapter 1.** Assigning a class's definition a different class's
+real label name is DG-ICL-Flip. Random derangement, `f in Perm(L_sem)`.
+
+**What would be new, two parts:**
+
+1. **Targeted rather than random relabelling.** A random derangement often
+   assigns an unrelated label, where the prior barely conflicts. An adversarial
+   assignment maximises conflict by giving each definition the label whose
+   pre-trained meaning most opposes or is most confusable with it (positive to
+   negative, anger to joy). Selected by embedding similarity, by the model's own
+   confusion matrix, or by its no-legend prediction. A curriculum from random to
+   adversarial is the natural extension.
+2. **An explicit negative gradient.** SFT on adversarial flips still only raises
+   the probability of the correct surface; nothing pushes down the prior-implied
+   label. A preference objective with `y_l` = the prior-implied label expresses
+   exactly that, and is what cross-entropy structurally cannot do.
+
+**Honest limits.** Adversarial flipping sharpens one axis, prior conflict, and
+does nothing for the other, unfamiliar form. Flip already shows that near-perfect
+performance on the prior-conflict axis coexists with weak novel-symbol transfer.
+So this is a component of a method, not the whole method, and it needs the
+surface-form axis alongside it.
 
 ## 9. Novelty, stated honestly
 
