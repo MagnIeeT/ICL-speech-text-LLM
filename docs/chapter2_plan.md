@@ -366,6 +366,47 @@ Evaluation reuses the existing inference path.
   visual context. Requires demonstrations, which DG-ICL does not use, and does
   not address canonical-accuracy preservation.
 
+**Label-space forgetting and label-name sensitivity (closest to our problem)**
+- Preserving Zero-shot Capability in Supervised Fine-tuning for Multi-label Text Classification (Chen et al., Findings NAACL 2025). https://aclanthology.org/2025.findings-naacl.315/
+
+  The nearest prior work. Reports our exact phenomenon in text: supervised
+  fine-tuning erodes zero-shot ability on unseen labels EVEN WITH label
+  descriptions, with label-embedding models degrading to zero as fine-tuning
+  proceeds. So "SFT destroys the capability definitions were meant to supply" is
+  established and we cannot claim to have discovered it.
+
+  Differentiation: their remedy is architectural. They use a dual-encoder
+  retrieval setup and freeze the label side ("one-sided fine-tuning" plus a
+  self-supervised auxiliary loss). A generative decoder-only speech-text LLM has
+  no separate label tower to freeze, so that remedy is unavailable to us. Same
+  disease, different architecture, known cure does not transfer. Ours is also
+  speech rather than text, and generative rather than retrieval.
+
+- When Does Supervised Fine-Tuning Reduce Instruction Sensitivity? https://arxiv.org/pdf/2608.26661
+  Adjacent to the instruction-following framing in Section 8a.
+
+- Systematic Design Choices for Fine-Tuning Text Classifiers (Lancaster, ASOC-D-25-07347). https://eprints.lancs.ac.uk/id/eprint/234483/1/ASOC-D-25-07347.pdf
+
+  Asks whether fine-tuned decoder models use label MEANING or exploit positional
+  shortcuts, and concludes label understanding may be weaker than it appears.
+  Treat as a standing alternative explanation for anything we attribute to
+  definition-following. The unseen-surrogate-type evaluation in Section 8a is
+  the control against it: a positional shortcut should not survive a label
+  surface form the model has never seen.
+
+- A Benchmark on Extremely Weakly Supervised Text Classification. https://arxiv.org/pdf/2305.12749
+  Prompt-based methods are highly unstable when label words are swapped for
+  similar-meaning alternatives. Establishes label-name sensitivity as a known
+  problem, in text.
+
+- Text Classification Using Label Names Only (LOTClass, EMNLP 2020). https://aclanthology.org/2020.emnlp-main.724.pdf
+- Label-semantics Aware Generative Approach for Domain-Agnostic Multilabel Classification. https://arxiv.org/html/2506.06806v1
+
+  Searched for and did NOT find (as of 16 Nov 2026): any work testing whether a
+  model trained with definitions generalises to label surface forms it never saw,
+  in any modality. No surface-form invariance evaluation, nothing in speech. That
+  specific claim appears unoccupied and is what Section 8a targets.
+
 **Forgetting, anchoring and the alignment tax (relevant to the objective)**
 - Anchored Supervised Fine-Tuning. https://arxiv.org/html/2509.23753v3
 - Proximal Supervised Fine-Tuning. https://arxiv.org/pdf/2508.17784
