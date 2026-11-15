@@ -369,18 +369,21 @@ Evaluation reuses the existing inference path.
 **Label-space forgetting and label-name sensitivity (closest to our problem)**
 - Preserving Zero-shot Capability in Supervised Fine-tuning for Multi-label Text Classification (Chen et al., Findings NAACL 2025). https://aclanthology.org/2025.findings-naacl.315/
 
-  The nearest prior work. Reports our exact phenomenon in text: supervised
-  fine-tuning erodes zero-shot ability on unseen labels EVEN WITH label
-  descriptions, with label-embedding models degrading to zero as fine-tuning
-  proceeds. So "SFT destroys the capability definitions were meant to supply" is
-  established and we cannot claim to have discovered it.
+  Reports the same problem in text: supervised fine-tuning erodes zero-shot
+  ability on unseen labels EVEN WITH label descriptions, with label-embedding
+  models degrading to zero as fine-tuning proceeds.
 
-  Differentiation: their remedy is architectural. They use a dual-encoder
-  retrieval setup and freeze the label side ("one-sided fine-tuning" plus a
+  The overlap is at the PROBLEM level, not the contribution level, so this is
+  supporting evidence rather than a novelty threat. We are not claiming to have
+  discovered that fine-tuning erodes unseen-label ability; we are proposing a
+  training approach that avoids it. Cite it to establish the problem is real and
+  unsolved for generative models.
+
+  Their remedy is architectural and does not transfer: a dual-encoder retrieval
+  setup with the label side frozen ("one-sided fine-tuning" plus a
   self-supervised auxiliary loss). A generative decoder-only speech-text LLM has
-  no separate label tower to freeze, so that remedy is unavailable to us. Same
-  disease, different architecture, known cure does not transfer. Ours is also
-  speech rather than text, and generative rather than retrieval.
+  no separate label tower to freeze. Ours is also speech rather than text, and
+  generative rather than retrieval.
 
 - When Does Supervised Fine-Tuning Reduce Instruction Sensitivity? https://arxiv.org/pdf/2608.26661
   Adjacent to the instruction-following framing in Section 8a.
@@ -388,11 +391,14 @@ Evaluation reuses the existing inference path.
 - Systematic Design Choices for Fine-Tuning Text Classifiers (Lancaster, ASOC-D-25-07347). https://eprints.lancs.ac.uk/id/eprint/234483/1/ASOC-D-25-07347.pdf
 
   Asks whether fine-tuned decoder models use label MEANING or exploit positional
-  shortcuts, and concludes label understanding may be weaker than it appears.
-  Treat as a standing alternative explanation for anything we attribute to
-  definition-following. The unseen-surrogate-type evaluation in Section 8a is
-  the control against it: a positional shortcut should not survive a label
-  surface form the model has never seen.
+  shortcuts.
+
+  Largely inapplicable to our setup. The legend lists categories in a fixed
+  order, but which category is correct varies with the audio, so no position is
+  reliably the answer and a positional strategy cannot score above chance. The
+  concern applies where the answer's position is predictable, which ours is not.
+  Noted for completeness in case a reviewer raises it; the unseen-surrogate-type
+  evaluation would also rule it out.
 
 - A Benchmark on Extremely Weakly Supervised Text Classification. https://arxiv.org/pdf/2305.12749
   Prompt-based methods are highly unstable when label words are swapped for
