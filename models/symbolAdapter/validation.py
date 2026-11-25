@@ -12,7 +12,9 @@ from config.train_config.training_configs import (
     ValidationSymbolMode,
 )
 
-from utils.evaluation_utils import evaluate_predictions
+import re
+
+from utils.evaluation_utils import _canonical, clean_prediction, evaluate_predictions
 from .symbol_manager import SymbolManager, get_dataset_info, tokenize_batch_with_audio
 
 logger = logging.getLogger(__name__)
@@ -41,36 +43,63 @@ class ValidationManager:
         raw = getattr(self.config.symbol_config, "validation_modes", "fixed,original,fresh")
         tokens = [token.strip().lower() for token in raw.split(",") if token.strip()]
         valid = {ValidationSymbolMode.FIXED.value, ValidationSymbolMode.ORIGINAL.value,
-                 ValidationSymbolMode.FRESH.value, ValidationSymbolMode.FLIPPED.value}
+                 ValidationSymbolMode.FRESH.value, ValidationSymbolMode.FLIPPED.value,
+                 ValidationSymbolMode.INDEX.value}
         ordered_unique = []
         for token in tokens:
             if token in valid and token not in ordered_unique:
                 ordered_unique.append(token)
         if not ordered_unique:
             ordered_unique = [ValidationSymbolMode.FIXED.value]
-        # (suffix, use_original, use_dynamic, use_flip)
+        # (suffix, use_original, use_dynamic, use_flip, use_index)
         mode_map = {
-            ValidationSymbolMode.FIXED.value: ("fixed", False, False, False),
-            ValidationSymbolMode.ORIGINAL.value: ("original", True, False, False),
-            ValidationSymbolMode.FRESH.value: ("fresh", False, True, False),
-            ValidationSymbolMode.FLIPPED.value: ("flipped", False, False, True),
+            ValidationSymbolMode.FIXED.value: ("fixed", False, False, False, False),
+            ValidationSymbolMode.ORIGINAL.value: ("original", True, False, False, False),
+            ValidationSymbolMode.FRESH.value: ("fresh", False, True, False, False),
+            ValidationSymbolMode.FLIPPED.value: ("flipped", False, False, True, False),
+            ValidationSymbolMode.INDEX.value: ("index", False, False, False, True),
         }
         return [mode_map[token] for token in ordered_unique]
 
     @staticmethod
     def _derangement(labels, seed, ds):
-        """Deterministic permutation of label WORDS with no fixed point (flipped labels)."""
+        """Deterministic permutation of label WORDS with no fixed point (flipped labels).
+
+        Seeded from a sha256 digest, not hash(): Python salts str hashes per process,
+        so hash() gave every eval process (every model) a different derangement.
+        """
+        import hashlib
         import random
         labels = sorted(set(labels))
         if len(labels) <= 1:
             return {l: l for l in labels}
-        rng = random.Random(hash((seed, ds, tuple(labels))) & 0x7FFFFFFF)
+        key = "\x1f".join([str(seed), str(ds)] + labels).encode("utf-8")
+        rng = random.Random(int.from_bytes(hashlib.sha256(key).digest()[:4], "big"))
         perm = labels[:]
         for _ in range(200):
             rng.shuffle(perm)
             if all(a != b for a, b in zip(labels, perm)):
                 break
         return dict(zip(labels, perm))
+
+    @staticmethod
+    def _uses_shown_names(pred, dataset_key, c_map, relevant_labels) -> bool:
+        """True if every answer part is a name shown in the prompt: a mapped name, or an
+        original label left unmapped. Parsing mirrors evaluate_predictions."""
+        shown = {_canonical(s) for s in c_map.values()}
+        shown |= {_canonical(l) for l in relevant_labels if l not in c_map}
+        try:
+            text = clean_prediction(pred, DatasetType(dataset_key))
+        except ValueError:
+            text = clean_prediction(pred)
+        parts = [_canonical(p) for p in re.split(r"[,;|]", text) if p.strip()]
+        return bool(parts) and all(p in shown for p in parts)
+
+    def _build_index_map(self):
+        """{ds_name: {label: 'labelN'}}: generic names in sorted-label order (a format no method trains on)."""
+        lpd = self.symbol_manager.labels_per_dataset or {"": self.symbol_manager.original_labels}
+        return {ds: {l: f"label{i + 1}" for i, l in enumerate(sorted(set(labels)))}
+                for ds, labels in lpd.items()}
 
     def _build_flip_map(self, seed):
         """{ds_name: {label: other_label}} — real-label derangement per dataset (seeded)."""
@@ -83,6 +112,7 @@ class ValidationManager:
         use_dynamic_symbols: bool = False,
         symbol_map: Optional[Dict[str, Dict[str, str]]] = None,
         use_flip: bool = False,
+        use_index: bool = False,
     ):
         model.eval()
         if use_original_labels:
@@ -91,6 +121,9 @@ class ValidationManager:
         elif use_dynamic_symbols:
             symbol_mappings_to_use = self.symbol_manager._generate_symbol_mappings(force=True)
             mode_name = "Fresh-Symbols"
+        elif use_index:
+            symbol_mappings_to_use = self._build_index_map()
+            mode_name = "Index-Names(label1..K)"
         elif use_flip:
             seed = int(getattr(self.config.symbol_config, "val_flip_seed", 0))
             symbol_mappings_to_use = self._build_flip_map(seed)
@@ -191,6 +224,11 @@ class ValidationManager:
                     if not use_original_labels and c_map:
                         true_label = self.symbol_manager.convert_symbols_back(true_label, mappings=c_map)
                     conv_pred = self.symbol_manager.convert_symbols_back(pred, mappings=c_map) if not use_original_labels and c_map else pred
+                    # Renamed modes: the answer must use names shown in this prompt. An unshown
+                    # original name ("sad" when the prompt said "label4") would otherwise pass
+                    # through convert_symbols_back unchanged and be scored as the gold label.
+                    if not use_original_labels and c_map and not self._uses_shown_names(pred, dt_key, c_map, relevant_labels):
+                        conv_pred = "invalid"
                     lps = token_log_probs[i] if token_log_probs[i] is not None else []
                     all_results[dt_key].append({
                         "text": batch["text"][i],
@@ -233,8 +271,9 @@ class ValidationManager:
     def run_comprehensive_validation(self, model, val_dataloader, epoch: int, symbol_map: Optional[Dict[str, Dict[str, str]]] = None):
         mode_defs = self._resolve_validation_modes()
         comprehensive_results = {}
-        for mode_suffix, use_original, use_dynamic, use_flip in mode_defs:
-            metrics_by_dataset = self.validate_model(model, val_dataloader, epoch, use_original, use_dynamic, symbol_map, use_flip=use_flip)
+        for mode_suffix, use_original, use_dynamic, use_flip, use_index in mode_defs:
+            metrics_by_dataset = self.validate_model(model, val_dataloader, epoch, use_original, use_dynamic,
+                                                     symbol_map, use_flip=use_flip, use_index=use_index)
             comprehensive_results[mode_suffix] = metrics_by_dataset
 
         self.log_validation_summary(comprehensive_results, epoch)

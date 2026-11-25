@@ -118,6 +118,41 @@ novelty is layered on. Nothing here needs new datasets.
   sampled per instance across canonical, synthetic and permuted-real. Does
   canonical recover while symbolic holds? Qwen, three seeds. If this alone
   closes the gap, the objective contribution is thin and we say so.
+  **Status, 16 Nov 2026.** Pilot (2k) and full data (18,396, five epochs,
+  `003616_qa_h-cr-m14en_dpi_mix0.5`) trained at `surrogate_mix=0.5`. Two
+  problems. First, **only two of the three regimes were implemented**
+  (`symbol_training.py:164` samples flip-or-symbol); canonical was never
+  trained, so no label word has ever been paired with its own definition.
+  Second, the held-out gain is **confined to the MInDS-14 family**, and
+  `minds14_fr`/`minds14_ko` share label set, definitions and template with the
+  trained `minds14_en`, differing only in spoken language. On the two genuinely
+  held-out tasks, Skit-S2I and RAVDESS-Song, the mixture loses in both modes.
+  Detail in `docs/e0_results.md`, section E1. **The mixture is not currently
+  evidence of better definition-following.**
+- **E1a, what the canonical deficit actually is (no compute).** A perfect
+  definition follower needs no canonical practice, since under canonical the
+  definition and the attached word are both correct. So the deficit is either
+  output-space drift (nonsense-string targets in training, real-word targets at
+  test) or learned distrust of the label word. Classify Sym's `original` errors
+  from the existing dumps: out-of-inventory or symbol-shaped points at drift,
+  in-inventory but wrong points at distrust. This decides whether a canonical
+  regime, a different output-space treatment, or neither is the right fix. Run
+  before any further training.
+- **E1b, broad-vocabulary flip (diagnostic, not a fix).** The flip regime
+  permutes within the task's own label set, so the only real words the model
+  emits are the 38 training labels. Drawing them from a broad vocabulary
+  disjoint from every evaluation inventory removes that channel and separates
+  the two hypotheses in E1a. It is explicitly not a fix for canonical: it adds a
+  fourth surface type in which the word still never matches its definition.
+  Implementation: the swap-mapping path in
+  `models/symbolAdapter/symbol_manager.py`, plus a `--flip_vocab` flag.
+  (Function name to be confirmed against the source before building.)
+- **E1c, held-out set repair.** Two of four held-out datasets are the trained
+  MInDS-14 task in another language, which inflates any held-out average for a
+  method that improves MInDS-14. Either report MInDS-14 fr/ko separately as
+  cross-lingual transfer rather than held-out generalisation, or add held-out
+  tasks with genuinely disjoint inventories. This affects how Chapter 1's
+  held-out numbers should be read as well.
 - **E2, conditional negatives.** The method of Section 6, on identical data to
   E1 so the comparison isolates the objective rather than the data recipe. (H2)
 - **E3, mixture ablation.** Ratio of the three regimes, and whether permuted-real
@@ -127,6 +162,23 @@ novelty is layered on. Nothing here needs new datasets.
 - **E5, phrasing robustness (the old H4).** Train across definition phrasings,
   evaluate on **held-out** phrasings, never the four already in Chapter 1
   Table 5. Train/test overlap on the phrasing axis would invalidate the claim.
+- **E6, does the model know more than it says? (probe diagnostic, no training).**
+  After Orgad et al. 2024, "LLMs Know More Than They Show" (arXiv 2410.02707):
+  linear probes on hidden states often recover the correct answer when the
+  generated answer is wrong, and the signal sits at the answer tokens in middle
+  to late layers. For us: fit a logistic-regression probe on the hidden state at
+  the first answer position, target = true class, for each held-out task.
+  - Probe accuracy far above generated accuracy means the audio is understood and
+    the failure is in binding the legend to the output. Probe accuracy near
+    generated accuracy means the failure is perceptual, and no legend-side method
+    (Sym, Flip, consistency) can fix it.
+  - Run it across epochs of one run. The consistency run falls on held-out between
+    epochs 3 and 5 (e0_results, E2): if the probe holds while the output falls,
+    the late-epoch loss is a read-out problem, not forgotten information.
+  - Caveat from the paper: probes do not transfer across tasks, so fit one probe
+    per held-out task on part of its own data, and report against a
+    logit-only baseline.
+  - Needs every epoch's checkpoint kept, which the pruner currently prevents.
 
 ## 8. Metrics
 
@@ -323,6 +375,121 @@ Evaluation reuses the existing inference path.
    It is the largest single gap and it is a held-out emotion task.
 3. Target venue, given the chapter is now diagnosis plus method plus a negative
    result rather than a single new mechanism.
+
+## 13a. Current direction (22 Nov): definition-trap training
+
+**Goal.** A speech decision model: the user gives choices (any names, including
+`label1` or symbols) with definitions, and the model picks from the definitions.
+Label-name information is given up as a design choice.
+
+**Motivation (see e0_results.md, 21 Nov).** Each model reads the task best in the
+label format it was trained on (IT 0.818 on original, Sym 0.787 on symbols, Flip
+0.767 on swap). Failures sit in confusable pairs (`branch_address` vs `ifsc_code`)
+that each model resolves only in its own format. Capacity is fixed, so splitting
+data across formats is not enough: each example has to teach more.
+
+**External support (Mishra et al., arXiv 2611.09457, text LLMs).** Reassigning
+definitions among labels (a derangement, our Flip test): Mistral-7B follows the
+original name 56% vs the reassigned definition 11% (CCC). Standard LoRA
+fine-tuning (cross-entropy, human labels only) raises original-name agreement in
+all 6 model-dataset pairs (+4.6 to +29.4 points) without raising definition
+adherence, while normal F1 also rises. Demonstrations relabeled to agree with the
+reassigned definitions ("Aligned") raise adherence by +0.11 to +0.40 F1, so a
+consistent training signal can teach the new mapping. Audit only: no training
+fix, no speech, no unseen tasks. Our trap training is a fix for the failure they
+measure.
+
+**Setup.** Instance = audio, task classes (definition + original name), gold
+label(s) (HVB is multi-label). Legend = "name: definition" lines. Target = shown
+name(s) of the gold class(es). Qwen2-Audio + LoRA, single stage from pretrained,
+no reference model.
+
+### Step 1: naming, one type per instance (one third each to start)
+
+| Type | Legend change | Trap word |
+|---|---|---|
+| no flip | none | none |
+| gold flip | one gold class swaps names with one non-gold class | gold's real name, now on the wrong definition |
+| non-gold swap | two non-gold classes swap names | none; blocks the "odd line = answer" leak |
+
+- Gold-flip partner: half random non-gold, half the gold's nearest neighbour.
+- HVB: flip one gold label at a time, always with a non-gold class.
+- Training uses real words only. Symbols and `label1..N` are test-only formats.
+
+### Step 2: harmless word dropout (all instances)
+
+- Nearest neighbour of each definition: sentence embeddings (word overlap is
+  dominated by shared boilerplate). Computed offline, checked by hand.
+- Deciding words of a definition: its words not in the neighbour's definition,
+  ignoring stopwords.
+- Drop non-deciding words at a rate sampled per instance from 0 to 20%, on
+  random lines including gold. Line damage then predicts nothing.
+
+### Step 3: deciding-word removal (about 30% of instances)
+
+Second copy of the prompt with the gold line's deciding words removed. Skip if
+the gold has no deciding words.
+
+### Losses
+
+```
+L_nll  = - log p(y | audio, legend)                                  all instances
+
+diff   = log p(gold token) - log p(trap token)                       gold-flip only
+         (at the first token where gold name and trap differ; on the gold path, no extra pass)
+L_trap = - log sigmoid( beta * diff - margin )
+
+diff   = log p(y | full legend) - log p(y | gold deciding words removed)   step-3 instances
+L_cond = - log sigmoid( beta * diff - margin )                        (second pass)
+
+L = L_nll + lambda_t * L_trap + lambda_c * L_cond
+```
+
+HVB: trap and conditional terms apply only to the flipped gold label's span.
+Start: beta 2, margin 0.5, lambda_t = lambda_c = 0.5.
+
+**Relation to mDPO.** Inspired, not identical: trap loss = chosen vs rejected
+(rejected is a known-wrong word, not a generated response); conditional loss =
+mDPO's conditional term (full vs damaged context); anchor term replaced by the
+NLL; reference model dropped (reference-free, SimPO-style). mDPO with a
+reference model is an ablation.
+
+**Name.** DG-Trap (may become DGPO, definition-guided proximity optimisation).
+**Implementation and experiment log:** `docs/e0_results.md`, section E3. Code in
+`models/symbolAdapter/trap_loss.py` and `_trap_step` in `symbol_training.py`;
+tests in `tests/test_dg_trap.py`. Neighbours are automated (embedding
+similarity); manual overrides only if diagnostics show a problem.
+
+### What each part teaches
+
+| Part | Lesson |
+|---|---|
+| no flip + NLL | fitting names are normal and often right |
+| gold flip + trap | a fitting name can be wrong; check the definition |
+| non-gold swap | odd-looking lines do not point to the answer |
+| harmless dropout | surface damage means nothing |
+| deciding-word removal + cond | confidence must come from the deciding words |
+
+### Evaluation and ablations
+
+Held-out tasks in four formats (original, symbols, swapped, `label1..N`):
+accuracy per format, spread across formats, swap retention, confusable pairs,
+trained-task accuracy. Checkpoint by trained-task validation. Qwen first, then AF3.
+
+| Run | Purpose |
+|---|---|
+| A0: naming + dropout, NLL only | is the data alone enough (key baseline) |
+| A1: A0 + trap | value of the trap |
+| A2: A0 + cond | value of the conditional term |
+| A3: full | main method |
+| A4: full without non-gold swap | does the leak matter |
+| A5: full, random words in cond | do deciding words matter |
+
+**Risks.** A model that detects damaged lines instead of reading (handled by step
+2); trap teaching "avoid fitting names" (handled by no-flip instances); novelty
+read as "DPO with synthetic negatives" (needs a targeted search on hard-negative
+label descriptions before claiming).
+
 ## 14. References
 
 [ctxdpo]: https://openreview.net/pdf/2da95227c6c14c9a45c6a4a068648aca1bc93c37.pdf
@@ -427,6 +594,92 @@ Evaluation reuses the existing inference path.
   tuning degrading canonical category discrimination in speech-text LLMs), the
   claim that the trade-off is an artifact of the objective, and any mechanism
   tailored to it.
+
+**Label-definition adherence audits (motivation for 13a)**
+- Definitions, Label Names, or Demonstrations? Auditing What Governs LLM Annotation (Mishra, Gupta, Gupta, Tai, Li; arXiv preprint, 6 Nov 2026). https://arxiv.org/abs/2611.09457
+
+  Read in full (22 Nov). Text LLMs (Mistral-7B, Llama-3.1-8B, Llama-3.3-70B),
+  political-text classification (CCC 8, BFRS 12, Manifesto 49 labels). Derangement
+  of definitions over labels: models follow the original name far more than the
+  reassigned definition; standard LoRA fine-tuning reinforces the original
+  mapping. Neutral-identifier control and demonstration-label conflicts also
+  tested. Diagnostic only; no training method. Closest problem-level overlap,
+  supporting rather than threatening.
+
+- Codebook LLMs: Evaluating LLMs as Measurement Tools for Political Science Concepts (Halterman and Keith, Political Analysis 2026). arXiv 2407.10747. https://arxiv.org/abs/2407.10747
+
+  Read (22 Nov). Text LLMs (Mistral-7B, Llama-3.1-8B), CCC/BFRS/Manifestos, full
+  codebook in prompt. Behavioral tests: generic labels (LABEL_1) and labels
+  permuted across definitions both drop performance (reliance on names);
+  ablation where label-only beats dropping the label; word-overlap shortcuts in
+  error analysis. Training: plain output-only NLL with QLoRA, codebook in prompt,
+  in-distribution only (BFRS 0.53 to 0.82). Never trains with swapped/generic
+  labels, never re-tests them after training, cross-codebook (unseen task)
+  transfer left as future work. Effectively our IT baseline in text.
+
+- What Is a Protest Anyway? Codebook Conceptualization Is Still a First-Order Concern in LLM-Era Classification (Halterman and Keith, ACL 2026 long, pp. 2043-2059). https://aclanthology.org/2026.acl-long.92.pdf
+
+  Read (22 Nov). Position and simulation paper, no LLM training, no label swaps.
+  Useful vocabulary: definition Type I (surface form of the label), Type II
+  (dictionary), Type III (stipulative, task-specific). Our problem in their
+  terms: given Type III definitions, models fall back to Type I.
+
+- Do LLMs Adhere to Label Definitions? Examining Their Receptivity to External Label Definitions (Mohammadi et al., EMNLP 2025). arXiv 2509.02452. https://aclanthology.org/2025.emnlp-main.1648
+
+  Read (22 Nov). Prompting only (GPT-4, LLaMA-3-8B, Phi-3, Mistral-7B) on e-SNLI,
+  WellXplain, HateXplain, WiCE. All label-definition permutations: swaps hurt but
+  do not flip models (GPT-4 e-SNLI MCC 0.83 aligned vs 0.74 mean misaligned;
+  small models barely react), so models partly fall back on internal knowledge.
+  Definitions help more in specialised domains; on NLI no definitions often
+  beats definitions. Also incorrect / slightly incorrect definitions (evaluation
+  only; cousin of our near-miss definitions). No training; fine-tuning for
+  adherence named as future work.
+
+- How Persuasive Is Your Context? (Nguyen, Du, Hoyle, Cotterell; EMNLP 2025). arXiv 2509.17879. https://arxiv.org/html/2509.17879v1
+
+  Read (22 Nov). Metric paper, no training. Targeted persuasion score (TPS):
+  Wasserstein distance from the no-context prior to a target answer minus that
+  from the context-conditioned distribution; BasicTPS uses 0/1 cost, in [-1, 1].
+  Text LLMs (Qwen-2.5-7B mainly). Codebook definitions vs five-shot on manifesto
+  scaling: definitions move answers only slightly (mean TPS about 0.01 to 0.02).
+  Possible evaluation metric for us: how much definitions move the answer
+  distribution toward gold, with "no definition" or "deciding words removed" as
+  the prior. Caveat: first-token measurement is noisy when labels share a first
+  token.
+
+- When Better Codebooks Are Not Enough: Predictive Performance and Behavioral Reliability in LLM Political Event Coding (He, Murugesan, Brandt, Hu; arXiv preprint 2606.06781, v2 Aug 2026). https://arxiv.org/abs/2606.06781
+
+  Read (22 Nov). Prompting/RAG only (Gemma-2-9B, Qwen2.5-7B, Mistral-7B, Llama-3.1-8B,
+  GPT-4o-mini, GPT-5.4-mini), PLOVER relation coding (15 root labels). Richer
+  codebooks raise macro-F1 (names only 0.457, compact 0.574, enriched 0.633), but
+  under a full derangement swap no method exceeds 0.20 weighted F1. Targeted
+  near-boundary swaps (AGREE/CONSULT, REQUEST/PROTEST): mapping followed 13-15%,
+  original label kept 52-58%. Reversing codebook order flips 21-25% of
+  predictions. No training. Reusable: their outcome split (follow mapping /
+  retain original / other / invalid) as our swap metric.
+
+- On the Limits of LLM Adaptability: Impact of Model-Internalized Priors on Annotation Task Performance (Casanova, Kocielnik, Alvarez; ICML 2026, PMLR 306:11976-12000). https://proceedings.mlr.press/v306/casanova26a.html
+
+  Read (22 Nov, PDF text). Prompting only, nine instruction-tuned LLMs, toxicity
+  annotation on five datasets. Model-internal concept familiarity predicts
+  accuracy (partial r = +0.41). Decision stickiness: only 34.8% of zero-shot
+  errors are fixed by definitions or examples; a three-turn rescue prompt reaches
+  18.7%. Misaligned definitions shift predictions only modestly and confidence
+  does not drop (overconfident under wrong definitions). No training; they note
+  they cannot tell which training stage produces the concept anchoring.
+
+  Summary of this block: six text papers diagnose that models follow label
+  names or priors over supplied definitions, and that standard fine-tuning does
+  not fix it. None proposes a training fix, none uses speech, none tests unseen
+  tasks.
+
+**Components of the 13a objective (closest per component)**
+- mDPO: Conditional Preference Optimization for Multimodal LLMs (EMNLP 2024). arXiv 2406.11839. Conditional term (full vs cropped image); our conditional term moves it to text definitions with deciding-word removal.
+- SimPO: Simple Preference Optimization with a Reference-Free Reward. arXiv 2405.14734. Reference-free margin form used for the trap and conditional losses.
+- GoLLIE: Annotation Guidelines Improve Zero-Shot Information Extraction (ICLR 2024). arXiv 2310.03668. Masks class names so the model reads guidelines; removing the masking cost only 0.7 F1.
+- When and Why Vision-Language Models Behave Like Bags-of-Words (NegCLIP, ICLR 2023). arXiv 2210.01936. Hard-negative captions; precedent for generated near-miss negatives (captions, not competing classes).
+- MASKER: Masked Keyword Regularization for Reliable Text Classification (AAAI 2021). Confidence should drop without keywords; encoder classifier on input text. arXiv id and exact loss UNVERIFIED.
+- Novelty search notes: `research_notes/Label invariant definition grounding/novelty_trap_training.md`.
 
 **Our own prior work**
 - Chapter 1: Definition-Guided In-Context Learning for Zero-Shot Spoken Language Understanding (under review).

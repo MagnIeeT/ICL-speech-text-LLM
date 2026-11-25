@@ -125,6 +125,8 @@ def create_combined_dataloader(
             no_legend=config.data_config.no_legend,
             fewshot_per_class=config.data_config.fewshot_per_class,
             definition_variant=getattr(config.data_config, "definition_variant", "orig"),
+            strip_gold_definition=getattr(config.data_config, "strip_gold_definition", False),
+            strip_extra_definitions=getattr(config.data_config, "strip_extra_definitions", 0),
         )
 
     combined_dataset = MultiTaskDataset(

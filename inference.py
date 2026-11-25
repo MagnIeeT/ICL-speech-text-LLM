@@ -48,7 +48,11 @@ class InferenceOrchestrator:
         fewshot_per_class: bool = False,
         input_mode: str = "speech_only",
         definition_variant: str = "orig",
+        strip_gold_definition: bool = False,
+        strip_extra_definitions: int = 0,
     ):
+        self.strip_gold_definition = strip_gold_definition
+        self.strip_extra_definitions = strip_extra_definitions
         self.checkpoint_path = checkpoint_path
         self.dataset_type = dataset_type
         self.model_type = model_type.lower()
@@ -148,6 +152,8 @@ class InferenceOrchestrator:
             self.config.data_config.fewshot_per_class = self.fewshot_per_class
             self.config.data_config.input_mode = self.input_mode
             self.config.data_config.definition_variant = self.definition_variant
+            self.config.data_config.strip_gold_definition = self.strip_gold_definition
+            self.config.data_config.strip_extra_definitions = self.strip_extra_definitions
 
             return checkpoint
 
@@ -429,6 +435,10 @@ def main():
                         help="Few-shot: num_examples PER class (full coverage) vs total (class-balanced)")
     parser.add_argument("--definition_variant", type=str, default="orig",
                         help="Definition-sensitivity ablation: select an alternate-wording legend from a dataset's prompt_variants (e.g. paraphrase, terse); 'orig' = default template")
+    parser.add_argument("--strip_gold_definition", action="store_true",
+                        help="Counterfactual eval: drop only the gold class's definition (label name kept, other definitions intact)")
+    parser.add_argument("--strip_extra_definitions", type=int, default=0,
+                        help="With --strip_gold_definition: also drop N random non-gold definitions")
     parser.add_argument("--symbol_map_file", type=str, default=None,
                         help="JSON file with symbol overrides {ds_name: {label: symbol}}; merged over checkpoint mappings")
     parser.add_argument("--metrics_dir", type=str, default=None,
@@ -465,6 +475,8 @@ def main():
             split=args.split,
             input_mode=args.input_mode,
             definition_variant=getattr(args, "definition_variant", "orig"),
+            strip_gold_definition=args.strip_gold_definition,
+            strip_extra_definitions=args.strip_extra_definitions,
         )
 
         results = orchestrator.run_complete_inference()

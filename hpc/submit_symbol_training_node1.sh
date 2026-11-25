@@ -19,7 +19,7 @@ export TRANSFORMERS_OFFLINE=1
 export HF_DATASETS_OFFLINE=1
 
 # --- Model ---
-MODEL_TYPE="${MODEL_TYPE:-salmonn}"                                                  # model backend: qwen | salmonn | flamingo
+MODEL_TYPE="${MODEL_TYPE:-qwen}"                                                        # model backend: qwen | salmonn | flamingo
 
 # --- Infrastructure ---
 # Auto-select conda env based on MODEL_TYPE unless explicitly overridden.
@@ -84,6 +84,41 @@ NUM_SYMBOL_MAPPINGS="${NUM_SYMBOL_MAPPINGS:-100}"                               
 SURROGATE_MIX="${SURROGATE_MIX:-0}"                                                 # per-instance P(flipped regime); 0 = synthetic symbols only
 SEED="${SEED:-}"                                                                  # global seed for python/numpy/torch; empty = unseeded
 
+# Surface-form consistency objective. Weight 0 = off (one legend per step).
+# Above 0, eligible instances run TWO legends in one step and are penalised for
+# answering them differently once mapped back to definitions. Multi-label sets
+# (HVB) cannot carry it and take one ordinary pass following SURROGATE_MIX.
+# Weight 0 WITH the other two flags set is the control: two views, no coupling.
+CONSISTENCY_WEIGHT="${CONSISTENCY_WEIGHT:-0}"                                       # lambda on the divergence term; 0.5-1.0 is the sensible first range
+CONSISTENCY_VIEWS="${CONSISTENCY_VIEWS:-sym,flip}"                                  # two of sym|flip|orig: sym,orig adds canonical supervision; sym,sym stays pure surrogate; sym,flip spans both families
+CONSISTENCY_DIVERGENCE="${CONSISTENCY_DIVERGENCE:-js}"                          # sym_kl | js | l2
+CONSISTENCY_SHUFFLE_LEGEND="${CONSISTENCY_SHUFFLE_LEGEND:-false}"                  # true = random legend order per view and per instance (training only)
+CONSISTENCY_CONTROL="${CONSISTENCY_CONTROL:-}"                                     # non-empty = control: two-view path at CONSISTENCY_WEIGHT=0, no coupling
+KEEP_ALL_CHECKPOINTS="${KEEP_ALL_CHECKPOINTS:-false}"                              # true = skip the pruner; every epoch's LoRA is kept (diagnostics only, never for selection)
+
+# DG-Trap (definition-trap training, chapter 2). Real label words only; per instance
+# orig | goldswap | pairswap naming, harmless word dropout, trap + conditional margins.
+# TRAP_ENABLED=true forces SWAP_LABELS=false and SURROGATE_MIX=0 (its own naming).
+# A0 (data-only baseline) = TRAP_LAMBDA=0 TRAP_COND_LAMBDA=0.
+TRAP_ENABLED="${TRAP_ENABLED:-false}"
+TRAP_P_ORIG="${TRAP_P_ORIG:-0.3333}"                                                # naming proportions (normalised in python)
+TRAP_P_GOLDSWAP="${TRAP_P_GOLDSWAP:-0.3333}"
+TRAP_P_PAIRSWAP="${TRAP_P_PAIRSWAP:-0.3333}"                                        # 0 = ablation A4 (no leak blocker)
+TRAP_NN_FRAC="${TRAP_NN_FRAC:-0.5}"                                                 # goldswap partner = nearest-neighbour definition with this prob
+TRAP_DROPOUT_MAX="${TRAP_DROPOUT_MAX:-0.2}"                                         # harmless word dropout rate ~ U(0, max)
+TRAP_LAMBDA="${TRAP_LAMBDA:-0.5}"                                                   # trap margin weight; 0 = measured only
+TRAP_COND_LAMBDA="${TRAP_COND_LAMBDA:-0.5}"                                         # conditional margin weight; 0 = no second pass
+TRAP_COND_FRAC="${TRAP_COND_FRAC:-0.3}"                                             # fraction of instances with the conditional term
+TRAP_COND_MODE="${TRAP_COND_MODE:-deciding}"                                        # deciding | random (ablation A5)
+TRAP_BETA="${TRAP_BETA:-2.0}"
+TRAP_MARGIN="${TRAP_MARGIN:-0.5}"
+TRAP_COND_MARGIN="${TRAP_COND_MARGIN:-0.5}"
+TRAP_DECIDING_WORDS="${TRAP_DECIDING_WORDS:-config/data_config/deciding_words.json}"
+if [[ "${TRAP_ENABLED}" == "true" ]]; then
+    SWAP_LABELS="false"
+    SURROGATE_MIX="0"
+fi
+
 if [[ "${USE_DPO}" == "true" ]]; then
     _MODE="symdpo"
 elif [[ "${NO_SYMBOLS}" == "true" ]]; then
@@ -95,6 +130,23 @@ else
 fi
 [[ "${SWAP_LABELS}" == "true" ]] && _MODE="${_MODE}_swap_${SYMBOL_UPDATE_STRATEGY}"
 [[ "${SURROGATE_MIX}" != "0" ]] && _MODE="${_MODE}_mix${SURROGATE_MIX}"
+# Consistency tag: _consSO0.5 = views sym,orig at weight 0.5. Weight 0 with views
+# set is the control, tagged _consSO0 so it is distinguishable from a plain run.
+if [[ -n "${CONSISTENCY_VIEWS}" && ( "${CONSISTENCY_WEIGHT}" != "0" || -n "${CONSISTENCY_CONTROL:-}" ) ]]; then
+    _CV="$(printf '%s' "${CONSISTENCY_VIEWS}" | tr -d ',' | tr '[:lower:]' '[:upper:]' | cut -c1,4)"
+    [[ "${CONSISTENCY_VIEWS}" == *same* ]] && _CV="Ssame"                          # sym,same would otherwise collide with sym,sym ("SS")
+    _MODE="${_MODE}_cons${_CV}${CONSISTENCY_WEIGHT}"
+    [[ "${CONSISTENCY_DIVERGENCE}" != "js" ]] && _MODE="${_MODE}${CONSISTENCY_DIVERGENCE}"
+    [[ "${CONSISTENCY_SHUFFLE_LEGEND}" == "true" ]] && _MODE="${_MODE}_shuf"
+fi
+if [[ "${TRAP_ENABLED}" == "true" ]]; then
+    # e.g. _trap_lt0.5_lc0.5 ; non-default knobs appended so ablations stay distinguishable
+    _MODE="trap_lt${TRAP_LAMBDA}_lc${TRAP_COND_LAMBDA}"
+    awk "BEGIN{exit !(${TRAP_P_PAIRSWAP}+0==0)}" && _MODE="${_MODE}_nopair"     # numeric: 0, 0.0, 0.00
+    [[ "${TRAP_COND_MODE}" != "deciding" ]] && _MODE="${_MODE}_cond${TRAP_COND_MODE}"
+    [[ "${TRAP_DROPOUT_MAX}" != "0.2" ]] && _MODE="${_MODE}_do${TRAP_DROPOUT_MAX}"
+    [[ "${TRAP_NN_FRAC}" != "0.5" ]] && _MODE="${_MODE}_nn${TRAP_NN_FRAC}"
+fi
 [[ "${NO_LEGEND}" == "true" ]] && _MODE="${_MODE}_nl"                              # no-legend tag
 [[ "${NUM_EXAMPLES}" != "0" ]] && _MODE="${_MODE}_fs${NUM_EXAMPLES}${FEWSHOT_MODE:0:1}"   # few-shot tag (_fs4s = 4 speech, _fs4t = 4 text)
 
@@ -196,6 +248,19 @@ ${_PYTHON_CMD} train.py \
     $( [[ "${SWAP_LABELS}" == "true" ]] && printf '%s' "--swap_labels" ) \
     --num_symbol_mappings "${NUM_SYMBOL_MAPPINGS}" \
     --surrogate_mix "${SURROGATE_MIX}" \
+    --consistency_weight "${CONSISTENCY_WEIGHT}" \
+    --consistency_views "${CONSISTENCY_VIEWS}" \
+    --consistency_divergence "${CONSISTENCY_DIVERGENCE}" \
+    $( [[ "${CONSISTENCY_SHUFFLE_LEGEND}" == "true" ]] && printf '%s' "--consistency_shuffle_legend" ) \
+    $( [[ -n "${CONSISTENCY_CONTROL}" ]] && printf '%s' "--consistency_control" ) \
+    $( [[ "${TRAP_ENABLED}" == "true" ]] && printf '%s ' "--trap_enabled" \
+        "--trap_p_orig" "${TRAP_P_ORIG}" "--trap_p_goldswap" "${TRAP_P_GOLDSWAP}" \
+        "--trap_p_pairswap" "${TRAP_P_PAIRSWAP}" "--trap_nn_frac" "${TRAP_NN_FRAC}" \
+        "--trap_dropout_max" "${TRAP_DROPOUT_MAX}" "--trap_lambda" "${TRAP_LAMBDA}" \
+        "--trap_cond_lambda" "${TRAP_COND_LAMBDA}" "--trap_cond_frac" "${TRAP_COND_FRAC}" \
+        "--trap_cond_mode" "${TRAP_COND_MODE}" "--trap_beta" "${TRAP_BETA}" \
+        "--trap_margin" "${TRAP_MARGIN}" "--trap_cond_margin" "${TRAP_COND_MARGIN}" \
+        "--trap_deciding_words" "${TRAP_DECIDING_WORDS}" ) \
     $( [[ "${USE_DPO}" == "true" ]] && printf '%s' "--use_dpo" ) \
     $( [[ "${USE_DPO}" == "true" ]] && printf '%s' "--dpo_beta ${DPO_BETA}" ) \
     --input_mode "${INPUT_MODE}" \
@@ -207,5 +272,9 @@ ${_PYTHON_CMD} train.py \
 
 # --- Prune non-best checkpoints (keeps best epoch per validation mode on train tasks) ---
 # Safe no-op if training didn't complete or the dir is empty; never fails the run.
-printf '%s\n' "Pruning non-best checkpoints for ${RUN_NAME}" >> "${LOG_FILE}" 2>&1
-python hpc/prune_checkpoints.py "${CHECKPOINT_DIR}/${RUN_NAME}" --apply >> "${LOG_FILE}" 2>&1 || true
+if [[ "${KEEP_ALL_CHECKPOINTS}" == "true" ]]; then
+    printf '%s\n' "KEEP_ALL_CHECKPOINTS=true: pruner skipped, every epoch kept for ${RUN_NAME}" >> "${LOG_FILE}" 2>&1
+else
+    printf '%s\n' "Pruning non-best checkpoints for ${RUN_NAME}" >> "${LOG_FILE}" 2>&1
+    python hpc/prune_checkpoints.py "${CHECKPOINT_DIR}/${RUN_NAME}" --apply >> "${LOG_FILE}" 2>&1 || true
+fi

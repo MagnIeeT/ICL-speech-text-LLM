@@ -129,7 +129,9 @@ VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-4}"
 VALIDATION_MODES="${VALIDATION_MODES:-original, fresh}"                                           # original,fixed,fresh,flipped
 VAL_FLIP_SEED="${VAL_FLIP_SEED:-0}"                                                       # 'flipped' mode real-label derangement seed (same seed = same flip across models)
 NO_LEGEND="${NO_LEGEND:-false}"                                                           # true = strip label descriptions at eval (ablation: does the description carry the work?)
-DEFINITION_VARIANT="${DEFINITION_VARIANT:-orig}"                                  # legend wording: orig | paraphrase | terse | verbose | route_tone | route_words
+STRIP_GOLD_DEFINITION="${STRIP_GOLD_DEFINITION:-false}"                                   # true = drop only the gold class's definition (counterfactual diagnostic)
+STRIP_EXTRA_DEFINITIONS="${STRIP_EXTRA_DEFINITIONS:-0}"                                   # with the above: also drop N random non-gold definitions
+DEFINITION_VARIANT="${DEFINITION_VARIANT:-orig}"                                 # legend wording: orig | paraphrase | terse | verbose | route_tone | route_words
 INPUT_MODE="${INPUT_MODE:-text_only}"                                                   # speech_only (audio) | text_only (transcription as text; Wei-style text ablation)
 SPLIT="${SPLIT:-validation}"                                                            # test | validation
 
@@ -194,6 +196,7 @@ else
     _FS_TAG="_fs${NUM_EXAMPLES}${FEWSHOT_MODE:0:1}$( [[ "${FEWSHOT_PER_CLASS}" == "true" ]] && printf 'pc' )"
 fi
 [[ "${NO_LEGEND}" == "true" ]] && _FS_TAG="${_FS_TAG}_nl"   # distinguish no-legend from with-legend runs
+[[ "${STRIP_GOLD_DEFINITION}" == "true" ]] && _FS_TAG="${_FS_TAG}_sg${STRIP_EXTRA_DEFINITIONS}"   # gold-definition stripped (+N extra)
 RUN_NAME="${RUN_NAME:-$(date +"%H%M%S")_i_${SHORT_MODEL_TYPE}_${SHORT_DATASET_TYPE}_${_SPLIT_TAG}${SAMPLES_TAG}${_CKPT_TAG}${_FS_TAG}}"
 
 if [[ -x "${HOME}/miniconda3/bin/conda" ]]; then
@@ -252,6 +255,7 @@ python inference.py \
     --validation_modes "${VALIDATION_MODES}" \
     --val_flip_seed "${VAL_FLIP_SEED}" \
     $( [[ "${NO_LEGEND}" == "true" ]] && printf '%s' "--no_legend" ) \
+    $( [[ "${STRIP_GOLD_DEFINITION}" == "true" ]] && printf '%s' "--strip_gold_definition --strip_extra_definitions ${STRIP_EXTRA_DEFINITIONS}" ) \
     --split "${SPLIT}" \
     --input_mode "${INPUT_MODE}" \
     --definition_variant "${DEFINITION_VARIANT}" \

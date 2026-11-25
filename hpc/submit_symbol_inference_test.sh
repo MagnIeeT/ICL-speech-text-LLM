@@ -19,7 +19,7 @@ if [[ -f "${PROJECT_ROOT}/.env" ]]; then
     set -a; source "${PROJECT_ROOT}/.env"; set +a
 fi
 
-MODEL_TYPE="${MODEL_TYPE:-salmonn}"  # flamingo | qwen | salmonn
+MODEL_TYPE="${MODEL_TYPE:-qwen}"  # flamingo | qwen | salmonn
 _DEFAULT_CONDA_ENV="qwen"
 if [[ "${MODEL_TYPE}" == "flamingo" ]]; then _DEFAULT_CONDA_ENV="flamingo"; fi
 if [[ "${MODEL_TYPE}" == "salmonn" ]];  then _DEFAULT_CONDA_ENV="salmonn";  fi
@@ -241,7 +241,7 @@ DEVICE="${DEVICE:-cuda:0}"
 # CKPT_DATE=2026-09-07 TRAIN_RUN=231324_sl_h-cr-m14en_dpi_ha EPOCH=2  # SALMONN DG-ICL-Sym (best-val ep2, NOT ep3)
 # CKPT_DATE=2026-09-09 TRAIN_RUN=094658_sl_h-cr-m14en_dpi_ha_nl_fs1t EPOCH=3  # SALMONN Symbol Tuning (Wei)
 # CKPT_DATE=2026-09-09 TRAIN_RUN=094822_sl_h-cr-m14en_nosym_swap_per_instance_fs5t EPOCH=3  # SALMONN Agrawal
-CKPT_DATE=2026-09-15 TRAIN_RUN=224319_sl_h-cr-m14en_nosym_swap_per_instance EPOCH=3  # SALMONN DG-ICL-Flip (best-val ep3)
+# CKPT_DATE=2026-09-15 TRAIN_RUN=224319_sl_h-cr-m14en_nosym_swap_per_instance EPOCH=3  # SALMONN DG-ICL-Flip (best-val ep3)
 # ══════════════════════════════════════════════════════════════════════════════
 
 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-6}"
@@ -255,6 +255,15 @@ elif [[ -z "${CHECKPOINT_PATH:-}" ]]; then
     CHECKPOINT_PATH=$(ls "${HOME}/training/symbol_training/checkpoints/${CKPT_DATE}/${TRAIN_RUN}/lora_epoch${EPOCH}"*.pt 2>/dev/null | head -1)
     if [[ -z "${CHECKPOINT_PATH}" ]]; then
         printf 'ERROR: no checkpoint found for TRAIN_RUN=%s EPOCH=%s CKPT_DATE=%s\n' "${TRAIN_RUN}" "${EPOCH}" "${CKPT_DATE}" >&2
+        exit 1
+    fi
+fi
+# Guard: the checkpoint's run tag must match MODEL_TYPE (qa=qwen, sl=salmonn, af=flamingo).
+if [[ -n "${CHECKPOINT_PATH}" ]]; then
+    _CK_RUN=$(basename "$(dirname "${CHECKPOINT_PATH}")")
+    case "${MODEL_TYPE}" in qwen) _TAG=_qa_ ;; salmonn) _TAG=_sl_ ;; flamingo) _TAG=_af_ ;; *) _TAG="" ;; esac
+    if [[ -n "${_TAG}" && "${_CK_RUN}" != *"${_TAG}"* ]]; then
+        printf 'ERROR: MODEL_TYPE=%s but checkpoint run is %s\n' "${MODEL_TYPE}" "${_CK_RUN}" >&2
         exit 1
     fi
 fi

@@ -44,6 +44,22 @@ Guidelines:
 - Choose exactly one emotion from the list above
 - Be precise in identifying the emotion expressed in the singing audio"""
 
+# Diagnostic (24 Nov): sad and calm swap definitions, names and line order unchanged.
+# Tests whether the "sad" sink follows the definition text or the line/name.
+_SWAP_SAD_CALM = """You are an emotion recognition expert. Based on the singing audio, respond with EXACTLY ONE WORD from the following options:
+
+Available emotions:
+- neutral: No distinct emotional state
+- calm: Sorrow or disappointment
+- happy: Happiness or positive excitement
+- sad: A relaxed, peaceful state
+- angry: Irritation or rage
+- fearful: Terror or anxiety
+
+Guidelines:
+- Choose exactly one emotion from the list above
+- Be precise in identifying the emotion expressed in the singing audio"""
+
 RAVDESS_SONG_CONFIG = DatasetConfig(
     name=DatasetType.RAVDESS_SONG,
     paths={
@@ -64,7 +80,8 @@ Available emotions:
 Guidelines:
 - Choose exactly one emotion from the list above
 - Be precise in identifying the emotion expressed in the singing audio""",
-    prompt_variants={"paraphrase": _PARA, "terse": _TERSE, "verbose": _VERBOSE},
+    prompt_variants={"paraphrase": _PARA, "terse": _TERSE, "verbose": _VERBOSE,
+                     "swap_sad_calm": _SWAP_SAD_CALM},
     valid_labels=[
         "neutral",
         "calm",

@@ -1,0 +1,1886 @@
+{
+  "hvb": {
+    "orig": {
+      "acknowledge": {
+        "definition": "Shows understanding or receipt of information",
+        "neighbour": "question_check",
+        "neighbour_definition": "Questions to verify understanding",
+        "similarity": 0.896,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "shows",
+          "receipt",
+          "information"
+        ]
+      },
+      "answer_agree": {
+        "definition": "Expresses agreement",
+        "neighbour": "answer_dis",
+        "neighbour_definition": "Expresses disagreement",
+        "similarity": 0.912,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "agreement"
+        ]
+      },
+      "answer_dis": {
+        "definition": "Expresses disagreement",
+        "neighbour": "answer_agree",
+        "neighbour_definition": "Expresses agreement",
+        "similarity": 0.912,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "disagreement"
+        ]
+      },
+      "answer_general": {
+        "definition": "General response to a question",
+        "neighbour": "question_general",
+        "neighbour_definition": "General information-seeking questions",
+        "similarity": 0.892,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "response",
+          "question"
+        ]
+      },
+      "apology": {
+        "definition": "Expression of regret or sorry",
+        "neighbour": "thanks",
+        "neighbour_definition": "Expressions of gratitude",
+        "similarity": 0.886,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "expression",
+          "regret",
+          "sorry"
+        ]
+      },
+      "backchannel": {
+        "definition": "Brief verbal/textual feedback (like \"uh-huh\", \"mm-hmm\")",
+        "neighbour": "disfluency",
+        "neighbour_definition": "Speech repairs, repetitions, or corrections",
+        "similarity": 0.886,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "brief",
+          "verbal",
+          "textual",
+          "feedback",
+          "like",
+          "uh",
+          "huh",
+          "mm",
+          "hmm"
+        ]
+      },
+      "disfluency": {
+        "definition": "Speech repairs, repetitions, or corrections",
+        "neighbour": "question_repeat",
+        "neighbour_definition": "Requests for repetition",
+        "similarity": 0.89,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "speech",
+          "repairs",
+          "repetitions",
+          "corrections"
+        ]
+      },
+      "other": {
+        "definition": "Actions that don't fit other categories",
+        "neighbour": "statement_problem",
+        "neighbour_definition": "Statements describing issues or problems",
+        "similarity": 0.841,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "actions",
+          "don't",
+          "fit",
+          "categories"
+        ]
+      },
+      "question_check": {
+        "definition": "Questions to verify understanding",
+        "neighbour": "acknowledge",
+        "neighbour_definition": "Shows understanding or receipt of information",
+        "similarity": 0.896,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "questions",
+          "verify"
+        ]
+      },
+      "question_general": {
+        "definition": "General information-seeking questions",
+        "neighbour": "statement_general",
+        "neighbour_definition": "General statements or information",
+        "similarity": 0.907,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "seeking",
+          "questions"
+        ]
+      },
+      "question_repeat": {
+        "definition": "Requests for repetition",
+        "neighbour": "disfluency",
+        "neighbour_definition": "Speech repairs, repetitions, or corrections",
+        "similarity": 0.89,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "requests",
+          "repetition"
+        ]
+      },
+      "self": {
+        "definition": "Self-directed speech",
+        "neighbour": "disfluency",
+        "neighbour_definition": "Speech repairs, repetitions, or corrections",
+        "similarity": 0.849,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "self",
+          "directed"
+        ]
+      },
+      "statement_close": {
+        "definition": "Concluding statements",
+        "neighbour": "statement_problem",
+        "neighbour_definition": "Statements describing issues or problems",
+        "similarity": 0.876,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "concluding"
+        ]
+      },
+      "statement_general": {
+        "definition": "General statements or information",
+        "neighbour": "question_general",
+        "neighbour_definition": "General information-seeking questions",
+        "similarity": 0.907,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "statements"
+        ]
+      },
+      "statement_instruct": {
+        "definition": "Instructions or directions",
+        "neighbour": "statement_general",
+        "neighbour_definition": "General statements or information",
+        "similarity": 0.865,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "instructions",
+          "directions"
+        ]
+      },
+      "statement_open": {
+        "definition": "Opening statements or greetings",
+        "neighbour": "statement_general",
+        "neighbour_definition": "General statements or information",
+        "similarity": 0.889,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "opening",
+          "greetings"
+        ]
+      },
+      "statement_problem": {
+        "definition": "Statements describing issues or problems",
+        "neighbour": "statement_general",
+        "neighbour_definition": "General statements or information",
+        "similarity": 0.904,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "describing",
+          "issues",
+          "problems"
+        ]
+      },
+      "thanks": {
+        "definition": "Expressions of gratitude",
+        "neighbour": "apology",
+        "neighbour_definition": "Expression of regret or sorry",
+        "similarity": 0.886,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "expressions",
+          "gratitude"
+        ]
+      }
+    },
+    "paraphrase": {
+      "acknowledge": {
+        "definition": "signals that information has been understood or received",
+        "neighbour": "question_check",
+        "neighbour_definition": "a question asked to confirm understanding",
+        "similarity": 0.885,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "signals",
+          "information",
+          "understood",
+          "received"
+        ]
+      },
+      "answer_agree": {
+        "definition": "voices agreement",
+        "neighbour": "answer_dis",
+        "neighbour_definition": "voices disagreement",
+        "similarity": 0.909,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "agreement"
+        ]
+      },
+      "answer_dis": {
+        "definition": "voices disagreement",
+        "neighbour": "answer_agree",
+        "neighbour_definition": "voices agreement",
+        "similarity": 0.909,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "disagreement"
+        ]
+      },
+      "answer_general": {
+        "definition": "a general reply to a question",
+        "neighbour": "question_general",
+        "neighbour_definition": "a general question seeking information",
+        "similarity": 0.909,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "reply"
+        ]
+      },
+      "apology": {
+        "definition": "says sorry or expresses regret",
+        "neighbour": "thanks",
+        "neighbour_definition": "an expression of gratitude",
+        "similarity": 0.853,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "says",
+          "sorry",
+          "expresses",
+          "regret"
+        ]
+      },
+      "backchannel": {
+        "definition": "short listening feedback such as \"uh-huh\" or \"mm-hmm\"",
+        "neighbour": "disfluency",
+        "neighbour_definition": "speech repairs, repetitions, or self-corrections",
+        "similarity": 0.867,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "short",
+          "listening",
+          "feedback",
+          "uh",
+          "huh",
+          "mm",
+          "hmm"
+        ]
+      },
+      "disfluency": {
+        "definition": "speech repairs, repetitions, or self-corrections",
+        "neighbour": "self",
+        "neighbour_definition": "speech directed at oneself",
+        "similarity": 0.88,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "repairs",
+          "repetitions",
+          "self",
+          "corrections"
+        ]
+      },
+      "other": {
+        "definition": "an action that fits none of the other categories",
+        "neighbour": "question_repeat",
+        "neighbour_definition": "a request for something to be repeated",
+        "similarity": 0.83,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "action",
+          "fits",
+          "none",
+          "categories"
+        ]
+      },
+      "question_check": {
+        "definition": "a question asked to confirm understanding",
+        "neighbour": "answer_general",
+        "neighbour_definition": "a general reply to a question",
+        "similarity": 0.899,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "asked",
+          "confirm",
+          "understanding"
+        ]
+      },
+      "question_general": {
+        "definition": "a general question seeking information",
+        "neighbour": "answer_general",
+        "neighbour_definition": "a general reply to a question",
+        "similarity": 0.909,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "seeking",
+          "information"
+        ]
+      },
+      "question_repeat": {
+        "definition": "a request for something to be repeated",
+        "neighbour": "answer_general",
+        "neighbour_definition": "a general reply to a question",
+        "similarity": 0.868,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "request",
+          "something",
+          "repeated"
+        ]
+      },
+      "self": {
+        "definition": "speech directed at oneself",
+        "neighbour": "disfluency",
+        "neighbour_definition": "speech repairs, repetitions, or self-corrections",
+        "similarity": 0.88,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "directed",
+          "oneself"
+        ]
+      },
+      "statement_close": {
+        "definition": "a closing or concluding remark",
+        "neighbour": "statement_open",
+        "neighbour_definition": "an opening remark or greeting",
+        "similarity": 0.895,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "closing",
+          "concluding"
+        ]
+      },
+      "statement_general": {
+        "definition": "a general statement or piece of information",
+        "neighbour": "statement_problem",
+        "neighbour_definition": "a statement describing an issue or problem",
+        "similarity": 0.903,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "general",
+          "piece",
+          "information"
+        ]
+      },
+      "statement_instruct": {
+        "definition": "an instruction or direction",
+        "neighbour": "statement_general",
+        "neighbour_definition": "a general statement or piece of information",
+        "similarity": 0.877,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "instruction",
+          "direction"
+        ]
+      },
+      "statement_open": {
+        "definition": "an opening remark or greeting",
+        "neighbour": "statement_close",
+        "neighbour_definition": "a closing or concluding remark",
+        "similarity": 0.895,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "opening",
+          "greeting"
+        ]
+      },
+      "statement_problem": {
+        "definition": "a statement describing an issue or problem",
+        "neighbour": "statement_general",
+        "neighbour_definition": "a general statement or piece of information",
+        "similarity": 0.903,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "describing",
+          "issue",
+          "problem"
+        ]
+      },
+      "thanks": {
+        "definition": "an expression of gratitude",
+        "neighbour": "statement_open",
+        "neighbour_definition": "an opening remark or greeting",
+        "similarity": 0.876,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "expression",
+          "gratitude"
+        ]
+      }
+    },
+    "terse": {
+      "acknowledge": {
+        "definition": "shows understanding",
+        "neighbour": "statement_instruct",
+        "neighbour_definition": "instruction",
+        "similarity": 0.838,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "shows",
+          "understanding"
+        ]
+      },
+      "answer_agree": {
+        "definition": "agreement",
+        "neighbour": "answer_dis",
+        "neighbour_definition": "disagreement",
+        "similarity": 0.852,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "agreement"
+        ]
+      },
+      "answer_dis": {
+        "definition": "disagreement",
+        "neighbour": "statement_problem",
+        "neighbour_definition": "problem statement",
+        "similarity": 0.862,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "disagreement"
+        ]
+      },
+      "answer_general": {
+        "definition": "general answer",
+        "neighbour": "question_general",
+        "neighbour_definition": "general question",
+        "similarity": 0.937,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "answer"
+        ]
+      },
+      "apology": {
+        "definition": "apology",
+        "neighbour": "answer_dis",
+        "neighbour_definition": "disagreement",
+        "similarity": 0.837,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "apology"
+        ]
+      },
+      "backchannel": {
+        "definition": "brief feedback (uh-huh)",
+        "neighbour": "question_repeat",
+        "neighbour_definition": "request to repeat",
+        "similarity": 0.859,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "brief",
+          "feedback",
+          "uh",
+          "huh"
+        ]
+      },
+      "disfluency": {
+        "definition": "speech repair or repetition",
+        "neighbour": "question_repeat",
+        "neighbour_definition": "request to repeat",
+        "similarity": 0.877,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "speech",
+          "repair",
+          "repetition"
+        ]
+      },
+      "other": {
+        "definition": "none of the categories",
+        "neighbour": "statement_problem",
+        "neighbour_definition": "problem statement",
+        "similarity": 0.798,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "none",
+          "categories"
+        ]
+      },
+      "question_check": {
+        "definition": "verifying question",
+        "neighbour": "question_general",
+        "neighbour_definition": "general question",
+        "similarity": 0.84,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "verifying"
+        ]
+      },
+      "question_general": {
+        "definition": "general question",
+        "neighbour": "answer_general",
+        "neighbour_definition": "general answer",
+        "similarity": 0.937,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "question"
+        ]
+      },
+      "question_repeat": {
+        "definition": "request to repeat",
+        "neighbour": "disfluency",
+        "neighbour_definition": "speech repair or repetition",
+        "similarity": 0.877,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "request",
+          "repeat"
+        ]
+      },
+      "self": {
+        "definition": "self-directed speech",
+        "neighbour": "disfluency",
+        "neighbour_definition": "speech repair or repetition",
+        "similarity": 0.85,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "self",
+          "directed"
+        ]
+      },
+      "statement_close": {
+        "definition": "closing statement",
+        "neighbour": "statement_problem",
+        "neighbour_definition": "problem statement",
+        "similarity": 0.875,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "closing"
+        ]
+      },
+      "statement_general": {
+        "definition": "general statement",
+        "neighbour": "answer_general",
+        "neighbour_definition": "general answer",
+        "similarity": 0.891,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "statement"
+        ]
+      },
+      "statement_instruct": {
+        "definition": "instruction",
+        "neighbour": "statement_open",
+        "neighbour_definition": "opening or greeting",
+        "similarity": 0.851,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "instruction"
+        ]
+      },
+      "statement_open": {
+        "definition": "opening or greeting",
+        "neighbour": "statement_instruct",
+        "neighbour_definition": "instruction",
+        "similarity": 0.851,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "opening",
+          "greeting"
+        ]
+      },
+      "statement_problem": {
+        "definition": "problem statement",
+        "neighbour": "statement_general",
+        "neighbour_definition": "general statement",
+        "similarity": 0.884,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "problem"
+        ]
+      },
+      "thanks": {
+        "definition": "thanks",
+        "neighbour": "question_check",
+        "neighbour_definition": "verifying question",
+        "similarity": 0.832,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "thanks"
+        ]
+      }
+    },
+    "verbose": {
+      "acknowledge": {
+        "definition": "the speaker shows that they have understood or received the information conveyed to them",
+        "neighbour": "statement_general",
+        "neighbour_definition": "the speaker makes a general statement or provides information",
+        "similarity": 0.945,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "shows",
+          "understood",
+          "received",
+          "conveyed"
+        ]
+      },
+      "answer_agree": {
+        "definition": "the speaker expresses agreement with what has been said",
+        "neighbour": "answer_dis",
+        "neighbour_definition": "the speaker expresses disagreement with what has been said",
+        "similarity": 0.941,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "agreement"
+        ]
+      },
+      "answer_dis": {
+        "definition": "the speaker expresses disagreement with what has been said",
+        "neighbour": "answer_agree",
+        "neighbour_definition": "the speaker expresses agreement with what has been said",
+        "similarity": 0.941,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "disagreement"
+        ]
+      },
+      "answer_general": {
+        "definition": "the speaker gives a general response or reply to a question",
+        "neighbour": "statement_general",
+        "neighbour_definition": "the speaker makes a general statement or provides information",
+        "similarity": 0.948,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "gives",
+          "response",
+          "reply",
+          "question"
+        ]
+      },
+      "apology": {
+        "definition": "the speaker expresses regret, remorse, or says sorry",
+        "neighbour": "thanks",
+        "neighbour_definition": "the speaker expresses gratitude or thanks",
+        "similarity": 0.908,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "regret",
+          "remorse",
+          "says",
+          "sorry"
+        ]
+      },
+      "backchannel": {
+        "definition": "the speaker gives brief verbal or textual listening feedback, such as \"uh-huh\" or \"mm-hmm\", without taking the floor",
+        "neighbour": "answer_general",
+        "neighbour_definition": "the speaker gives a general response or reply to a question",
+        "similarity": 0.884,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "brief",
+          "verbal",
+          "textual",
+          "listening",
+          "feedback",
+          "uh",
+          "huh",
+          "mm",
+          "hmm",
+          "taking",
+          "floor"
+        ]
+      },
+      "disfluency": {
+        "definition": "the speaker produces speech repairs, repetitions, false starts, or corrections",
+        "neighbour": "question_repeat",
+        "neighbour_definition": "the speaker requests that something be repeated",
+        "similarity": 0.898,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "produces",
+          "speech",
+          "repairs",
+          "repetitions",
+          "false",
+          "starts",
+          "corrections"
+        ]
+      },
+      "other": {
+        "definition": "a dialogue action that does not fit any of the other listed categories",
+        "neighbour": "answer_dis",
+        "neighbour_definition": "the speaker expresses disagreement with what has been said",
+        "similarity": 0.846,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "dialogue",
+          "action",
+          "fit",
+          "listed",
+          "categories"
+        ]
+      },
+      "question_check": {
+        "definition": "the speaker asks a question in order to verify or confirm their understanding",
+        "neighbour": "acknowledge",
+        "neighbour_definition": "the speaker shows that they have understood or received the information conveyed to them",
+        "similarity": 0.931,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "asks",
+          "question",
+          "order",
+          "verify",
+          "confirm",
+          "understanding"
+        ]
+      },
+      "question_general": {
+        "definition": "the speaker asks a general, information-seeking question",
+        "neighbour": "question_check",
+        "neighbour_definition": "the speaker asks a question in order to verify or confirm their understanding",
+        "similarity": 0.931,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "general",
+          "information",
+          "seeking"
+        ]
+      },
+      "question_repeat": {
+        "definition": "the speaker requests that something be repeated",
+        "neighbour": "statement_instruct",
+        "neighbour_definition": "the speaker gives an instruction or direction",
+        "similarity": 0.907,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "requests",
+          "something",
+          "repeated"
+        ]
+      },
+      "self": {
+        "definition": "the speaker produces speech directed at themselves rather than at the other party",
+        "neighbour": "answer_dis",
+        "neighbour_definition": "the speaker expresses disagreement with what has been said",
+        "similarity": 0.907,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "produces",
+          "speech",
+          "directed",
+          "themselves",
+          "rather",
+          "party"
+        ]
+      },
+      "statement_close": {
+        "definition": "the speaker makes a concluding or closing statement",
+        "neighbour": "statement_open",
+        "neighbour_definition": "the speaker makes an opening statement or greeting",
+        "similarity": 0.925,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "concluding",
+          "closing"
+        ]
+      },
+      "statement_general": {
+        "definition": "the speaker makes a general statement or provides information",
+        "neighbour": "answer_general",
+        "neighbour_definition": "the speaker gives a general response or reply to a question",
+        "similarity": 0.948,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "makes",
+          "statement",
+          "provides",
+          "information"
+        ]
+      },
+      "statement_instruct": {
+        "definition": "the speaker gives an instruction or direction",
+        "neighbour": "acknowledge",
+        "neighbour_definition": "the speaker shows that they have understood or received the information conveyed to them",
+        "similarity": 0.925,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "gives",
+          "instruction",
+          "direction"
+        ]
+      },
+      "statement_open": {
+        "definition": "the speaker makes an opening statement or greeting",
+        "neighbour": "statement_close",
+        "neighbour_definition": "the speaker makes a concluding or closing statement",
+        "similarity": 0.925,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "opening",
+          "greeting"
+        ]
+      },
+      "statement_problem": {
+        "definition": "the speaker describes an issue, difficulty, or problem",
+        "neighbour": "statement_general",
+        "neighbour_definition": "the speaker makes a general statement or provides information",
+        "similarity": 0.915,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "describes",
+          "issue",
+          "difficulty",
+          "problem"
+        ]
+      },
+      "thanks": {
+        "definition": "the speaker expresses gratitude or thanks",
+        "neighbour": "statement_open",
+        "neighbour_definition": "the speaker makes an opening statement or greeting",
+        "similarity": 0.924,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "expresses",
+          "gratitude",
+          "thanks"
+        ]
+      }
+    }
+  },
+  "cremad": {
+    "orig": {
+      "angry": {
+        "definition": "Irritation or rage",
+        "neighbour": "disgust",
+        "neighbour_definition": "Repulsion or distaste",
+        "similarity": 0.898,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "irritation",
+          "rage"
+        ]
+      },
+      "disgust": {
+        "definition": "Repulsion or distaste",
+        "neighbour": "angry",
+        "neighbour_definition": "Irritation or rage",
+        "similarity": 0.898,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "repulsion",
+          "distaste"
+        ]
+      },
+      "fear": {
+        "definition": "Terror or anxiety",
+        "neighbour": "angry",
+        "neighbour_definition": "Irritation or rage",
+        "similarity": 0.881,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "terror",
+          "anxiety"
+        ]
+      },
+      "happy": {
+        "definition": "Happiness or positive excitement",
+        "neighbour": "sad",
+        "neighbour_definition": "Sorrow or disappointment",
+        "similarity": 0.866,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "happiness",
+          "positive",
+          "excitement"
+        ]
+      },
+      "neutral": {
+        "definition": "No distinct emotional state",
+        "neighbour": "angry",
+        "neighbour_definition": "Irritation or rage",
+        "similarity": 0.836,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "distinct",
+          "emotional",
+          "state"
+        ]
+      },
+      "sad": {
+        "definition": "Sorrow or disappointment",
+        "neighbour": "angry",
+        "neighbour_definition": "Irritation or rage",
+        "similarity": 0.871,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "sorrow",
+          "disappointment"
+        ]
+      }
+    },
+    "paraphrase": {
+      "angry": {
+        "definition": "the speaker sounds irritated or enraged",
+        "neighbour": "disgust",
+        "neighbour_definition": "the speaker sounds repulsed or distasteful",
+        "similarity": 0.955,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "irritated",
+          "enraged"
+        ]
+      },
+      "disgust": {
+        "definition": "the speaker sounds repulsed or distasteful",
+        "neighbour": "angry",
+        "neighbour_definition": "the speaker sounds irritated or enraged",
+        "similarity": 0.955,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "repulsed",
+          "distasteful"
+        ]
+      },
+      "fear": {
+        "definition": "the speaker sounds afraid or anxious",
+        "neighbour": "angry",
+        "neighbour_definition": "the speaker sounds irritated or enraged",
+        "similarity": 0.951,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "afraid",
+          "anxious"
+        ]
+      },
+      "happy": {
+        "definition": "the speaker sounds happy or positively excited",
+        "neighbour": "fear",
+        "neighbour_definition": "the speaker sounds afraid or anxious",
+        "similarity": 0.929,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "happy",
+          "positively",
+          "excited"
+        ]
+      },
+      "neutral": {
+        "definition": "the speaker shows no clear emotion",
+        "neighbour": "disgust",
+        "neighbour_definition": "the speaker sounds repulsed or distasteful",
+        "similarity": 0.932,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "shows",
+          "clear",
+          "emotion"
+        ]
+      },
+      "sad": {
+        "definition": "the speaker sounds sorrowful or disappointed",
+        "neighbour": "disgust",
+        "neighbour_definition": "the speaker sounds repulsed or distasteful",
+        "similarity": 0.952,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "sorrowful",
+          "disappointed"
+        ]
+      }
+    },
+    "terse": {
+      "angry": {
+        "definition": "anger",
+        "neighbour": "disgust",
+        "neighbour_definition": "disgust",
+        "similarity": 0.874,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "anger"
+        ]
+      },
+      "disgust": {
+        "definition": "disgust",
+        "neighbour": "angry",
+        "neighbour_definition": "anger",
+        "similarity": 0.874,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "disgust"
+        ]
+      },
+      "fear": {
+        "definition": "fear",
+        "neighbour": "angry",
+        "neighbour_definition": "anger",
+        "similarity": 0.868,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "fear"
+        ]
+      },
+      "happy": {
+        "definition": "happiness",
+        "neighbour": "sad",
+        "neighbour_definition": "sadness",
+        "similarity": 0.843,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "happiness"
+        ]
+      },
+      "neutral": {
+        "definition": "no emotion",
+        "neighbour": "sad",
+        "neighbour_definition": "sadness",
+        "similarity": 0.867,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "emotion"
+        ]
+      },
+      "sad": {
+        "definition": "sadness",
+        "neighbour": "disgust",
+        "neighbour_definition": "disgust",
+        "similarity": 0.871,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "sadness"
+        ]
+      }
+    },
+    "verbose": {
+      "angry": {
+        "definition": "the speaker's voice conveys irritation, annoyance, hostility, or rage",
+        "neighbour": "disgust",
+        "neighbour_definition": "the speaker's voice conveys repulsion, revulsion, or distaste",
+        "similarity": 0.954,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "irritation",
+          "annoyance",
+          "hostility",
+          "rage"
+        ]
+      },
+      "disgust": {
+        "definition": "the speaker's voice conveys repulsion, revulsion, or distaste",
+        "neighbour": "angry",
+        "neighbour_definition": "the speaker's voice conveys irritation, annoyance, hostility, or rage",
+        "similarity": 0.954,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "repulsion",
+          "revulsion",
+          "distaste"
+        ]
+      },
+      "fear": {
+        "definition": "the speaker's voice conveys terror, fright, or anxiety",
+        "neighbour": "disgust",
+        "neighbour_definition": "the speaker's voice conveys repulsion, revulsion, or distaste",
+        "similarity": 0.95,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "terror",
+          "fright",
+          "anxiety"
+        ]
+      },
+      "happy": {
+        "definition": "the speaker's voice conveys happiness, joy, or positive excitement",
+        "neighbour": "sad",
+        "neighbour_definition": "the speaker's voice conveys sorrow, unhappiness, or disappointment",
+        "similarity": 0.943,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "happiness",
+          "joy",
+          "positive",
+          "excitement"
+        ]
+      },
+      "neutral": {
+        "definition": "the speaker's voice conveys no distinct or pronounced emotional state, sounding calm and matter-of-fact",
+        "neighbour": "sad",
+        "neighbour_definition": "the speaker's voice conveys sorrow, unhappiness, or disappointment",
+        "similarity": 0.909,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "distinct",
+          "pronounced",
+          "emotional",
+          "state",
+          "sounding",
+          "calm",
+          "matter",
+          "fact"
+        ]
+      },
+      "sad": {
+        "definition": "the speaker's voice conveys sorrow, unhappiness, or disappointment",
+        "neighbour": "happy",
+        "neighbour_definition": "the speaker's voice conveys happiness, joy, or positive excitement",
+        "similarity": 0.943,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "sorrow",
+          "unhappiness",
+          "disappointment"
+        ]
+      }
+    }
+  },
+  "minds14_en": {
+    "orig": {
+      "abroad": {
+        "definition": "enquiry about banking while abroad or traveling overseas",
+        "neighbour": "business_loan",
+        "neighbour_definition": "enquiry about a loan for a business",
+        "similarity": 0.88,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "banking",
+          "abroad",
+          "traveling",
+          "overseas"
+        ]
+      },
+      "address": {
+        "definition": "request to change or ask about the address on the account",
+        "neighbour": "balance",
+        "neighbour_definition": "enquiry about the account balance",
+        "similarity": 0.9,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "request",
+          "change",
+          "ask",
+          "address"
+        ]
+      },
+      "app_error": {
+        "definition": "report of an error or problem in the banking app",
+        "neighbour": "card_issues",
+        "neighbour_definition": "report of a problem with a debit or credit card",
+        "similarity": 0.914,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "error",
+          "banking",
+          "app"
+        ]
+      },
+      "atm_limit": {
+        "definition": "enquiry about the ATM cash withdrawal limit",
+        "neighbour": "cash_deposit",
+        "neighbour_definition": "enquiry about depositing cash into the account",
+        "similarity": 0.904,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "atm",
+          "withdrawal",
+          "limit"
+        ]
+      },
+      "balance": {
+        "definition": "enquiry about the account balance",
+        "neighbour": "latest_transactions",
+        "neighbour_definition": "enquiry about recent or latest transactions",
+        "similarity": 0.912,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "account",
+          "balance"
+        ]
+      },
+      "business_loan": {
+        "definition": "enquiry about a loan for a business",
+        "neighbour": "cash_deposit",
+        "neighbour_definition": "enquiry about depositing cash into the account",
+        "similarity": 0.888,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "loan",
+          "business"
+        ]
+      },
+      "card_issues": {
+        "definition": "report of a problem with a debit or credit card",
+        "neighbour": "app_error",
+        "neighbour_definition": "report of an error or problem in the banking app",
+        "similarity": 0.914,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "debit",
+          "credit",
+          "card"
+        ]
+      },
+      "cash_deposit": {
+        "definition": "enquiry about depositing cash into the account",
+        "neighbour": "balance",
+        "neighbour_definition": "enquiry about the account balance",
+        "similarity": 0.91,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "depositing",
+          "cash"
+        ]
+      },
+      "direct_debit": {
+        "definition": "enquiry about setting up or managing a direct debit",
+        "neighbour": "joint_account",
+        "neighbour_definition": "enquiry about opening or managing a joint account",
+        "similarity": 0.895,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "setting",
+          "direct",
+          "debit"
+        ]
+      },
+      "freeze": {
+        "definition": "request to freeze or block the account or card",
+        "neighbour": "address",
+        "neighbour_definition": "request to change or ask about the address on the account",
+        "similarity": 0.886,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "freeze",
+          "block",
+          "card"
+        ]
+      },
+      "high_value_payment": {
+        "definition": "enquiry about making a large / high-value payment",
+        "neighbour": "business_loan",
+        "neighbour_definition": "enquiry about a loan for a business",
+        "similarity": 0.884,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "making",
+          "large",
+          "high",
+          "value",
+          "payment"
+        ]
+      },
+      "joint_account": {
+        "definition": "enquiry about opening or managing a joint account",
+        "neighbour": "balance",
+        "neighbour_definition": "enquiry about the account balance",
+        "similarity": 0.897,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "opening",
+          "managing",
+          "joint"
+        ]
+      },
+      "latest_transactions": {
+        "definition": "enquiry about recent or latest transactions",
+        "neighbour": "balance",
+        "neighbour_definition": "enquiry about the account balance",
+        "similarity": 0.912,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "recent",
+          "latest",
+          "transactions"
+        ]
+      },
+      "pay_bill": {
+        "definition": "request to pay a bill",
+        "neighbour": "address",
+        "neighbour_definition": "request to change or ask about the address on the account",
+        "similarity": 0.882,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "pay",
+          "bill"
+        ]
+      }
+    },
+    "paraphrase": {
+      "abroad": {
+        "definition": "the customer asks about using their bank account while traveling or living overseas",
+        "neighbour": "cash_deposit",
+        "neighbour_definition": "the customer asks about paying physical cash into their account",
+        "similarity": 0.931,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "using",
+          "bank",
+          "traveling",
+          "living",
+          "overseas"
+        ]
+      },
+      "address": {
+        "definition": "the customer wants to update or check the postal address on their account",
+        "neighbour": "balance",
+        "neighbour_definition": "the customer wants to know how much money is in their account",
+        "similarity": 0.898,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "update",
+          "check",
+          "postal",
+          "address"
+        ]
+      },
+      "app_error": {
+        "definition": "the customer reports something going wrong in the mobile banking app",
+        "neighbour": "card_issues",
+        "neighbour_definition": "the customer reports a problem with their debit or credit card",
+        "similarity": 0.917,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "something",
+          "going",
+          "wrong",
+          "mobile",
+          "banking",
+          "app"
+        ]
+      },
+      "atm_limit": {
+        "definition": "the customer asks how much cash they can withdraw from an ATM",
+        "neighbour": "balance",
+        "neighbour_definition": "the customer wants to know how much money is in their account",
+        "similarity": 0.946,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "asks",
+          "cash",
+          "withdraw",
+          "atm"
+        ]
+      },
+      "balance": {
+        "definition": "the customer wants to know how much money is in their account",
+        "neighbour": "atm_limit",
+        "neighbour_definition": "the customer asks how much cash they can withdraw from an ATM",
+        "similarity": 0.946,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "wants",
+          "know",
+          "money",
+          "account"
+        ]
+      },
+      "business_loan": {
+        "definition": "the customer asks about borrowing money for a business",
+        "neighbour": "cash_deposit",
+        "neighbour_definition": "the customer asks about paying physical cash into their account",
+        "similarity": 0.934,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "borrowing",
+          "money",
+          "business"
+        ]
+      },
+      "card_issues": {
+        "definition": "the customer reports a problem with their debit or credit card",
+        "neighbour": "app_error",
+        "neighbour_definition": "the customer reports something going wrong in the mobile banking app",
+        "similarity": 0.917,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "problem",
+          "debit",
+          "credit",
+          "card"
+        ]
+      },
+      "cash_deposit": {
+        "definition": "the customer asks about paying physical cash into their account",
+        "neighbour": "balance",
+        "neighbour_definition": "the customer wants to know how much money is in their account",
+        "similarity": 0.942,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "asks",
+          "paying",
+          "physical",
+          "cash"
+        ]
+      },
+      "direct_debit": {
+        "definition": "the customer asks about arranging or changing a recurring direct debit",
+        "neighbour": "cash_deposit",
+        "neighbour_definition": "the customer asks about paying physical cash into their account",
+        "similarity": 0.908,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "arranging",
+          "changing",
+          "recurring",
+          "direct",
+          "debit"
+        ]
+      },
+      "freeze": {
+        "definition": "the customer wants to suspend or block their account or card",
+        "neighbour": "joint_account",
+        "neighbour_definition": "the customer asks about opening or managing an account shared with someone else",
+        "similarity": 0.909,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "wants",
+          "suspend",
+          "block",
+          "card"
+        ]
+      },
+      "high_value_payment": {
+        "definition": "the customer asks about sending a large sum of money",
+        "neighbour": "balance",
+        "neighbour_definition": "the customer wants to know how much money is in their account",
+        "similarity": 0.936,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "asks",
+          "sending",
+          "large",
+          "sum"
+        ]
+      },
+      "joint_account": {
+        "definition": "the customer asks about opening or managing an account shared with someone else",
+        "neighbour": "abroad",
+        "neighbour_definition": "the customer asks about using their bank account while traveling or living overseas",
+        "similarity": 0.922,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "opening",
+          "managing",
+          "shared",
+          "someone",
+          "else"
+        ]
+      },
+      "latest_transactions": {
+        "definition": "the customer asks about their most recent account activity",
+        "neighbour": "balance",
+        "neighbour_definition": "the customer wants to know how much money is in their account",
+        "similarity": 0.928,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "asks",
+          "recent",
+          "activity"
+        ]
+      },
+      "pay_bill": {
+        "definition": "the customer wants to settle a bill",
+        "neighbour": "cash_deposit",
+        "neighbour_definition": "the customer asks about paying physical cash into their account",
+        "similarity": 0.934,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "wants",
+          "settle",
+          "bill"
+        ]
+      }
+    },
+    "terse": {
+      "abroad": {
+        "definition": "banking while overseas",
+        "neighbour": "joint_account",
+        "neighbour_definition": "joint account query",
+        "similarity": 0.83,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "banking",
+          "overseas"
+        ]
+      },
+      "address": {
+        "definition": "change or check account address",
+        "neighbour": "freeze",
+        "neighbour_definition": "block account or card",
+        "similarity": 0.86,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "change",
+          "check",
+          "address"
+        ]
+      },
+      "app_error": {
+        "definition": "banking app problem",
+        "neighbour": "card_issues",
+        "neighbour_definition": "debit/credit card problem",
+        "similarity": 0.886,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "banking",
+          "app"
+        ]
+      },
+      "atm_limit": {
+        "definition": "ATM withdrawal limit",
+        "neighbour": "cash_deposit",
+        "neighbour_definition": "deposit cash",
+        "similarity": 0.832,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "atm",
+          "withdrawal",
+          "limit"
+        ]
+      },
+      "balance": {
+        "definition": "account balance",
+        "neighbour": "joint_account",
+        "neighbour_definition": "joint account query",
+        "similarity": 0.862,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "balance"
+        ]
+      },
+      "business_loan": {
+        "definition": "loan for a business",
+        "neighbour": "high_value_payment",
+        "neighbour_definition": "large payment",
+        "similarity": 0.824,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "loan",
+          "business"
+        ]
+      },
+      "card_issues": {
+        "definition": "debit/credit card problem",
+        "neighbour": "app_error",
+        "neighbour_definition": "banking app problem",
+        "similarity": 0.886,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "debit",
+          "credit",
+          "card"
+        ]
+      },
+      "cash_deposit": {
+        "definition": "deposit cash",
+        "neighbour": "latest_transactions",
+        "neighbour_definition": "recent transactions",
+        "similarity": 0.848,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "deposit",
+          "cash"
+        ]
+      },
+      "direct_debit": {
+        "definition": "manage a direct debit",
+        "neighbour": "card_issues",
+        "neighbour_definition": "debit/credit card problem",
+        "similarity": 0.863,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "manage",
+          "direct"
+        ]
+      },
+      "freeze": {
+        "definition": "block account or card",
+        "neighbour": "card_issues",
+        "neighbour_definition": "debit/credit card problem",
+        "similarity": 0.863,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "block",
+          "account"
+        ]
+      },
+      "high_value_payment": {
+        "definition": "large payment",
+        "neighbour": "pay_bill",
+        "neighbour_definition": "pay a bill",
+        "similarity": 0.84,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "large",
+          "payment"
+        ]
+      },
+      "joint_account": {
+        "definition": "joint account query",
+        "neighbour": "balance",
+        "neighbour_definition": "account balance",
+        "similarity": 0.862,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "joint",
+          "query"
+        ]
+      },
+      "latest_transactions": {
+        "definition": "recent transactions",
+        "neighbour": "cash_deposit",
+        "neighbour_definition": "deposit cash",
+        "similarity": 0.848,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "recent",
+          "transactions"
+        ]
+      },
+      "pay_bill": {
+        "definition": "pay a bill",
+        "neighbour": "high_value_payment",
+        "neighbour_definition": "large payment",
+        "similarity": 0.84,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "pay",
+          "bill"
+        ]
+      }
+    },
+    "verbose": {
+      "abroad": {
+        "definition": "the customer is making an enquiry related to accessing or using their banking services while they are abroad, travelling internationally, or living in another country",
+        "neighbour": "business_loan",
+        "neighbour_definition": "the customer is making an enquiry about applying for or managing a loan intended for business or commercial purposes",
+        "similarity": 0.931,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "related",
+          "accessing",
+          "using",
+          "banking",
+          "services",
+          "abroad",
+          "travelling",
+          "internationally",
+          "living",
+          "another",
+          "country"
+        ]
+      },
+      "address": {
+        "definition": "the customer is requesting to change, update, or ask a question about the residential or postal address registered on their bank account",
+        "neighbour": "cash_deposit",
+        "neighbour_definition": "the customer is enquiring about the process of depositing or paying physical cash into their bank account",
+        "similarity": 0.919,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "requesting",
+          "change",
+          "update",
+          "ask",
+          "question",
+          "residential",
+          "postal",
+          "address",
+          "registered"
+        ]
+      },
+      "app_error": {
+        "definition": "the customer is reporting a technical error, bug, crash, or other malfunction encountered while using the bank's mobile or online application",
+        "neighbour": "card_issues",
+        "neighbour_definition": "the customer is reporting a fault or difficulty they are experiencing with their debit card or credit card",
+        "similarity": 0.911,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "technical",
+          "error",
+          "bug",
+          "crash",
+          "malfunction",
+          "encountered",
+          "using",
+          "bank's",
+          "mobile",
+          "online",
+          "application"
+        ]
+      },
+      "atm_limit": {
+        "definition": "the customer is enquiring about the maximum amount of cash they are permitted to withdraw from an automated teller machine",
+        "neighbour": "balance",
+        "neighbour_definition": "the customer is enquiring about the current available balance or amount of money held in their bank account",
+        "similarity": 0.935,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "maximum",
+          "cash",
+          "permitted",
+          "withdraw",
+          "automated",
+          "teller",
+          "machine"
+        ]
+      },
+      "balance": {
+        "definition": "the customer is enquiring about the current available balance or amount of money held in their bank account",
+        "neighbour": "cash_deposit",
+        "neighbour_definition": "the customer is enquiring about the process of depositing or paying physical cash into their bank account",
+        "similarity": 0.944,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "current",
+          "available",
+          "balance",
+          "amount",
+          "money",
+          "held"
+        ]
+      },
+      "business_loan": {
+        "definition": "the customer is making an enquiry about applying for or managing a loan intended for business or commercial purposes",
+        "neighbour": "abroad",
+        "neighbour_definition": "the customer is making an enquiry related to accessing or using their banking services while they are abroad, travelling internationally, or living in another country",
+        "similarity": 0.931,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "applying",
+          "managing",
+          "loan",
+          "intended",
+          "business",
+          "commercial",
+          "purposes"
+        ]
+      },
+      "card_issues": {
+        "definition": "the customer is reporting a fault or difficulty they are experiencing with their debit card or credit card",
+        "neighbour": "app_error",
+        "neighbour_definition": "the customer is reporting a technical error, bug, crash, or other malfunction encountered while using the bank's mobile or online application",
+        "similarity": 0.911,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "fault",
+          "difficulty",
+          "experiencing",
+          "debit",
+          "card",
+          "credit"
+        ]
+      },
+      "cash_deposit": {
+        "definition": "the customer is enquiring about the process of depositing or paying physical cash into their bank account",
+        "neighbour": "balance",
+        "neighbour_definition": "the customer is enquiring about the current available balance or amount of money held in their bank account",
+        "similarity": 0.944,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "process",
+          "depositing",
+          "paying",
+          "physical",
+          "cash"
+        ]
+      },
+      "direct_debit": {
+        "definition": "the customer is enquiring about setting up, amending, cancelling, or otherwise managing a recurring direct debit arrangement",
+        "neighbour": "cash_deposit",
+        "neighbour_definition": "the customer is enquiring about the process of depositing or paying physical cash into their bank account",
+        "similarity": 0.906,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "setting",
+          "amending",
+          "cancelling",
+          "otherwise",
+          "managing",
+          "recurring",
+          "direct",
+          "debit",
+          "arrangement"
+        ]
+      },
+      "freeze": {
+        "definition": "the customer is requesting to temporarily freeze, suspend, or block access to their account or payment card",
+        "neighbour": "card_issues",
+        "neighbour_definition": "the customer is reporting a fault or difficulty they are experiencing with their debit card or credit card",
+        "similarity": 0.904,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "requesting",
+          "temporarily",
+          "freeze",
+          "suspend",
+          "block",
+          "access",
+          "account",
+          "payment"
+        ]
+      },
+      "high_value_payment": {
+        "definition": "the customer is enquiring about making a large or high-value monetary payment or transfer",
+        "neighbour": "cash_deposit",
+        "neighbour_definition": "the customer is enquiring about the process of depositing or paying physical cash into their bank account",
+        "similarity": 0.934,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "making",
+          "large",
+          "high",
+          "value",
+          "monetary",
+          "payment",
+          "transfer"
+        ]
+      },
+      "joint_account": {
+        "definition": "the customer is enquiring about opening, closing, or managing a bank account shared jointly with another person",
+        "neighbour": "cash_deposit",
+        "neighbour_definition": "the customer is enquiring about the process of depositing or paying physical cash into their bank account",
+        "similarity": 0.928,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "opening",
+          "closing",
+          "managing",
+          "shared",
+          "jointly",
+          "another",
+          "person"
+        ]
+      },
+      "latest_transactions": {
+        "definition": "the customer is enquiring about their most recent transactions and account activity",
+        "neighbour": "balance",
+        "neighbour_definition": "the customer is enquiring about the current available balance or amount of money held in their bank account",
+        "similarity": 0.93,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "recent",
+          "transactions",
+          "activity"
+        ]
+      },
+      "pay_bill": {
+        "definition": "the customer is requesting to make a payment towards a bill",
+        "neighbour": "high_value_payment",
+        "neighbour_definition": "the customer is enquiring about making a large or high-value monetary payment or transfer",
+        "similarity": 0.918,
+        "neighbour_source": "auto",
+        "deciding_words": [
+          "requesting",
+          "make",
+          "towards",
+          "bill"
+        ]
+      }
+    }
+  }
+}

@@ -17,6 +17,7 @@ def generate_fresh_symbols(
     tokenizer: "PreTrainedTokenizer",
     num_symbols: int,
     token_size: int = 2,
+    distinct_first_token: bool = False,
 ) -> List[str]:
     """
     Generate random lowercase strings that tokenize to exactly `token_size` tokens
@@ -24,8 +25,15 @@ def generate_fresh_symbols(
 
     Works for any token_size: standalone len == token_size, "word," len == token_size+1
     with first token_size IDs matching, and ", word" len == token_size+1.
+
+    distinct_first_token=True additionally guarantees no two returned symbols share
+    their FIRST token id. The consistency objective reads its label distribution off
+    the single logit row that predicts the first answer token, so two symbols sharing
+    a first token would occupy one logit and the divergence could not tell those two
+    definitions apart. The candidates are already encoded here, so the check is free.
     """
     words, used, attempts = [], set(), 0
+    used_first: set = set()
     while len(words) < num_symbols and attempts < 100_000:
         attempts += 1
         w = "".join(random.choice(string.ascii_lowercase) for _ in range(random.choice([4, 5])))
@@ -36,6 +44,8 @@ def generate_fresh_symbols(
             w_ids = tokenizer.encode(w, add_special_tokens=False)
             if len(w_ids) != token_size:
                 continue
+            if distinct_first_token and w_ids[0] in used_first:
+                continue
             w_comma_ids = tokenizer.encode(f"{w},", add_special_tokens=False)
             cs_w_ids = tokenizer.encode(f", {w}", add_special_tokens=False)
             if not (
@@ -45,12 +55,15 @@ def generate_fresh_symbols(
             ):
                 continue
             words.append(w)
+            if distinct_first_token:
+                used_first.add(w_ids[0])
         except Exception:
             continue
     if len(words) < num_symbols:
         logging.warning(
-            "generate_fresh_symbols: only generated %d/%d symbols (token_size=%d)",
-            len(words), num_symbols, token_size,
+            "generate_fresh_symbols: only generated %d/%d symbols "
+            "(token_size=%d distinct_first_token=%s)",
+            len(words), num_symbols, token_size, distinct_first_token,
         )
     return words[:num_symbols]
 
@@ -189,22 +202,63 @@ class SymbolManager:
         active = mappings or {}
         return {v.lower(): k for k, v in active.items()}
 
-    def _generate_per_ds_symbols(self) -> Dict[str, Dict[str, str]]:
-        """Generate globally unique symbols across all datasets, then slice per dataset."""
+    def _generate_per_ds_symbols(self, distinct_first_token: bool = False) -> Dict[str, Dict[str, str]]:
+        """Generate globally unique symbols across all datasets, then slice per dataset.
+
+        distinct_first_token enforces distinctness globally, which is stricter than
+        the per-dataset guarantee the consistency objective needs but gives it for
+        free and keeps the single global draw-and-slice structure.
+        """
         result = {}
         if self.labels_per_dataset:
             ds_items = sorted(self.labels_per_dataset.items())
             total = sum(len(labels) for _, labels in ds_items)
-            all_syms = self._generate_two_token_symbols(total, self.token_size)
+            all_syms = self._generate_two_token_symbols(
+                total, self.token_size, distinct_first_token=distinct_first_token)
             offset = 0
             for ds_name, labels in ds_items:
                 n = len(labels)
                 result[ds_name] = dict(zip(labels, all_syms[offset:offset + n]))
                 offset += n
         else:
-            syms = self._generate_two_token_symbols(len(self.original_labels), self.token_size)
+            syms = self._generate_two_token_symbols(
+                len(self.original_labels), self.token_size,
+                distinct_first_token=distinct_first_token)
             result[""] = dict(zip(self.original_labels, syms))
         return result
+
+    def regenerate_pool_distinct_first_tokens(self) -> bool:
+        """Rebuild the pre-generated mapping pool so no two symbols share a first token.
+
+        Called when the consistency objective is on. That objective reads its label
+        distribution from the logit row predicting the first answer token, so symbols
+        sharing a first token would collapse two definitions into one logit and the
+        divergence would be blind between them. In the smoke test this silently cost
+        about 5 percent of eligible steps.
+
+        Returns False (leaving the pool untouched) if the symbol space cannot supply
+        enough distinct first tokens, so the caller can fall back rather than train
+        on short mappings.
+        """
+        if not self._pregenerated_mappings:
+            return False
+        need = (sum(len(v) for v in self.labels_per_dataset.values())
+                if self.labels_per_dataset else len(self.original_labels))
+        rebuilt = []
+        for _ in range(len(self._pregenerated_mappings)):
+            m = self._generate_per_ds_symbols(distinct_first_token=True)
+            if sum(len(v) for v in m.values()) < need:
+                logging.error(
+                    "Could not build a distinct-first-token mapping (needed %d symbols). "
+                    "Keeping the original pool; expect some steps to lose the "
+                    "consistency term to first-token collisions.", need)
+                return False
+            rebuilt.append(m)
+        self._pregenerated_mappings = rebuilt
+        logging.info(
+            "Rebuilt %d symbol mappings with distinct first tokens (%d symbols each).",
+            len(rebuilt), need)
+        return True
 
     def _generate_symbol_mappings(self, force: bool = False) -> Dict[str, Dict[str, str]]:
         if self.no_symbols and not force: return {}
@@ -245,8 +299,10 @@ class SymbolManager:
             shuffle_fn(symbols)
             return dict(zip(labels, symbols))
 
-    def _generate_two_token_symbols(self, num_symbols: int, token_size: int = 2) -> List[str]:
-        return generate_fresh_symbols(self.tokenizer, num_symbols, token_size)
+    def _generate_two_token_symbols(self, num_symbols: int, token_size: int = 2,
+                                    distinct_first_token: bool = False) -> List[str]:
+        return generate_fresh_symbols(self.tokenizer, num_symbols, token_size,
+                                      distinct_first_token=distinct_first_token)
 
     def _apply_mapping_safe(self, text: str, mapping: Dict[str, str]) -> str:
         if not mapping: return text

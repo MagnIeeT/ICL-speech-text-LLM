@@ -106,6 +106,26 @@ def _strip_legend(template: str) -> str:
     return re.sub(r'(?m)^([ \t]*-[ \t]*[^:\n]+?)[ \t]*:.*$', r'\1', template)
 
 
+_LEGEND_ENTRY = re.compile(r'(?m)^([ \t]*-[ \t]*([^:\n]+?))[ \t]*:.*$')
+
+
+def _legend_labels(template: str) -> List[str]:
+    """Label names of the '- label: definition' bullets, in prompt order."""
+    return [m.group(2).strip().lower() for m in _LEGEND_ENTRY.finditer(template)]
+
+
+def _strip_definitions(template: str, labels) -> str:
+    """'- label: DESCRIPTION' -> '- label' for the given labels only (same bullet
+    contract as _strip_legend). Used to remove the gold class's evidence while
+    keeping every other definition, the conditional-preference counterfactual."""
+    targets = {str(l).strip().lower() for l in labels}
+
+    def _sub(m: "re.Match") -> str:
+        return m.group(1) if m.group(2).strip().lower() in targets else m.group(0)
+
+    return _LEGEND_ENTRY.sub(_sub, template)
+
+
 def convert_ner_to_dict(text: str, ner_data: Dict) -> Dict[str, List[str]]:
     """Convert NER span annotations into a compact tag-to-phrases dictionary."""
     result: Dict[str, List[str]] = {}
@@ -137,8 +157,13 @@ class BaseMultiTaskDataset(Dataset):
         no_legend: bool = False,
         fewshot_per_class: bool = False,
         definition_variant: str = "orig",
+        strip_gold_definition: bool = False,
+        strip_extra_definitions: int = 0,
     ):
         self.no_legend = no_legend
+        self.strip_gold_definition = strip_gold_definition
+        self.strip_extra_definitions = strip_extra_definitions
+        self._gold_strip_misses = 0
         self.fewshot_per_class = fewshot_per_class
         self.definition_variant = definition_variant
         self.dataset_type = dataset_type
@@ -352,6 +377,26 @@ class BaseMultiTaskDataset(Dataset):
             template = current_config.prompt_variants.get(_variant, template)
         if getattr(self, "no_legend", False):
             template = _strip_legend(template)
+        elif getattr(self, "strip_gold_definition", False):
+            # Counterfactual: drop only the gold class's definition (label name kept),
+            # plus N random non-gold definitions so a bare line does not single out
+            # the answer. Runs before symbol mapping, so the bare line gets a symbol too.
+            gold = self._format_label(
+                item[current_config.completion_key],
+                is_example=False,
+                current_mapping=current_config.label_mapping,
+                text=item[current_config.text_key],
+            )
+            gold_parts = [g.strip() for g in gold.split(",")]
+            legend = _legend_labels(template)
+            if not all(g in legend for g in gold_parts):
+                self._gold_strip_misses += 1
+                if self._gold_strip_misses <= 3:
+                    logging.warning("strip_gold_definition: gold %r not in %s legend %s",
+                                    gold, self.dataset_type, legend)
+            others = [l for l in legend if l not in gold_parts]
+            n_extra = min(int(getattr(self, "strip_extra_definitions", 0)), len(others))
+            template = _strip_definitions(template, gold_parts + random.sample(others, n_extra))
         # QA: the reading passage is TEXT (embedded into the system prompt via {text}); the
         # spoken question flows through the normal speech-audio path. Classification templates
         # have no {text} and are unaffected.

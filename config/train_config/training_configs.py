@@ -21,6 +21,7 @@ class ValidationSymbolMode(Enum):
     ORIGINAL = "original"
     FRESH = "fresh"
     FLIPPED = "flipped"
+    INDEX = "index"      # generic names label1..labelK (sorted label order); a format never trained on
 
 
 class ModelType(Enum):
@@ -58,6 +59,55 @@ class SymbolConfig:
     # probability and the synthetic-symbol regime otherwise. Dataset size and step
     # count are unchanged; only the surrogate vocabulary varies per instance.
     surrogate_mix: float = 0.0
+    # --- Surface-form consistency objective (see models/symbolAdapter/consistency_loss.py) ---
+    # Weight on the divergence between the two legends' definition distributions.
+    # 0 disables the objective entirely and restores the single-legend path.
+    # Set > 0 and each eligible instance runs two legends in one step:
+    #     L = NLL(view_a) + NLL(view_b) + weight * D(p_a, p_b)
+    # weight=0 with the objective otherwise configured is the control run: two
+    # legends supervised, no coupling, which isolates what the divergence adds.
+    consistency_weight: float = 0.0
+    # The two legends to couple, comma-separated, from sym | flip | orig.
+    #   sym,orig  couples synthetic symbols with canonical labels (adds canonical
+    #             supervision the surrogate regimes never had)
+    #   sym,sym   two independent symbol drawings; pure surrogate tuning, leaves
+    #             canonical as a genuinely unseen surface at evaluation
+    #   sym,flip  spans both surface families without ever pairing a word with
+    #             its own definition
+    consistency_views: str = "sym,flip"
+    # Which divergence measures the disagreement: sym_kl | js | l2.
+    consistency_divergence: str = "js"
+    # Shuffle the legend bullet order independently in each view (and in the
+    # single pass of ineligible datasets), so position cannot stand in for the
+    # definition. Validation and test keep the fixed paper order.
+    consistency_shuffle_legend: bool = False
+    # Control run: the two-view path at weight 0 (divergence logged, not trained).
+    consistency_control: bool = False
+    # --- DG-Trap (see models/symbolAdapter/trap_loss.py, docs/chapter2_plan.md 13a) ---
+    # Real label words only; each instance is shown as orig | goldswap | pairswap.
+    trap_enabled: bool = False
+    trap_p_orig: float = 1 / 3
+    trap_p_goldswap: float = 1 / 3
+    trap_p_pairswap: float = 1 / 3
+    # symbol naming: every label of the task gets a fresh random 2-token string for this
+    # instance (copy practice; names carry no meaning). 0 = off, old runs unchanged.
+    trap_p_symbol: float = 0.0
+    # comma-separated symbol-map JSON files whose strings are never drawn in training
+    # (keeps the test symbol draws unseen)
+    trap_symbol_exclude: str = ""
+    # tokens scored by the conditional margin: "all" = whole completion incl. other gold
+    # labels and EOS (A0-A3 behaviour); "gold" = only the damaged gold label's tokens
+    trap_cond_span: str = "all"
+    trap_nn_frac: float = 0.5         # goldswap partner = gold's nearest-neighbour definition with this prob, else random non-gold
+    trap_dropout_max: float = 0.2      # per-instance harmless (non-deciding) word dropout rate ~ U(0, max)
+    trap_lambda: float = 0.5           # weight on the trap margin (goldswap instances)
+    trap_cond_lambda: float = 0.5      # weight on the conditional margin; 0 = no second pass
+    trap_cond_frac: float = 0.3        # fraction of instances that get the conditional term
+    trap_cond_mode: str = "deciding"   # deciding | random  (ablation A5: remove as many random words)
+    trap_beta: float = 2.0
+    trap_margin: float = 0.5
+    trap_cond_margin: float = 0.5
+    trap_deciding_words: str = "config/data_config/deciding_words.json"
     # Size of the pre-computed pool of bijective label->symbol mappings (K in the paper).
     # Per epoch: pool[epoch % K], per instance: random.choice(pool)
     num_symbol_mappings: int = 100
@@ -85,6 +135,8 @@ class DataConfig:
     no_legend: bool = False           # strip label descriptions from the prompt (Wei-style: meaning from exemplars/symbols only)
     fewshot_per_class: bool = False   # few-shot: True → num_examples PER class (full coverage); False → num_examples TOTAL (class-balanced)
     definition_variant: str = "orig"  # definition-sensitivity ablation: pick an alternate-wording legend from a dataset's prompt_variants; "orig" = default template
+    strip_gold_definition: bool = False  # counterfactual eval: drop only the gold class's definition (label kept)
+    strip_extra_definitions: int = 0     # with strip_gold_definition: also drop N random non-gold definitions
 
 
 from utils.environment import get_env_path
@@ -189,6 +241,8 @@ class TrainingConfig:
                 "symbol_token_size": self.symbol_config.symbol_token_size,
                   "validation_modes": self.symbol_config.validation_modes,
                   "swap_labels": self.symbol_config.swap_labels,
+                "trap": {k: getattr(self.symbol_config, k) for k in self.symbol_config.__dataclass_fields__
+                         if k.startswith("trap_")},
             },
             "data_config": {
                 "dataset_type": self.data_config.dataset_type,
@@ -226,7 +280,30 @@ class TrainingConfig:
             swap_labels=getattr(args, "swap_labels", False),
             num_symbol_mappings=getattr(args, "num_symbol_mappings", 100),
             surrogate_mix=getattr(args, "surrogate_mix", 0.0),
+            consistency_weight=getattr(args, "consistency_weight", 0.0),
+            consistency_views=getattr(args, "consistency_views", "sym,flip"),
+            consistency_divergence=getattr(args, "consistency_divergence", "js"),
+            consistency_shuffle_legend=getattr(args, "consistency_shuffle_legend", False),
+            consistency_control=getattr(args, "consistency_control", False),
             val_flip_seed=getattr(args, "val_flip_seed", 0),
+            trap_enabled=getattr(args, "trap_enabled", False),
+            trap_p_orig=getattr(args, "trap_p_orig", 1 / 3),
+            trap_p_goldswap=getattr(args, "trap_p_goldswap", 1 / 3),
+            trap_p_pairswap=getattr(args, "trap_p_pairswap", 1 / 3),
+            trap_p_symbol=getattr(args, "trap_p_symbol", 0.0),
+            trap_symbol_exclude=getattr(args, "trap_symbol_exclude", ""),
+            trap_cond_span=getattr(args, "trap_cond_span", "all"),
+            trap_nn_frac=getattr(args, "trap_nn_frac", 0.5),
+            trap_dropout_max=getattr(args, "trap_dropout_max", 0.2),
+            trap_lambda=getattr(args, "trap_lambda", 0.5),
+            trap_cond_lambda=getattr(args, "trap_cond_lambda", 0.5),
+            trap_cond_frac=getattr(args, "trap_cond_frac", 0.3),
+            trap_cond_mode=getattr(args, "trap_cond_mode", "deciding"),
+            trap_beta=getattr(args, "trap_beta", 2.0),
+            trap_margin=getattr(args, "trap_margin", 0.5),
+            trap_cond_margin=getattr(args, "trap_cond_margin", 0.5),
+            trap_deciding_words=getattr(args, "trap_deciding_words",
+                                        "config/data_config/deciding_words.json"),
         )
         if symbol_config.no_symbols:
             symbol_config.dynamic_symbols = False
@@ -319,6 +396,61 @@ def parse_training_args() -> argparse.Namespace:
                         help="Probability per instance of using the flipped (permuted real label) "
                              "regime instead of synthetic symbols. 0 = off. No extra data: the "
                              "surrogate vocabulary varies per instance within the same budget")
+    parser.add_argument("--consistency_weight", type=float, default=0.0,
+                        help="Weight on the surface-form consistency term. 0 = off (single "
+                             "legend per step, current behaviour). Above 0, each eligible "
+                             "instance runs two legends in one step and is penalised for "
+                             "answering them differently once mapped back to definitions. "
+                             "Pass 0 together with the other consistency flags for the "
+                             "two-view-no-coupling control run")
+    parser.add_argument("--consistency_views", type=str, default="sym,flip",
+                        help="The two legends to couple, from sym|flip|orig. 'sym,orig' adds "
+                             "canonical supervision; 'sym,sym' stays pure surrogate tuning and "
+                             "leaves canonical unseen; 'sym,flip' spans both surface families "
+                             "without pairing any word with its own definition. 'sym,same' "
+                             "reuses view A's symbols in view B; with "
+                             "--consistency_shuffle_legend the views differ only in line order")
+    parser.add_argument("--consistency_divergence", type=str, default="js",
+                        choices=["sym_kl", "js", "l2"],
+                        help="Divergence for the consistency term. sym_kl is unbounded with the "
+                             "strongest gradient; js is bounded by log 2; l2 is mildest")
+    parser.add_argument("--consistency_shuffle_legend", action="store_true",
+                        help="Shuffle the legend bullet order independently per view and per "
+                             "instance during consistency training, so the shared invariant is "
+                             "the definition, not the line position. Validation is unaffected")
+    parser.add_argument("--consistency_control", action="store_true",
+                        help="Control run: take the two-view path even at --consistency_weight 0, "
+                             "so it matches the weighted run in data and passes but has no "
+                             "coupling. The divergence is logged, not trained")
+    # DG-Trap (definition-trap training); see models/symbolAdapter/trap_loss.py
+    parser.add_argument("--trap_enabled", action="store_true",
+                        help="DG-Trap: per instance orig|goldswap|pairswap naming over real label words, "
+                             "harmless word dropout, trap margin and conditional margin. Needs batch_size 1; "
+                             "incompatible with --swap_labels, --surrogate_mix and the consistency objective")
+    parser.add_argument("--trap_p_orig", type=float, default=1 / 3)
+    parser.add_argument("--trap_p_goldswap", type=float, default=1 / 3)
+    parser.add_argument("--trap_p_pairswap", type=float, default=1 / 3)
+    parser.add_argument("--trap_p_symbol", type=float, default=0.0,
+                        help="symbol naming: all labels renamed to fresh random 2-token strings; 0 = off")
+    parser.add_argument("--trap_symbol_exclude", type=str, default="",
+                        help="comma-separated symbol-map JSON files whose strings training never draws")
+    parser.add_argument("--trap_cond_span", type=str, default="all", choices=["all", "gold"],
+                        help="conditional margin scores the whole completion (all) or only the "
+                             "damaged gold label's tokens (gold)")
+    parser.add_argument("--trap_nn_frac", type=float, default=0.5,
+                        help="goldswap partner is the gold's nearest-neighbour definition with this probability")
+    parser.add_argument("--trap_dropout_max", type=float, default=0.2,
+                        help="harmless word dropout rate per instance ~ U(0, max); 0 = off")
+    parser.add_argument("--trap_lambda", type=float, default=0.5,
+                        help="weight on the trap margin; 0 = measured and logged, not trained")
+    parser.add_argument("--trap_cond_lambda", type=float, default=0.5,
+                        help="weight on the conditional margin; 0 = off (no second pass)")
+    parser.add_argument("--trap_cond_frac", type=float, default=0.3)
+    parser.add_argument("--trap_cond_mode", type=str, default="deciding", choices=["deciding", "random"])
+    parser.add_argument("--trap_beta", type=float, default=2.0)
+    parser.add_argument("--trap_margin", type=float, default=0.5)
+    parser.add_argument("--trap_cond_margin", type=float, default=0.5)
+    parser.add_argument("--trap_deciding_words", type=str, default="config/data_config/deciding_words.json")
     parser.add_argument("--swap_labels", action="store_true", help="Swap labels (e.g., positive<->negative) during prompt/completion rewriting")
     parser.add_argument(
         "--validation_modes",
