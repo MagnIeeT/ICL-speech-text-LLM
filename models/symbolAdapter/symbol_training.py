@@ -9,6 +9,7 @@ import time
 from typing import Any, Dict, List, Sequence
 
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import get_cosine_schedule_with_warmup
@@ -25,6 +26,7 @@ from .consistency_loss import (
 )
 from .trap_loss import (
     check_alignment,
+    completion_rows,
     drop_words,
     edit_legend,
     load_deciding_index,
@@ -255,6 +257,27 @@ class SymbolTrainingOrchestrator:
         # Dedicated RNG so the naming draws are reproducible under --seed and do not
         # shift the global random stream used elsewhere.
         self._trap_rng = random.Random(config.seed)
+        # Definition paraphrase: per dataset, {variant: {label: definition}} from prompt_variants.
+        # Only variants whose every line is in the deciding-word index are used, so dropout,
+        # neighbours and the conditional term keep working on the new wording.
+        self._trap_p_variant = float(getattr(sc, "trap_p_variant", 0.0) or 0.0)
+        self._trap_variant_defs: Dict[str, Dict[str, Dict[str, str]]] = {}
+        if self._trap_p_variant > 0:
+            for dt, dcfg in DATASET_CONFIGS.items():
+                ds = dt.value
+                for vname, vtext in sorted((getattr(dcfg, "prompt_variants", None) or {}).items()):
+                    defs: Dict[str, str] = {}
+                    edit_legend(vtext, lambda n, d: defs.__setitem__(n.lower(), d) or None)
+                    idx = self._trap_index.get(ds, {})
+                    if defs and all(" ".join(d.lower().split()) in idx for d in defs.values()):
+                        self._trap_variant_defs.setdefault(ds, {})[vname] = defs
+            logging.info("DG-Trap paraphrase p=%.2f, wordings per dataset: %s", self._trap_p_variant,
+                         {ds: sorted(v) for ds, v in self._trap_variant_defs.items()})
+        self._trap_ref_mode = getattr(sc, "trap_ref_mode", "none")
+        self._trap_kl_lambda = float(getattr(sc, "trap_kl_lambda", 0.0) or 0.0)
+        if self._trap_ref_mode != "none" or self._trap_kl_lambda > 0:
+            logging.info("DG-Trap reference (pre-trained model, LoRA off): ref_mode=%s kl_lambda=%.3f",
+                         self._trap_ref_mode, self._trap_kl_lambda)
         self._trap_log_every = 200
         self._trap_detail_every = 1000         # one full TRAP-DETAIL block every N batches
         self._trap_run = self._new_trap_run()
@@ -276,8 +299,19 @@ class SymbolTrainingOrchestrator:
                 "trap_n", "trap_loss", "trap_diff", "trap_win", "cond_n", "cond_loss",
                 "cond_diff", "cond_win", "dropped", "removed", "align_err_max",
                 "skip_no_gold", "skip_no_partner", "skip_trap_k", "skip_cond_words",
-                "skip_cond_empty", "skip_nonfinite", "unmatched_lines", "cond_span_fallback"]
+                "skip_cond_empty", "skip_nonfinite", "unmatched_lines", "cond_span_fallback",
+                "variant", "ref_passes", "kl_n", "kl", "kl_ref_wrong"]
         return {k: 0.0 for k in keys}
+
+    def _trap_ref_logits(self, batch: Dict[str, Any]) -> torch.Tensor:
+        """Logits of the pre-trained model: the same weights with LoRA switched off, no grad."""
+        peft_model = getattr(self.model, "model", None)
+        if peft_model is None or not hasattr(peft_model, "disable_adapter"):
+            raise RuntimeError("trap_ref_mode/trap_kl_lambda need a PEFT (LoRA) model to switch off")
+        self._trap_run["ref_passes"] += 1
+        self._trap_totals["ref_passes"] += 1
+        with torch.no_grad(), peft_model.disable_adapter():
+            return self.model(batch).get("logits")
 
     def _trap_draw_symbols(self, n: int) -> List[str]:
         """n distinct fresh 2-token symbols (same generator as Sym training and the test
@@ -342,6 +376,18 @@ class SymbolTrainingOrchestrator:
             self._trap_warn_once(f"noidx_{ds_name_str}",
                                  "no deciding words for %s; dropout and the conditional term are off "
                                  "for it (naming and trap still apply)", ds_name_str)
+        # 0. definition paraphrase: swap every definition to one alternative wording of this
+        # task (before anything reads the legend, so neighbours and deciding words follow it).
+        # No RNG draw when off, so runs without it reproduce.
+        variant = None
+        if self._trap_p_variant > 0 and self._trap_variant_defs.get(ds_name_str) \
+                and rng.random() < self._trap_p_variant:
+            variant = rng.choice(sorted(self._trap_variant_defs[ds_name_str]))
+            vdefs = self._trap_variant_defs[ds_name_str][variant]
+            raw_batch = dict(raw_batch)
+            raw_batch["prompt"] = [map_prompt_text(p, lambda t: edit_legend(t, lambda n, d: vdefs.get(n.lower())))
+                                   for p in raw_batch["prompt"]]
+            run["variant"] += 1
         completion = raw_batch["completion"][0]
         gold = [g for g in (p.strip() for p in completion.split(",")) if g in relevant_labels]
         non_gold = [l for l in relevant_labels if l not in gold]
@@ -485,7 +531,27 @@ class SymbolTrainingOrchestrator:
                                  "(batch %d); completion rows may be mis-indexed", align_err, batch_idx)
         loss = nll
         parts: Dict[str, Any] = {"kind": kind, "nll": float(nll.detach()), "align_err": align_err,
-                                 "rate": rate, "dropped": drop_stats["dropped"]}
+                                 "rate": rate, "dropped": drop_stats["dropped"], "variant": variant}
+        ref_cache: Dict[str, torch.Tensor] = {}
+
+        def _ref_full() -> torch.Tensor:
+            if "full" not in ref_cache:
+                ref_cache["full"] = self._trap_ref_logits(batch_full)
+            return ref_cache["full"]
+
+        # 4b. knowledge preservation: on real names, stay close to the pre-trained model where
+        # it already answers correctly (every answer token is its argmax under teacher forcing).
+        if self._trap_kl_lambda > 0 and kind == "orig" and ids_ok:
+            ref_rows = completion_rows(_ref_full(), len(c_ids)).float()
+            if ref_rows.argmax(-1).tolist() == list(c_ids):
+                lp_ref = F.log_softmax(ref_rows, dim=-1)
+                lp_pol = F.log_softmax(completion_rows(logits, len(c_ids)).float(), dim=-1)
+                kl = (lp_ref.exp() * (lp_ref - lp_pol)).sum(-1).mean()
+                if torch.isfinite(kl):
+                    loss = loss + self._trap_kl_lambda * kl
+                    parts["kl"] = float(kl.detach())
+            else:
+                run["kl_ref_wrong"] += 1
 
         # 5. trap margin (same pass)
         if kind == "goldswap" and ids_ok:
@@ -499,6 +565,12 @@ class SymbolTrainingOrchestrator:
                 run["skip_nonfinite"] += 1
                 self._trap_warn_once("trapnan", "non-finite trap diff at batch %d; term skipped", batch_idx)
             else:
+                if self._trap_ref_mode == "dpo":
+                    # DPO form: the policy's gold-vs-trap gap beyond the pre-trained model's gap.
+                    diff_ref, _ = trap_token_diff(_ref_full(), c_ids, t_ids)
+                    if diff_ref is not None and torch.isfinite(diff_ref):
+                        parts["trap_diff_ref"] = float(diff_ref)
+                        diff = diff - diff_ref
                 l_trap = margin_loss(diff, self._trap_beta, self._trap_margin)
                 if self._trap_lambda > 0:
                     loss = loss + self._trap_lambda * l_trap
@@ -542,6 +614,17 @@ class SymbolTrainingOrchestrator:
                         lp_full = tok_full.sum()
                         lp_dam = tok_dam.sum()
                     cdiff = lp_full - lp_dam
+                    if self._trap_ref_mode == "dpo":
+                        # DPO form: how much more the policy relies on the definition than the
+                        # pre-trained model does (same tokens, same span, both views).
+                        rf = token_logprobs(_ref_full(), c_ids)
+                        rd = token_logprobs(self._trap_ref_logits(batch_dam), c_ids)
+                        if span is not None:
+                            rf, rd = rf[span[0]:span[1]], rd[span[0]:span[1]]
+                        cdiff_ref = rf.sum() - rd.sum()
+                        if torch.isfinite(cdiff_ref):
+                            parts["cond_diff_ref"] = float(cdiff_ref)
+                            cdiff = cdiff - cdiff_ref
                     if not torch.isfinite(cdiff):
                         run["skip_nonfinite"] += 1
                         self._trap_warn_once("condnan", "non-finite cond diff at batch %d; term "
@@ -584,6 +667,9 @@ class SymbolTrainingOrchestrator:
                 r["trap_loss"] += parts["trap_loss"]
                 r["trap_diff"] += parts["trap_diff"]
                 r["trap_win"] += float(parts["trap_diff"] > 0)
+            if "kl" in parts:
+                r["kl_n"] += 1
+                r["kl"] += parts["kl"]
             if "cond_diff" in parts:
                 r["cond_n"] += 1
                 r["cond_loss"] += parts["cond_loss"]
@@ -611,6 +697,8 @@ class SymbolTrainingOrchestrator:
             f"{int(r['skip_no_partner'])}/{int(r['skip_trap_k'])}/{int(r['skip_cond_words'])}/"
             f"{int(r['skip_cond_empty'])} "
             f"cond_span_fallback={int(r['cond_span_fallback'])} "
+            f"| variant={int(r['variant'])} ref_passes={int(r['ref_passes'])} "
+            f"kl n={int(r['kl_n'])} mean={r['kl'] / max(r['kl_n'], 1):.4f} ref_wrong={int(r['kl_ref_wrong'])} | "
             f"nonfinite={int(r['skip_nonfinite'])} "
             f"unmatched_lines={int(r['unmatched_lines'])}")
 

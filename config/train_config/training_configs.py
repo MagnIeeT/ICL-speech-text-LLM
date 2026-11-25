@@ -98,7 +98,17 @@ class SymbolConfig:
     # tokens scored by the conditional margin: "all" = whole completion incl. other gold
     # labels and EOS (A0-A3 behaviour); "gold" = only the damaged gold label's tokens
     trap_cond_span: str = "all"
-    trap_nn_frac: float = 0.5         # goldswap partner = gold's nearest-neighbour definition with this prob, else random non-gold
+    # definition paraphrase: with this probability an instance's definitions are replaced by
+    # one alternative wording (prompt_variants: paraphrase|terse|verbose) of the same task.
+    trap_p_variant: float = 0.0
+    # reference = the same model with LoRA switched off (the pre-trained Qwen), no grad.
+    # "dpo": trap and cond margins compare the policy's log-prob gap to the reference's gap
+    # (DPO form) instead of the raw gap. "none" = reference-free (A0-A3 behaviour).
+    trap_ref_mode: str = "none"
+    # knowledge preservation: KL(reference || policy) on the answer tokens of orig-named
+    # instances where the reference already gets every answer token right. 0 = off.
+    trap_kl_lambda: float = 0.0
+    trap_nn_frac: float = 0.5        # goldswap partner = gold's nearest-neighbour definition with this prob, else random non-gold
     trap_dropout_max: float = 0.2      # per-instance harmless (non-deciding) word dropout rate ~ U(0, max)
     trap_lambda: float = 0.5           # weight on the trap margin (goldswap instances)
     trap_cond_lambda: float = 0.5      # weight on the conditional margin; 0 = no second pass
@@ -293,6 +303,9 @@ class TrainingConfig:
             trap_p_symbol=getattr(args, "trap_p_symbol", 0.0),
             trap_symbol_exclude=getattr(args, "trap_symbol_exclude", ""),
             trap_cond_span=getattr(args, "trap_cond_span", "all"),
+            trap_p_variant=getattr(args, "trap_p_variant", 0.0),
+            trap_ref_mode=getattr(args, "trap_ref_mode", "none"),
+            trap_kl_lambda=getattr(args, "trap_kl_lambda", 0.0),
             trap_nn_frac=getattr(args, "trap_nn_frac", 0.5),
             trap_dropout_max=getattr(args, "trap_dropout_max", 0.2),
             trap_lambda=getattr(args, "trap_lambda", 0.5),
@@ -437,6 +450,14 @@ def parse_training_args() -> argparse.Namespace:
     parser.add_argument("--trap_cond_span", type=str, default="all", choices=["all", "gold"],
                         help="conditional margin scores the whole completion (all) or only the "
                              "damaged gold label's tokens (gold)")
+    parser.add_argument("--trap_p_variant", type=float, default=0.0,
+                        help="probability an instance's definitions use an alternative wording "
+                             "(paraphrase|terse|verbose) of the same task; 0 = off")
+    parser.add_argument("--trap_ref_mode", type=str, default="none", choices=["none", "dpo"],
+                        help="dpo: trap/cond margins relative to the pre-trained model (LoRA off)")
+    parser.add_argument("--trap_kl_lambda", type=float, default=0.0,
+                        help="KL(pre-trained || policy) on orig-named instances the pre-trained model "
+                             "gets right; 0 = off")
     parser.add_argument("--trap_nn_frac", type=float, default=0.5,
                         help="goldswap partner is the gold's nearest-neighbour definition with this probability")
     parser.add_argument("--trap_dropout_max", type=float, default=0.2,

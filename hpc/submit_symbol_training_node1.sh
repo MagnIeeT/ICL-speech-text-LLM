@@ -114,6 +114,12 @@ TRAP_BETA="${TRAP_BETA:-2.0}"
 TRAP_MARGIN="${TRAP_MARGIN:-0.5}"
 TRAP_COND_MARGIN="${TRAP_COND_MARGIN:-0.5}"
 TRAP_DECIDING_WORDS="${TRAP_DECIDING_WORDS:-config/data_config/deciding_words.json}"
+TRAP_P_SYMBOL="${TRAP_P_SYMBOL:-0}"                                                 # symbol naming kind (fresh 2-token strings); 0 = off (A0-A3)
+TRAP_SYMBOL_EXCLUDE="${TRAP_SYMBOL_EXCLUDE:-/home/aneeraj/training/symbol_training/symbol_maps/fixed_draw1.json,/home/aneeraj/training/symbol_training/symbol_maps/fixed_draw2.json,/home/aneeraj/training/symbol_training/symbol_maps/fixed_draw3.json}"   # test symbol files never drawn in training
+TRAP_COND_SPAN="${TRAP_COND_SPAN:-all}"                                             # all (A0-A3) | gold = score only the damaged label's tokens
+TRAP_P_VARIANT="${TRAP_P_VARIANT:-0}"                                               # definition paraphrase probability (paraphrase|terse|verbose); 0 = off
+TRAP_REF_MODE="${TRAP_REF_MODE:-none}"                                              # none | dpo = margins relative to the pre-trained model (LoRA off)
+TRAP_KL_LAMBDA="${TRAP_KL_LAMBDA:-0}"                                               # KL to the pre-trained model where it is right, orig names only; 0 = off
 if [[ "${TRAP_ENABLED}" == "true" ]]; then
     SWAP_LABELS="false"
     SURROGATE_MIX="0"
@@ -146,6 +152,11 @@ if [[ "${TRAP_ENABLED}" == "true" ]]; then
     [[ "${TRAP_COND_MODE}" != "deciding" ]] && _MODE="${_MODE}_cond${TRAP_COND_MODE}"
     [[ "${TRAP_DROPOUT_MAX}" != "0.2" ]] && _MODE="${_MODE}_do${TRAP_DROPOUT_MAX}"
     [[ "${TRAP_NN_FRAC}" != "0.5" ]] && _MODE="${_MODE}_nn${TRAP_NN_FRAC}"
+    awk "BEGIN{exit !(${TRAP_P_SYMBOL}+0>0)}" && _MODE="${_MODE}_sym${TRAP_P_SYMBOL}"
+    [[ "${TRAP_COND_SPAN}" != "all" ]] && _MODE="${_MODE}_span${TRAP_COND_SPAN}"
+    awk "BEGIN{exit !(${TRAP_P_VARIANT}+0>0)}" && _MODE="${_MODE}_para${TRAP_P_VARIANT}"
+    [[ "${TRAP_REF_MODE}" != "none" ]] && _MODE="${_MODE}_ref${TRAP_REF_MODE}"
+    awk "BEGIN{exit !(${TRAP_KL_LAMBDA}+0>0)}" && _MODE="${_MODE}_kl${TRAP_KL_LAMBDA}"
 fi
 [[ "${NO_LEGEND}" == "true" ]] && _MODE="${_MODE}_nl"                              # no-legend tag
 [[ "${NUM_EXAMPLES}" != "0" ]] && _MODE="${_MODE}_fs${NUM_EXAMPLES}${FEWSHOT_MODE:0:1}"   # few-shot tag (_fs4s = 4 speech, _fs4t = 4 text)
@@ -260,7 +271,10 @@ ${_PYTHON_CMD} train.py \
         "--trap_cond_lambda" "${TRAP_COND_LAMBDA}" "--trap_cond_frac" "${TRAP_COND_FRAC}" \
         "--trap_cond_mode" "${TRAP_COND_MODE}" "--trap_beta" "${TRAP_BETA}" \
         "--trap_margin" "${TRAP_MARGIN}" "--trap_cond_margin" "${TRAP_COND_MARGIN}" \
-        "--trap_deciding_words" "${TRAP_DECIDING_WORDS}" ) \
+        "--trap_deciding_words" "${TRAP_DECIDING_WORDS}" \
+        "--trap_p_symbol" "${TRAP_P_SYMBOL}" "--trap_symbol_exclude" "${TRAP_SYMBOL_EXCLUDE}" \
+        "--trap_cond_span" "${TRAP_COND_SPAN}" "--trap_p_variant" "${TRAP_P_VARIANT}" \
+        "--trap_ref_mode" "${TRAP_REF_MODE}" "--trap_kl_lambda" "${TRAP_KL_LAMBDA}" ) \
     $( [[ "${USE_DPO}" == "true" ]] && printf '%s' "--use_dpo" ) \
     $( [[ "${USE_DPO}" == "true" ]] && printf '%s' "--dpo_beta ${DPO_BETA}" ) \
     --input_mode "${INPUT_MODE}" \

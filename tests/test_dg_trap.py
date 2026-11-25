@@ -352,14 +352,16 @@ def test_wording_variant_lookup():
     terse = cfg.prompt_variants["terse"]
     o = make_orchestrator(trap_p_orig=0, trap_p_goldswap=1, trap_p_pairswap=0, trap_cond_frac=1.0,
                           trap_dropout_max=0.0)
+    # "question_check" (terse: "verifying question") keeps a word after removal. A one-word
+    # terse line such as "thanks: thanks" would empty and is skipped by the empty-line guard.
     seen = 0
     for step in range(20):
-        b = {"prompt": [terse], "completion": ["thanks"], "dataset_type": ["hvb"], "text": ["x"], "audio": None}
+        b = {"prompt": [terse], "completion": ["question_check"], "dataset_type": ["hvb"], "text": ["x"], "audio": None}
         _, loss, parts = o._trap_step(b, 0, step + 2)
         if "cond_removed" in parts:
             seen += 1
-            info = INDEX["hvb"][" ".join(legend(terse)["thanks"].lower().split())]
-            assert info["deciding"] == {"thanks"} and parts["cond_removed"] == ["thanks"], parts
+            info = INDEX["hvb"][" ".join(legend(terse)["question_check"].lower().split())]
+            assert info["deciding"] == {"verifying"} and parts["cond_removed"] == ["verifying"], parts
     assert seen > 0
     ok("terse wording: conditional term removes the terse definition's own deciding words")
 
@@ -488,6 +490,111 @@ def test_e2_fixed_row():
     assert "consistency needs batch_size 1" in src
     ok("E2 fix: input_len shift reads the true answer row (matches model token log-prob); "
        "batch>1 refused; both call sites wired")
+
+
+class _PeftLike(nn.Module):
+    """Policy mock plus a frozen reference mock behind model.disable_adapter(), like PEFT LoRA."""
+    def __init__(self, pol):
+        super().__init__()
+        import contextlib
+        import copy
+        self.pol, self.ref, self.off = pol, copy.deepcopy(pol), False
+        outer = self
+
+        class _M:
+            @contextlib.contextmanager
+            def disable_adapter(self_inner):
+                outer.off = True
+                try:
+                    yield
+                finally:
+                    outer.off = False
+        self.model = _M()
+
+    def forward(self, batch):
+        return (self.ref if self.off else self.pol)(batch)
+
+
+def test_symbol_naming():
+    exclude = {"cremad": {"sad": "vsro"}}
+    path = "/tmp/_trap_exclude_test.json"
+    with open(path, "w") as f:
+        json.dump(exclude, f)
+    o = make_orchestrator(trap_p_orig=0, trap_p_goldswap=0, trap_p_pairswap=0, trap_p_symbol=1,
+                          trap_cond_frac=1.0, trap_dropout_max=0.0, trap_symbol_exclude=path)
+    g0 = random.getstate()
+    for key in ("cremad", "hvb_multi"):
+        tb, loss, parts = o._trap_step(raw_batch(key), 0, 5)
+        assert parts["kind"] == "symbol" and torch.isfinite(loss)
+        shown, orig = legend(TOK.decode(tb["input_ids"][0])), legend(FIX[key]["prompt"])
+        assert sorted(shown.values()) == sorted(orig.values()), "definitions must not change"
+        assert not set(shown) & set(orig), "every name must be renamed"
+        comp = [c.strip() for c in tb["completion"][0].split(",")]
+        assert all(c in shown for c in comp), (comp, list(shown))
+    assert random.getstate() == g0, "symbol draws must not move the global random stream"
+    drawn = set()
+    for _ in range(300):
+        drawn.update(o._trap_draw_symbols(6))
+    assert "vsro" not in drawn and all(len(TOK.encode(s, add_special_tokens=False)) == 2 for s in drawn)
+    ok("symbol naming: all names renamed, definitions kept, completion renamed, excluded strings "
+       "never drawn, global random untouched")
+
+
+def test_cond_span_gold():
+    o = make_orchestrator(trap_p_orig=1, trap_p_goldswap=0, trap_p_pairswap=0, trap_cond_frac=1.0,
+                          trap_dropout_max=0.0, trap_cond_span="gold")
+    hits = 0
+    for step in range(10):
+        _, _, parts = o._trap_step(raw_batch("hvb_multi"), 0, step + 2)
+        if "cond_span" in parts:
+            hits += 1
+            s, e = parts["cond_span"]
+            ids = TOK("backchannel, answer_dis" + TOK.eos_token, add_special_tokens=False).input_ids
+            assert TOK.decode(ids[s:e]).strip() == parts["cond_gold"], (parts["cond_gold"], TOK.decode(ids[s:e]))
+    assert hits > 0 and o._trap_totals["cond_span_fallback"] == 0
+    ok("cond span gold: multi-label HVB scores only the damaged label's tokens, no fallbacks")
+
+
+def test_definition_paraphrase():
+    o = make_orchestrator(trap_p_orig=1, trap_p_goldswap=0, trap_p_pairswap=0, trap_p_variant=1.0,
+                          trap_cond_frac=1.0, trap_dropout_max=0.1)
+    used = set()
+    for step in range(15):
+        tb, loss, parts = o._trap_step(raw_batch("cremad"), 0, step + 2)
+        used.add(parts["variant"])
+        assert legend(TOK.decode(tb["input_ids"][0])) != legend(FIX["cremad"]["prompt"])
+    assert used == {"paraphrase", "terse", "verbose"} and o._trap_totals["unmatched_lines"] == 0
+    ok("definition paraphrase: all three wordings used, every line still in the deciding-word index")
+
+
+def test_reference_dpo_and_kl():
+    o = make_orchestrator(trap_p_orig=0, trap_p_goldswap=1, trap_p_pairswap=0, trap_cond_frac=1.0,
+                          trap_dropout_max=0.0, trap_ref_mode="dpo")
+    o.model = _PeftLike(o.model)
+    _, loss, parts = o._trap_step(raw_batch("hvb"), 0, 5)
+    assert parts["trap_diff"] == 0.0 and "trap_diff_ref" in parts, parts     # reference == policy
+    assert abs(parts["trap_loss"] - math.log1p(math.exp(0.5))) < 1e-4
+    loss.backward()
+    assert any(p.grad is not None for p in o.model.pol.parameters())
+    assert all(p.grad is None for p in o.model.ref.parameters()), "reference must get no gradient"
+    o = make_orchestrator(trap_p_orig=1, trap_p_goldswap=0, trap_p_pairswap=0, trap_cond_lambda=0.0,
+                          trap_dropout_max=0.0, trap_kl_lambda=0.5)
+    o.model = _PeftLike(o.model)
+    _, _, parts = o._trap_step(raw_batch("cremad"), 0, 5)
+    assert "kl" not in parts and o._trap_run["kl_ref_wrong"] == 1           # random reference is wrong
+    real = o._trap_ref_logits
+
+    def right_ref(batch):
+        lg = real(batch).clone()
+        ids = TOK(batch["completion"][0] + TOK.eos_token, add_special_tokens=False).input_ids
+        for j, t in enumerate(ids):
+            lg[0, lg.size(1) - len(ids) - 1 + j, t] += 50.0
+        return lg
+    o._trap_ref_logits = right_ref
+    _, loss, parts = o._trap_step(raw_batch("cremad"), 0, 6)
+    assert parts["kl"] > 0 and abs(float(loss) - (parts["nll"] + 0.5 * parts["kl"])) < 1e-3
+    ok("reference: DPO gaps are 0 when reference == policy, no gradient to the reference; "
+       "KL only where the pre-trained model is right")
 
 
 if __name__ == "__main__":
