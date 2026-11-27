@@ -6,7 +6,7 @@ Surrogate tuning shows each example under exactly one legend, so the objective
 is satisfiable by learning several surface-specific routines instead of one
 surface-independent procedure. Measured consequence: the regime mixture reaches
 instruction-tuning accuracy on *trained* tasks and fails to transfer to held-out
-ones (``docs/e0_results.md``, section E1).
+ones (``docs/results/e0_e2.md``, section E1).
 
 What we want is equivariance under label-surface relabelling. If a bijection
 ``f`` rewrites the legend's surfaces, the correct answer becomes ``f(answer)``

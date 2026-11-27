@@ -2,7 +2,7 @@
 
 Status: rewritten 15 Nov 2026 after the E0 pilot. Supersedes both the Chapter 2
 section of `thesis_chapters_plan.pdf` and the first version of this file, which
-was built around evidence routing. Results log: [`docs/e0_results.md`](e0_results.md).
+was built around evidence routing. Results log: [`docs/results/`](results/README.md).
 Work happens on `chapter-2`, never on `main`.
 
 ---
@@ -127,7 +127,7 @@ novelty is layered on. Nothing here needs new datasets.
   `minds14_fr`/`minds14_ko` share label set, definitions and template with the
   trained `minds14_en`, differing only in spoken language. On the two genuinely
   held-out tasks, Skit-S2I and RAVDESS-Song, the mixture loses in both modes.
-  Detail in `docs/e0_results.md`, section E1. **The mixture is not currently
+  Detail in `docs/results/e0_e2.md`, section E1. **The mixture is not currently
   evidence of better definition-following.**
 - **E1a, what the canonical deficit actually is (no compute).** A perfect
   definition follower needs no canonical practice, since under canonical the
@@ -173,7 +173,7 @@ novelty is layered on. Nothing here needs new datasets.
     generated accuracy means the failure is perceptual, and no legend-side method
     (Sym, Flip, consistency) can fix it.
   - Run it across epochs of one run. The consistency run falls on held-out between
-    epochs 3 and 5 (e0_results, E2): if the probe holds while the output falls,
+    epochs 3 and 5 (results/e0_e2.md, E2): if the probe holds while the output falls,
     the late-epoch loss is a read-out problem, not forgotten information.
   - Caveat from the paper: probes do not transfer across tasks, so fit one probe
     per held-out task on part of its own data, and report against a
@@ -382,7 +382,7 @@ Evaluation reuses the existing inference path.
 `label1` or symbols) with definitions, and the model picks from the definitions.
 Label-name information is given up as a design choice.
 
-**Motivation (see e0_results.md, 21 Nov).** Each model reads the task best in the
+**Motivation (see results/e0_e2.md, 21 Nov).** Each model reads the task best in the
 label format it was trained on (IT 0.818 on original, Sym 0.787 on symbols, Flip
 0.767 on swap). Failures sit in confusable pairs (`branch_address` vs `ifsc_code`)
 that each model resolves only in its own format. Capacity is fixed, so splitting
@@ -455,7 +455,7 @@ NLL; reference model dropped (reference-free, SimPO-style). mDPO with a
 reference model is an ablation.
 
 **Name.** DG-Trap (may become DGPO, definition-guided proximity optimisation).
-**Implementation and experiment log:** `docs/e0_results.md`, section E3. Code in
+**Implementation and experiment log:** `docs/results/e3_dg_trap.md`. Code in
 `models/symbolAdapter/trap_loss.py` and `_trap_step` in `symbol_training.py`;
 tests in `tests/test_dg_trap.py`. Neighbours are automated (embedding
 similarity); manual overrides only if diagnostics show a problem.
