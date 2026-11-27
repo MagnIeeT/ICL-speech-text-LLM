@@ -2,6 +2,7 @@
 *.pt
 *.ckpt
 results/
+!docs/results/
 logs/
 __pycache__/
 
