@@ -302,6 +302,19 @@ class InferenceOrchestrator:
             symbol_map=symbol_map,
         )
 
+        # Extra map files (--symbol_map_file a.json,b.json): fixed mode only, same loaded model.
+        saved_modes = self.config.symbol_config.validation_modes
+        for stem, override in self._extra_maps:
+            extra_map = {**symbol_map, **override}
+            self.config.symbol_config.validation_modes = "fixed"
+            try:
+                extra = self.validator.run_comprehensive_validation(
+                    model=self.model, val_dataloader=self.val_dataloader,
+                    epoch=0, symbol_map=extra_map)
+            finally:
+                self.config.symbol_config.validation_modes = saved_modes
+            results["all_modes"][f"fixed_{stem}"] = extra["all_modes"]["fixed"]
+
         validation_scores = {}
         detailed_metrics = {}
         all_predictions = []
@@ -368,10 +381,17 @@ class InferenceOrchestrator:
         logger.info("=" * 80)
 
     def _apply_symbol_map_file(self):
-        """Override current_mappings from a JSON file if --symbol_map_file was given."""
+        """Override current_mappings from the first --symbol_map_file; later files (comma-separated)
+        are kept in self._extra_maps and run in fixed mode only."""
+        self._extra_maps = []
         if not self.symbol_map_file:
             return
-        with open(self.symbol_map_file) as f:
+        paths = [p.strip() for p in self.symbol_map_file.split(",") if p.strip()]
+        for path in paths[1:]:
+            with open(path) as f:
+                stem = os.path.splitext(os.path.basename(path))[0]
+                self._extra_maps.append((stem, json.load(f)))
+        with open(paths[0]) as f:
             override = json.load(f)
         for ds_name, sym_dict in override.items():
             self.current_mappings[ds_name] = sym_dict
@@ -379,8 +399,10 @@ class InferenceOrchestrator:
         # Force symbols on since we're explicitly providing a map.
         self.config.symbol_config.no_symbols = False
         logging.info("Symbol map overridden from %s: %s",
-                     self.symbol_map_file,
+                     paths[0],
                      {ds: list(v.keys()) for ds, v in override.items()})
+        if self._extra_maps:
+            logging.info("Extra fixed-mode maps: %s", [s for s, _ in self._extra_maps])
 
     def run_complete_inference(self):
 
@@ -440,7 +462,8 @@ def main():
     parser.add_argument("--strip_extra_definitions", type=int, default=0,
                         help="With --strip_gold_definition: also drop N random non-gold definitions")
     parser.add_argument("--symbol_map_file", type=str, default=None,
-                        help="JSON file with symbol overrides {ds_name: {label: symbol}}; merged over checkpoint mappings")
+                        help="JSON file(s) {ds_name: {label: symbol}}, comma-separated; the first is merged over "
+                             "checkpoint mappings for all modes, each extra file runs as fixed_<stem>")
     parser.add_argument("--metrics_dir", type=str, default=None,
                         help="Directory for metrics/predictions output (dated subfolder recommended)")
     parser.add_argument("--split", type=str, default="test", choices=["test", "validation"],
